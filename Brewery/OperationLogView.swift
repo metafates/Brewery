@@ -1,0 +1,57 @@
+//
+//  OperationLogView.swift
+//  Brewery
+//
+
+import SwiftUI
+
+/// The live output of one brew invocation. `defaultScrollAnchor(.bottom)` both opens at the end and
+/// keeps the newest line in view as the buffer grows, so a running operation tails itself.
+struct OperationLogView: View {
+    let operation: BrewOperation
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                if operation.lines.isEmpty {
+                    Text("Waiting for output…")
+                        .foregroundStyle(.tertiary)
+                } else {
+                    ForEach(Array(operation.lines.enumerated()), id: \.offset) { _, raw in
+                        let line = Self.stripANSI(raw)
+                        Text(line)
+                            .foregroundStyle(Self.tint(for: line))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .font(.system(.caption, design: .monospaced))
+            .padding(8)
+        }
+        .defaultScrollAnchor(.bottom)
+        .frame(minHeight: 80)
+        .background(.background.secondary, in: .rect(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8).strokeBorder(.separator)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Output of \(operation.title)")
+    }
+
+    /// A user's `brew.env` can force `HOMEBREW_COLOR=1`, in which case brew writes CSI escapes into
+    /// a pipe that has no terminal to interpret them.
+    private static let ansiEscape = #/\x1B\[[0-9;?]*[\x20-\x2F]*[\x40-\x7E]/#
+
+    static func stripANSI(_ line: String) -> String {
+        line.replacing(ansiEscape, with: "")
+    }
+
+    /// brew already prefixes its diagnostics; nothing else in the stream is worth tinting.
+    private static func tint(for line: String) -> Color {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("Error:") { return .red }
+        if trimmed.hasPrefix("Warning:") { return .orange }
+        return .primary
+    }
+}
