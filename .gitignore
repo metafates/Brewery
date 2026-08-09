@@ -2,3 +2,6 @@
 xcuserdata/
 DerivedData/
 buildServer.json
+
+# Xcode coverage artifact
+default.profraw
