@@ -1,6 +1,6 @@
 # Brewery
 
-macOS app: SwiftUI + SwiftData, Xcode 26 project, single scheme `Brewery`.
+macOS app: SwiftUI, Xcode 26 project, single scheme `Brewery`. No third-party dependencies. See `ARCHITECTURE.md`.
 
 ## Build & test (all headless, no Xcode GUI needed)
 
