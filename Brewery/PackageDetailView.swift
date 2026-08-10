@@ -18,6 +18,7 @@ struct PackageDetailView: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @State private var showLicenses = false
 
     init(package: Package) {
         self.package = package
@@ -194,14 +195,8 @@ struct PackageDetailView: View {
 
                 if let license = displayed.licenseLabel {
                     statRow("doc.text") {
-                        // Prefixed rather than suffixed: "MIT License" reads well but
-                        // "GPL-3.0-or-later License" does not, and SPDX identifiers are mostly the
-                        // latter shape.
-                        Text("License: \(license)")
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
+                        licenseLine(license)
                     }
-                    .accessibilityLabel("License \(license)")
                 }
 
                 // Every package answers "which tap is this from" — core items included, so the
@@ -223,6 +218,46 @@ struct PackageDetailView: View {
 
     private var kindTag: some View {
         TagLabel(displayed.kindLabel).font(.caption)
+    }
+
+    /// bun's expression is nine licenses long — five wrapped lines that dwarf the header. Past
+    /// the threshold the row collapses to the first license plus a disclosure ("and 8 more")
+    /// whose popover lists them one per row: summary in place, detail on demand, the anchored
+    /// spring for free.
+    @ViewBuilder private func licenseLine(_ license: String) -> some View {
+        let components = displayed.licenseComponents
+        if components.count > 1, license.count > 40, let first = components.first {
+            HStack(spacing: 4) {
+                Text("License: \(first)")
+                    .foregroundStyle(.secondary)
+                Button("and \(components.count - 1) more") {
+                    showLicenses = true
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+                .popover(isPresented: $showLicenses, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Licenses")
+                            .font(.headline)
+                        ForEach(components, id: \.self) { component in
+                            Text(component)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .padding(14)
+                    .frame(minWidth: 220, alignment: .leading)
+                }
+            }
+            // No .combine here: merging would swallow the button and VoiceOver could never
+            // activate it. Read separately it is "License: MIT", then "and 8 more, button".
+        } else {
+            // Prefixed rather than suffixed: "MIT License" reads well but "GPL-3.0-or-later
+            // License" does not, and SPDX identifiers are mostly the latter shape.
+            Text("License: \(license)")
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .accessibilityLabel("License \(license)")
+        }
     }
 
     /// One header stat. The glyph sits in a fixed-width column so the values line up down the

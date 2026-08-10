@@ -296,6 +296,33 @@ struct CatalogV3Tests {
 
     // MARK: - Cache schema
 
+    @Test("SPDX expressions split at top-level AND only; OR and WITH groups stay whole")
+    func licenseComponents() {
+        func formula(_ license: String?) -> Package {
+            Package(kind: .formula, name: "x", displayName: nil, desc: nil, homepage: nil,
+                    version: "", deprecated: false, disabled: false, license: license)
+        }
+
+        // bun's real expression: nine components, the WITH group unwrapped from its parens.
+        let bun = formula("MIT AND LGPL-2.0-or-later AND Apache-2.0 AND BSD-2-Clause AND "
+                          + "BSD-3-Clause AND IJG AND LGPL-2.1-or-later AND Zlib AND "
+                          + "(Apache-2.0 WITH LLVM-exception)")
+        #expect(bun.licenseComponents.count == 9)
+        #expect(bun.licenseComponents.first == "MIT")
+        #expect(bun.licenseComponents.last == "Apache-2.0 WITH LLVM-exception")
+
+        #expect(formula("MIT").licenseComponents == ["MIT"])
+        // An OR is a choice, not a sum — never split.
+        #expect(formula("MIT OR Apache-2.0").licenseComponents == ["MIT OR Apache-2.0"])
+        // AND inside parens is not top-level.
+        #expect(formula("(MIT AND Zlib) OR GPL-3.0-only").licenseComponents
+                == ["(MIT AND Zlib) OR GPL-3.0-only"])
+        // Each component's own wrapper parens are dropped for display; the split still respects
+        // them as grouping.
+        #expect(formula("(A OR B) AND (C OR D)").licenseComponents == ["A OR B", "C OR D"])
+        #expect(formula(nil).licenseComponents.isEmpty)
+    }
+
     @Test("a cache without the v3 schema stamp is treated as no cache")
     func cacheVersionMismatch() throws {
         // Bumped whenever a field joins Package (4: `license`, 5: `rubySourcePath`,

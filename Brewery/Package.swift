@@ -210,6 +210,52 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     /// SPDX identifier, formulae only — casks carry no license in the API.
     var licenseLabel: String? { license?.isEmpty == false ? license : nil }
 
+    /// The SPDX expression split at top-level `AND` only: each element is one license the user
+    /// must accept. `OR` groups are a *choice* and `(X WITH exception)` groups are one unit, so
+    /// both stay whole; parentheses that merely wrap a lone component are dropped for display.
+    var licenseComponents: [String] {
+        guard let license else { return [] }
+        var components: [String] = []
+        var current = ""
+        var depth = 0
+        var rest = Substring(license)
+        while let character = rest.first {
+            if character == "(" { depth += 1 }
+            if character == ")" { depth -= 1 }
+            if depth == 0, rest.hasPrefix(" AND ") {
+                components.append(current)
+                current = ""
+                rest = rest.dropFirst(" AND ".count)
+                continue
+            }
+            current.append(character)
+            rest = rest.dropFirst()
+        }
+        components.append(current)
+        return components
+            .map { component in
+                let trimmed = component.trimmingCharacters(in: .whitespaces)
+                // "(Apache-2.0 WITH LLVM-exception)" reads better without its wrapper — but only
+                // when the parens span the whole component, or "(A OR B" would lose a brace.
+                if trimmed.hasPrefix("("), trimmed.hasSuffix(")"),
+                   Self.parensBalance(trimmed.dropFirst().dropLast()) == 0 {
+                    return String(trimmed.dropFirst().dropLast())
+                }
+                return trimmed
+            }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func parensBalance(_ text: Substring) -> Int {
+        var depth = 0
+        for character in text {
+            if character == "(" { depth += 1 }
+            if character == ")" { depth -= 1 }
+            if depth < 0 { return depth }
+        }
+        return depth
+    }
+
     /// What kind of thing this is, in a word. The icon cannot say it: once a favicon loads it
     /// replaces the SF Symbol that would have distinguished a formula from a cask.
     var kindLabel: String {
