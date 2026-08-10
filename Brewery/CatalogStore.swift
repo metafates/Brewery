@@ -14,11 +14,17 @@ nonisolated struct CatalogCache: Codable {
     let version: Int
     let fetchedAt: Date
     let packages: [Package]
+    /// v4: the tap-qualified subset of the formula analytics ("user/repo/name" keys), so the tap
+    /// scan can join real install counts. Optional — a pre-v4 cache decodes it as nil and tap
+    /// packages go uncounted until the next daily fetch, which is why no version bump is needed.
+    let tapInstalls90d: [String: Int]?
 
-    init(version: Int = CatalogStore.cacheVersion, fetchedAt: Date, packages: [Package]) {
+    init(version: Int = CatalogStore.cacheVersion, fetchedAt: Date, packages: [Package],
+         tapInstalls90d: [String: Int]? = nil) {
         self.version = version
         self.fetchedAt = fetchedAt
         self.packages = packages
+        self.tapInstalls90d = tapInstalls90d
     }
 }
 
@@ -97,7 +103,10 @@ nonisolated struct CatalogStore {
             lhs.name == rhs.name ? lhs.kind.rawValue < rhs.kind.rawValue : lhs.name < rhs.name
         }
 
-        let cache = CatalogCache(fetchedAt: .now, packages: packages)
+        // The catalog join below is by short name, so qualified analytics keys would drop out;
+        // kept aside instead, they give scanned tap packages their install counts.
+        let cache = CatalogCache(fetchedAt: .now, packages: packages,
+                                 tapInstalls90d: formulaInstalls.filter { $0.key.contains("/") })
         // A cache we cannot write is still a catalog we can show.
         if let encoded = try? JSONEncoder().encode(cache) {
             try? encoded.write(to: cacheURL, options: .atomic)

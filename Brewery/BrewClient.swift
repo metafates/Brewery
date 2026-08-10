@@ -25,6 +25,11 @@ final class BrewClient {
     /// `bin/brew` uses (`HOMEBREW_PREFIX="${HOMEBREW_BREW_FILE%/*/*}"`).
     var prefix: URL? { path?.deletingLastPathComponent().deletingLastPathComponent() }
 
+    /// HOMEBREW_REPOSITORY — where `Library/Taps` lives. Same grandparent rule but through the
+    /// symlink: on Intel, `/usr/local/bin/brew` links into `/usr/local/Homebrew`, so repository
+    /// and prefix differ there; on Apple silicon they coincide.
+    var repository: URL? { path?.resolvingSymlinksInPath().deletingLastPathComponent().deletingLastPathComponent() }
+
     init() {
         discover()
     }

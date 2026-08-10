@@ -11,7 +11,17 @@ import Observation
 /// queue needs no locks.
 @Observable
 final class AppModel {
+    /// Core catalog + scanned tap packages, composed by `composeCatalog()`.
     private(set) var catalog: [Package] = []
+    /// The formulae.brew.sh half, kept apart from the tap half so either can change alone.
+    private var coreCatalog: [Package] = []
+    /// The `Library/Taps` half, plus the set of scanned taps (the command-qualification guard).
+    private var tapScan = TapScan()
+    /// Qualified-key analytics from the catalog cache, joined into scanned tap packages.
+    private var tapInstalls90d: [String: Int] = [:]
+    /// Bumped on every compose. The view layer keys invalidation on this, not on `catalog.count`:
+    /// a count cannot see a tap swap that nets zero.
+    private(set) var catalogGeneration = 0
     /// `catalog` keyed by `Package.ID`. The detail sheet resolves one `Package` per dependency and
     /// per dependent, and a linear scan of ~16k entries per lookup (each comparison building a
     /// fresh interpolated `id`) stalls the main actor visibly on a package with many deps.
@@ -73,7 +83,8 @@ final class AppModel {
 
         let cache = CatalogStore.loadCache()
         if let cache {
-            await setCatalog(cache.packages)
+            tapInstalls90d = cache.tapInstalls90d ?? [:]
+            await setCoreCatalog(cache.packages)
             catalogFetchedAt = cache.fetchedAt
         }
 
@@ -112,7 +123,8 @@ final class AppModel {
 
         do {
             let cache = try await CatalogStore.fetch()
-            await setCatalog(cache.packages)
+            tapInstalls90d = cache.tapInstalls90d ?? [:]
+            await setCoreCatalog(cache.packages)
             catalogFetchedAt = cache.fetchedAt
         } catch {
             // A stale catalog still beats an error screen; only a cold start with no cache fails.
@@ -120,13 +132,31 @@ final class AppModel {
         }
     }
 
-    /// The only way `catalog` changes, so neither derived index can drift from it. The catalog is
-    /// published before the first suspension — the grid never waits on the command index — and
-    /// awaiting the build here keeps the two paths (cache, fresh download) from landing out of order.
-    private func setCatalog(_ packages: [Package]) async {
-        catalog = packages
-        catalogIndex = Dictionary(packages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    /// The core half. The catalog is published (composed) before the first suspension — the grid
+    /// never waits on the command index — and awaiting the build here keeps the two paths (cache,
+    /// fresh download) from landing out of order. The command index rebuilds *only* here: tap
+    /// formulae carry no executables.txt data, so re-deriving a ~60k-key index on every tap
+    /// rescan would be pure waste.
+    private func setCoreCatalog(_ packages: [Package]) async {
+        coreCatalog = packages
+        composeCatalog()
         commandIndex = await Self.buildCommandIndex(packages)
+    }
+
+    /// The one writer of `catalog` and `catalogIndex`, so neither can drift from the two halves.
+    /// Dedupe is deterministic: core wins core-vs-tap, and the scan's tap-alphabetical order makes
+    /// the alphabetically-first tap win tap-vs-tap — the v1 accepted-collision rule, extended.
+    private func composeCatalog() {
+        var index = Dictionary(coreCatalog.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var composed = coreCatalog
+        composed.reserveCapacity(coreCatalog.count + tapScan.packages.count)
+        for package in tapScan.packages where index[package.id] == nil {
+            index[package.id] = package
+            composed.append(package)
+        }
+        catalog = composed
+        catalogIndex = index
+        catalogGeneration &+= 1
     }
 
     /// Inverts the per-formula command lists into "who provides this executable". ~60k names across
@@ -172,6 +202,18 @@ final class AppModel {
             folded = nil
         }
 
+        // The tap rescan rides every refresh — the session `brew update` pulls tap clones, so
+        // versions can bump mid-session. It follows the installed read because the graveyard rule
+        // needs the fresh keg list.
+        let scan: TapScan?
+        if let repository = client.repository {
+            scan = await TapStore.scan(repository: repository,
+                                       installed: Set((folded ?? installed).keys),
+                                       installs90d: tapInstalls90d)
+        } else {
+            scan = nil
+        }
+
         // A refresh started later holds the fresher answer; the sweep is slow enough that a ⌘R or a
         // post-mutation refresh can overtake this one, and a late write would mix the two.
         guard generation == refreshGeneration else { return }
@@ -180,6 +222,12 @@ final class AppModel {
             dependents = Receipts.invertDependents(folded)
         }
         if let outdatedResult { outdated = outdatedResult }
+        // Recompose only on a real change — scans are usually identical, and an unchanged catalog
+        // must not invalidate the view layer's keys.
+        if let scan, scan != tapScan {
+            tapScan = scan
+            composeCatalog()
+        }
     }
 
     /// Folds each keg's install receipt into its overlay entry. Nothing to read without a prefix,
@@ -193,6 +241,7 @@ final class AppModel {
             result[id]?.onRequest = receipt.onRequest
             result[id]?.dependencies = receipt.dependencies
             result[id]?.apps = receipt.apps
+            result[id]?.tap = receipt.tap
         }
         return result
     }
@@ -310,15 +359,33 @@ final class AppModel {
     }
 
     func install(_ package: Package) {
-        enqueue(.install(name: package.name, cask: package.kind == .cask),
+        enqueue(.install(name: qualifiedName(for: package), cask: package.kind == .cask),
                 title: "Installing \(package.title)",
                 targetID: package.id)
     }
 
     func upgrade(_ package: Package) {
-        enqueue(.upgrade(name: package.name, cask: package.kind == .cask),
+        enqueue(.upgrade(name: qualifiedName(for: package), cask: package.kind == .cask),
                 title: "Updating \(package.title)",
                 targetID: package.id)
+    }
+
+    /// The effective tap of a package: what the receipt says was installed, else what the catalog
+    /// says. The card tag, the detail row and the command line all read this one rule, so what
+    /// the UI claims and what brew is told never diverge.
+    func effectiveTap(for package: Package) -> String? {
+        installed[package.id]?.tap ?? package.tap
+    }
+
+    /// Tap items must reach brew fully qualified: a bare short name always resolves to core
+    /// (brew's API loader precedes its tap loaders), and the qualified form is also what
+    /// satisfies brew 6.x's tap-trust gate. The scan-membership guard is load-bearing — a stale
+    /// receipt naming a since-untapped tap would otherwise make brew clone the tap back.
+    private func qualifiedName(for package: Package) -> String {
+        guard let tap = effectiveTap(for: package), tapScan.taps.contains(tap) else {
+            return package.name
+        }
+        return "\(tap)/\(package.name)"
     }
 
     func upgradeAll() {

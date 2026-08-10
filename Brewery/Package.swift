@@ -33,6 +33,8 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let installs90d: Int?     // nil when the package is absent from the analytics files
     let license: String?      // formulae only; SPDX identifier
     let rubySourcePath: String? // repo-relative .rb path, e.g. "Formula/w/wget.rb"; nil when synthesized
+    let tap: String?          // "user/repo" for third-party taps; nil = core (implied by kind)
+    let tapRemote: String?    // the tap clone's git remote, for source links; nil for core
 
     /// Written out rather than synthesized: a `let` with an inline default drops out of the
     /// implicit memberwise init, which would break every existing `Package(kind:…)` call site.
@@ -49,7 +51,9 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
          commands: [String] = [],
          installs90d: Int? = nil,
          license: String? = nil,
-         rubySourcePath: String? = nil) {
+         rubySourcePath: String? = nil,
+         tap: String? = nil,
+         tapRemote: String? = nil) {
         self.kind = kind
         self.name = name
         self.displayName = displayName
@@ -64,6 +68,8 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         self.installs90d = installs90d
         self.license = license
         self.rubySourcePath = rubySourcePath
+        self.tap = tap
+        self.tapRemote = tapRemote
     }
 
     var id: String { Package.packageID(kind: kind, name: name) }
@@ -99,12 +105,17 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
 
     var homepageURL: URL? { homepage.flatMap(URL.init(string:)) }
 
-    /// The package's `.rb` definition on GitHub. The path comes from the API
-    /// (`ruby_source_path`, tap-relative), so homebrew-core's sharding scheme
-    /// (`Formula/w/wget.rb`, `Formula/lib/…`) is never guessed here; the catalog covers only the
-    /// two core taps, so the kind names the repo.
+    /// The package's `.rb` definition on GitHub. The path is always tap-relative and never
+    /// guessed: core paths come from the API (`ruby_source_path` — sharding schemes like
+    /// `Formula/w/wget.rb` are the API's business), tap paths from the scan. Core's repo is named
+    /// by the kind; a tap's is its actual git remote, and only a github.com remote gets a link —
+    /// other hosts have other blob-URL schemes, and no link beats a wrong one.
     var rubySourceURL: URL? {
         guard let rubySourcePath else { return nil }
+        if tap != nil {
+            guard let tapRemote, tapRemote.hasPrefix("https://github.com/") else { return nil }
+            return URL(string: "\(tapRemote)/blob/HEAD/\(rubySourcePath)")
+        }
         let repo = kind == .formula ? "homebrew-core" : "homebrew-cask"
         return URL(string: "https://github.com/Homebrew/\(repo)/blob/HEAD/\(rubySourcePath)")
     }
@@ -112,6 +123,18 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     /// "wget.rb" — the link label for `rubySourceURL`.
     var rubySourceFileName: String? {
         rubySourcePath.flatMap { $0.split(separator: "/").last.map(String.init) }
+    }
+
+    /// "Which tap is this from" always has an answer: the real tap, or the core tap the kind
+    /// implies. The detail sheet shows this for every package.
+    var tapLabel: String {
+        tap ?? (kind == .formula ? "homebrew/core" : "homebrew/cask")
+    }
+
+    /// The `user` half of a third-party tap — the identity people recognize, and all that fits
+    /// in a card's caption row. nil for core, which the kind tag already implies.
+    var tapOwner: String? {
+        tap.flatMap { $0.split(separator: "/").first.map(String.init) }
     }
 
     /// Favicon of the package homepage; nil when there is no homepage host to ask about.
@@ -130,6 +153,9 @@ nonisolated struct InstalledInfo: Equatable, Hashable {
     var dependencies: [String] = []
     /// Casks only: `.app` bundle names this cask installed, taken from its receipt.
     var apps: [String] = []
+    /// From the receipt's `source.tap`, normalized: core taps and absent → nil, else "user/repo".
+    /// Outranks the catalog's tap — the receipt records what was *actually* installed.
+    var tap: String? = nil
 }
 
 nonisolated struct OutdatedInfo: Equatable, Hashable {

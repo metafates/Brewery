@@ -49,6 +49,16 @@ struct BrewCommandTests {
         #expect(BrewCommand.install(name: hostile, cask: false).arguments == ["install", "--formula", hostile])
     }
 
+    @Test("a tap-qualified name is still one argv element, still exactly three tokens")
+    func qualifiedName() {
+        let install = BrewCommand.install(name: "charmbracelet/tap/gum", cask: false)
+        #expect(install.arguments == ["install", "--formula", "charmbracelet/tap/gum"])
+
+        let upgrade = BrewCommand.upgrade(name: "oven-sh/bun/bun", cask: false)
+        #expect(upgrade.arguments == ["upgrade", "--formula", "oven-sh/bun/bun"])
+        #expect(upgrade.arguments.count == 3)
+    }
+
     // MARK: - Destructive-token tripwire
 
     /// Every representable command. Kept exhaustive by `commandKind` below.

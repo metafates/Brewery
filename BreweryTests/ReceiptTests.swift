@@ -149,6 +149,23 @@ struct ReceiptParsingTests {
         // declared_directly first in receipt order, then the rest in receipt order;
         // "acme/tap/openssl@3" normalizes to its short name.
         #expect(receipt.dependencies == ["libidn2", "openssl@3", "libunistring", "gettext", "ca-certificates"])
+        // v4: a core source.tap folds to nil — otherwise every core upgrade would get qualified.
+        #expect(receipt.tap == nil)
+    }
+
+    @Test("a third-party source.tap survives; core and absent fold to nil")
+    func receiptTap() {
+        let tapped = """
+            {"installed_on_request": true,
+             "source": {"tap": "charmbracelet/tap", "path": "/opt/homebrew/Library/Taps/charmbracelet/homebrew-tap/crush.rb"}}
+            """
+        #expect(Receipts.parse(Data(tapped.utf8)).tap == "charmbracelet/tap")
+
+        let cask = Receipts.parse(Data(Self.caskReceipt.utf8))
+        #expect(cask.tap == nil)   // "homebrew/cask" in the fixture
+
+        let sourceless = Receipts.parse(Data(#"{"installed_on_request": true}"#.utf8))
+        #expect(sourceless.tap == nil)
     }
 
     @Test("installed_on_request: false for a keg pulled in as a dependency")

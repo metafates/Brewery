@@ -235,4 +235,40 @@ struct FuzzySearchTests {
         let subset = await FuzzySearch.rank(query: "convert", in: [imageoptim], commands: index)
         #expect(subset.isEmpty)
     }
+
+    // MARK: - Tap-qualified candidate (v4)
+
+    private static func tapFormula(_ name: String, tap: String) -> Package {
+        Package(kind: .formula, name: name, displayName: nil, desc: nil, homepage: nil,
+                version: "1.0", deprecated: false, disabled: false, tap: tap)
+    }
+
+    @Test("searching a tap owner surfaces that tap's packages")
+    func tapOwnerQuery() async {
+        let gum = Self.tapFormula("gum", tap: "charmbracelet/tap")
+        let wget = Self.formula("wget", desc: "Internet file retriever")
+
+        let hits = await FuzzySearch.rank(query: "charmbracelet", in: [wget, gum])
+        #expect(hits.map(\.package.name) == ["gum"])
+    }
+
+    @Test("a qualified hit never outranks an exact short-name match elsewhere")
+    func qualifiedNeverBeatsExact() async {
+        // Tap "gum/tools" ships "row" — its qualified string "gum/tools/row" prefix-matches
+        // a "gum" query. The package literally named gum must still win.
+        let decoy = Self.tapFormula("row", tap: "gum/tools")
+        let exact = Self.formula("gum")
+
+        let hits = await FuzzySearch.rank(query: "gum", in: [decoy, exact])
+        #expect(hits.first?.package.name == "gum")
+    }
+
+    @Test("qualified scoring never fires for core packages")
+    func qualifiedNeedsTap() async {
+        // If core packages were scored against a synthetic qualified string, "homebrew" would
+        // suddenly match everything.
+        let wget = Self.formula("wget")
+        let hits = await FuzzySearch.rank(query: "homebrew", in: [wget])
+        #expect(hits.isEmpty)
+    }
 }

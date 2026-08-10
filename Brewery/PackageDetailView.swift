@@ -184,6 +184,15 @@ struct PackageDetailView: View {
                     }
                     .accessibilityLabel("License \(license)")
                 }
+
+                // Every package answers "which tap is this from" — core items included, so the
+                // row is a constant of the sheet, not a third-party oddity.
+                statRow("spigot") {
+                    Text(tapLabel)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                .accessibilityLabel("From the \(tapLabel) tap")
             }
             .font(.subheadline)
 
@@ -287,18 +296,41 @@ struct PackageDetailView: View {
                       : "Update \(displayed.title)")
                 .accessibilityLabel("Update \(displayed.title)")
         case .notInstalled:
-            Button("Install") { model.install(displayed) }
-                .buttonStyle(.borderedProminent)
-                .disabled(displayed.disabled)
-                .help(displayed.disabled
-                      ? "Homebrew has disabled this package, so it can no longer be installed."
-                      : "Install \(displayed.title)")
-                .accessibilityLabel("Install \(displayed.title)")
+            // The trust disclosure: installing a tap item makes brew trust it persistently, and
+            // that should not happen silently on a click.
+            VStack(alignment: .trailing, spacing: 4) {
+                Button("Install") { model.install(displayed) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(displayed.disabled)
+                    .help(installHelp)
+                    .accessibilityLabel("Install \(displayed.title)")
+                if !displayed.disabled, let tap = model.effectiveTap(for: displayed) {
+                    Text("Trusts \(tap)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .help("Installing tells Homebrew to trust \(tap)/\(displayed.name) permanently.")
+                }
+            }
         }
+    }
+
+    private var installHelp: String {
+        if displayed.disabled {
+            return "Homebrew has disabled this package, so it can no longer be installed."
+        }
+        if let tap = model.effectiveTap(for: displayed) {
+            return "Install \(displayed.title) — Homebrew will trust \(tap)/\(displayed.name) permanently."
+        }
+        return "Install \(displayed.title)"
     }
 
     private var isPinned: Bool {
         model.outdated[displayed.id]?.pinned == true
+    }
+
+    /// The effective tap (receipt over catalog), falling back to the core tap the kind implies.
+    private var tapLabel: String {
+        model.effectiveTap(for: displayed) ?? displayed.tapLabel
     }
 
     // MARK: - Banner

@@ -81,6 +81,14 @@ struct PackageCardView: View {
     private var statusLine: some View {
         HStack(spacing: 6) {
             TagLabel(package.kindLabel)
+            // The owner half only ("charmbracelet") — the identity people recognize, and all
+            // that fits beside kind + version; the full tap lives in the detail sheet. Core
+            // items show nothing: the kind tag already implies core.
+            if let owner = tapOwner {
+                TagLabel(owner)
+                    .truncationMode(.middle)
+                    .layoutPriority(-1)
+            }
             versionLabel
             if package.disabled {
                 Text("disabled").foregroundStyle(.red)
@@ -101,6 +109,12 @@ struct PackageCardView: View {
     /// Installed, but nobody asked for it directly — the detail sheet's "Required by" says who did.
     private var isDependency: Bool {
         model.installed[package.id]?.onRequest == false
+    }
+
+    /// From the *effective* tap, so an item installed from a tap stays labelled even when a
+    /// same-named core entry won the catalog slot.
+    private var tapOwner: String? {
+        model.effectiveTap(for: package).flatMap { $0.split(separator: "/").first.map(String.init) }
     }
 
 

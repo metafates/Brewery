@@ -138,6 +138,16 @@ nonisolated enum FuzzySearch {
                 best = best.map { Swift.max($0, value) } ?? value
             }
         }
+        // Tap packages only (~200 of 16k): the qualified name as one more candidate, so
+        // "charmbracelet" surfaces that tap's packages. An exact short-name match elsewhere
+        // (1000) still outranks any qualified hit — equality is the only road to 1000, and a
+        // query equal to "user/repo/name" has earned it.
+        if let tap = package.tap {
+            fold(&buffer, "\(tap)/\(package.name)")
+            if let value = score(query: q, candidate: buffer) {
+                best = best.map { Swift.max($0, value) } ?? value
+            }
+        }
         if let best { return best }
 
         if let desc = package.desc {

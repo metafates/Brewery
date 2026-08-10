@@ -10,6 +10,7 @@ nonisolated struct Receipt: Equatable, Hashable {
     var onRequest: Bool
     var dependencies: [String]   // short names, `declared_directly` entries first
     var apps: [String] = []      // cask `.app` bundle names, e.g. "Firefox.app"
+    var tap: String? = nil       // v4, from `source.tap`; core taps normalized to nil
 }
 
 /// Reads Homebrew's per-keg install receipts. They answer both of v2's questions — "did the user
@@ -38,7 +39,15 @@ nonisolated enum Receipts {
         // (`tab.rb`) — the keg came in as somebody else's dependency.
         return Receipt(onRequest: payload.installedOnRequest ?? false,
                        dependencies: order(payload.runtimeDependencies?.entries ?? []),
-                       apps: payload.uninstallArtifacts?.flatMap { $0.app ?? [] } ?? [])
+                       apps: payload.uninstallArtifacts?.flatMap { $0.app ?? [] } ?? [],
+                       tap: normalizedTap(payload.source?.tap))
+    }
+
+    /// Receipts say `homebrew/core`/`homebrew/cask` for core installs; folding those to nil keeps
+    /// "nil = core" true everywhere — otherwise every core upgrade would get tap-qualified.
+    static func normalizedTap(_ tap: String?) -> String? {
+        guard let tap, !tap.isEmpty, !TapStore.coreTaps.contains(tap) else { return nil }
+        return tap
     }
 
     /// `declared_directly` first, receipt order preserved within each group, deduplicated.
@@ -90,9 +99,14 @@ nonisolated enum Receipts {
             private enum CodingKeys: String, CodingKey { case app }
         }
 
+        struct Source: Decodable {
+            let tap: String?
+        }
+
         let installedOnRequest: Bool?
         let runtimeDependencies: Dependencies?
         let uninstallArtifacts: [Artifact]?
+        let source: Source?
     }
 
     // MARK: - Sweep

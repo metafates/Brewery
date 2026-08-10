@@ -114,8 +114,10 @@ extension BreweryUITests {
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
         sleep(20)
 
-        let outdated = app.staticTexts["Outdated"].exists
-            ? app.staticTexts["Outdated"]
+        // Scoped to the sidebar: since cards grew an "Installed" state label, bare staticText
+        // queries can match a card and become ambiguous.
+        let outdated = app.outlines["Sidebar"].staticTexts["Outdated"].exists
+            ? app.outlines["Sidebar"].staticTexts["Outdated"]
             : app.outlines.cells.element(boundBy: 2)
         XCTAssertTrue(outdated.waitForExistence(timeout: 20), "No Outdated row.")
         let t0 = Date()
@@ -143,9 +145,9 @@ extension BreweryUITests {
         let searched = app.buttons.matching(NSPredicate(format: "label == %@", "Install")).count
         XCTAssertLessThan(searched, 40, "Search did not narrow the grid; got \(searched) cards.")
 
-        app.staticTexts["Installed"].click()
+        app.outlines["Sidebar"].staticTexts["Installed"].click()
         sleep(2)
-        app.staticTexts["Discover"].click()
+        app.outlines["Sidebar"].staticTexts["Discover"].click()
 
         // Read immediately — no settle — so a fallback to the full listing would be caught.
         let onReturn = app.buttons.matching(NSPredicate(format: "label == %@", "Install")).count

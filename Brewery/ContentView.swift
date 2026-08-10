@@ -51,7 +51,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
 /// plain state and not `.searchScopes`: scopes only surface while a search is active, and the
 /// filter has to govern empty-query browsing just the same.
 nonisolated enum KindFilter: String, CaseIterable, Identifiable {
-    case all, formulae, casks, fonts
+    case all, formulae, casks, fonts, taps
 
     var id: String { rawValue }
 
@@ -61,6 +61,7 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
         case .formulae: "Formulae"
         case .casks: "Casks"
         case .fonts: "Fonts"
+        case .taps: "From Taps"
         }
     }
 
@@ -72,6 +73,9 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
         // subset of a filter the user just picked, and the option pointless.
         case .casks: package.kind == .cask && !package.isFont
         case .fonts: package.isFont
+        // Everything the local tap scan contributed — the escape hatch from the popularity sort,
+        // where mostly-uncounted tap items otherwise sit at the bottom of 16k rows.
+        case .taps: package.tap != nil
         }
     }
 }
@@ -287,7 +291,8 @@ struct ContentView: View {
         let kindFilter: KindFilter
         let hideDeprecated: Bool
         let installedScope: InstalledScope
-        let catalogCount: Int
+        /// Not a count: a tap rescan can swap entries while netting zero, which a count cannot see.
+        let catalogGeneration: Int
         let installedCount: Int
         let outdatedCount: Int
     }
@@ -297,7 +302,7 @@ struct ContentView: View {
                   kindFilter: kindFilter,
                   hideDeprecated: hideDeprecated,
                   installedScope: installedScope,
-                  catalogCount: model.catalog.count,
+                  catalogGeneration: model.catalogGeneration,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count)
     }
@@ -308,7 +313,7 @@ struct ContentView: View {
                                       kindFilter: kindFilter,
                                       hideDeprecated: hideDeprecated,
                                       installedScope: installedScope),
-                  catalogCount: model.catalog.count,
+                  catalogGeneration: model.catalogGeneration,
                   commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count)
@@ -318,7 +323,9 @@ struct ContentView: View {
     /// being searched.
     private struct SearchKey: Equatable {
         let window: WindowToken
-        let catalogCount: Int
+        /// Deliberately here and not in `WindowToken`: a tap rescan re-ranks but never resets
+        /// the scroll window.
+        let catalogGeneration: Int
         /// The command index lands a beat after the catalog it is derived from; without this a
         /// query typed during launch would keep results that never saw the index.
         let commandCount: Int
