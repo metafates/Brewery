@@ -12,9 +12,17 @@ import SwiftUI
 struct PackageDetailView: View {
     let package: Package
 
-    /// What the sheet currently shows. A dependency row retargets it in place, so following the
-    /// graph needs no navigation stack and leaves the sheet presentation in `ContentView` alone.
-    @State private var displayed: Package
+    /// The pages pushed above `package` by dependency/conflict rows. Following the graph is a
+    /// drill-down, so it gets real navigation: back returns exactly the way you came, and each
+    /// page opens at the top. Manual rather than `NavigationStack` — this sheet is a custom
+    /// fixed-size surface (own footer, content-derived height, focus hacks) that framework
+    /// navigation chrome would fight.
+    @State private var stack: [Package] = []
+    /// Direction memory for the slide: push arrives from trailing, pop returns from leading.
+    @State private var isPopping = false
+    @State private var swipeBack = SwipeBackMonitor()
+
+    private var displayed: Package { stack.last ?? package }
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -22,7 +30,18 @@ struct PackageDetailView: View {
 
     init(package: Package) {
         self.package = package
-        _displayed = State(initialValue: package)
+    }
+
+    private func push(_ item: Package) {
+        guard item.id != displayed.id else { return }
+        isPopping = false
+        withAnimation(.smooth(duration: 0.3)) { stack.append(item) }
+    }
+
+    private func pop() {
+        guard !stack.isEmpty else { return }
+        isPopping = true
+        withAnimation(.smooth(duration: 0.3)) { _ = stack.removeLast() }
     }
 
     var body: some View {
@@ -32,6 +51,10 @@ struct PackageDetailView: View {
         let requiredBy = dependents
 
         return VStack(spacing: 0) {
+            if !stack.isEmpty {
+                backBar
+            }
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
@@ -117,6 +140,12 @@ struct PackageDetailView: View {
             // What the veil covers is exactly what ⌘R re-checks; the rows update in place when
             // it lands.
             .refreshVeil(model.isRefreshing)
+            // A fresh ScrollView per page: every package opens at the top instead of inheriting
+            // the previous page's offset — and the old identity carries the old offset away.
+            .id(displayed.id)
+            .transition(.asymmetric(
+                insertion: .move(edge: isPopping ? .leading : .trailing).combined(with: .opacity),
+                removal: .move(edge: isPopping ? .trailing : .leading).combined(with: .opacity)))
 
             Divider()
 
@@ -136,6 +165,11 @@ struct PackageDetailView: View {
         // walks the real controls, which keep theirs.
         .focusable()
         .focusEffectDisabled()
+        // The App Store gesture: a two-finger swipe right goes back. Installed as an event
+        // monitor because SwiftUI has no swipe-navigation and the vertical ScrollView ignores
+        // horizontal deltas anyway.
+        .onAppear { swipeBack.install { pop() } }
+        .onDisappear { swipeBack.remove() }
         .frame(width: 520, height: height(hasSections: !deps.isEmpty || !requiredBy.isEmpty || hasDetails))
         // Escape closes it. A sheet is window-modal on macOS, so clicking outside is not a
         // dismissal the platform offers — Escape and Done are.
@@ -153,6 +187,28 @@ struct PackageDetailView: View {
     private func height(hasSections: Bool) -> CGFloat {
         if model.latestOperation(for: displayed) != nil { return 580 }
         return hasSections ? 520 : 380
+    }
+
+    // MARK: - Navigation
+
+    /// Named, not just a chevron: "‹ openssl@3" says exactly where back leads. ⌘[ is the
+    /// platform's Go Back; Escape keeps closing the sheet — the existing contract.
+    private var backBar: some View {
+        HStack {
+            Button {
+                pop()
+            } label: {
+                Label(stack.count >= 2 ? stack[stack.count - 2].title : package.title,
+                      systemImage: "chevron.backward")
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut("[", modifiers: .command)
+            .help("Back")
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 2)
     }
 
     // MARK: - Header
@@ -592,7 +648,7 @@ struct PackageDetailView: View {
                     RelatedRow(package: package,
                                version: model.installed[package.id]?.versions.last,
                                detail: conflict.reason) {
-                        displayed = package
+                        push(package)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 1) {
@@ -646,7 +702,7 @@ struct PackageDetailView: View {
 
             ForEach(packages) { item in
                 RelatedRow(package: item, version: model.installed[item.id]?.versions.last) {
-                    displayed = item
+                    push(item)
                 }
             }
         }
@@ -830,6 +886,56 @@ private struct CopyButton: View {
         .buttonStyle(.borderless)
         .help("Copy")
         .accessibilityLabel(copied ? "Copied" : "Copy command")
+    }
+}
+
+/// The App Store back gesture: a mostly-horizontal two-finger swipe to the right pops a page.
+/// A local scroll-event monitor because SwiftUI has no swipe navigation; the sheet's vertical
+/// ScrollView ignores horizontal deltas, so nothing is stolen from scrolling. Fires once per
+/// gesture (latched until the fingers lift) and respects the system's swipe-navigation setting.
+/// ponytail: threshold-triggered with the standard slide, not finger-tracked; the upgrade path
+/// is `NSEvent.trackSwipeEvent` driving interactive progress.
+@MainActor
+final class SwipeBackMonitor {
+    private var monitor: Any?
+    private var accumulated: CGFloat = 0
+    private var latched = false
+    private var lastEvent: TimeInterval = 0
+
+    func install(_ back: @escaping () -> Void) {
+        remove()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            self?.handle(event, back: back)
+            return event
+        }
+    }
+
+    func remove() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    private func handle(_ event: NSEvent, back: () -> Void) {
+        guard NSEvent.isSwipeTrackingFromScrollEventsEnabled else { return }
+
+        if event.phase == .began || event.timestamp - lastEvent > 0.3 {
+            // A new gesture — either launchd-real (phases) or synthetic (a stale-time reset).
+            accumulated = 0
+            latched = false
+        }
+        lastEvent = event.timestamp
+        if event.phase == .ended || event.phase == .cancelled {
+            accumulated = 0
+            return
+        }
+
+        // Mostly-horizontal only: diagonal scrolling of the page must never navigate.
+        guard !latched, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
+        accumulated += event.scrollingDeltaX
+        if accumulated > 80 {
+            latched = true
+            back()
+        }
     }
 }
 
