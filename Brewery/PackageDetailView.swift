@@ -55,15 +55,13 @@ struct PackageDetailView: View {
                                 .accessibilityLabel("Open the \(displayed.title) homepage")
                             }
                             // The .rb file this package is defined by, on GitHub. Labelled with the
-                            // file name: "wget.rb" says exactly what will open.
+                            // file name: "wget.rb" says exactly what will open. Same face as the
+                            // homepage link — two links in one row speak with one voice, and the
+                            // </> glyph already says "code"; a font switch would read as a glitch.
                             if let source = displayed.rubySourceURL,
                                let file = displayed.rubySourceFileName {
                                 Link(destination: source) {
-                                    Label {
-                                        Text(file).monospaced()
-                                    } icon: {
-                                        Image(systemName: "chevron.left.forwardslash.chevron.right")
-                                    }
+                                    Label(file, systemImage: "chevron.left.forwardslash.chevron.right")
                                 }
                                 .accessibilityLabel("Open the \(displayed.title) definition source")
                             }
