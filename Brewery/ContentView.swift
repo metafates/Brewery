@@ -117,9 +117,6 @@ struct ContentView: View {
     private static let windowStep = 60
     @State private var window = ContentView.windowStep
 
-    /// Short enough to feel immediate, long enough that the eye can follow a card to its new slot.
-    private static let reflow: Animation = .smooth(duration: 0.22)
-
     var body: some View {
         Group {
             if model.brewMissing {
@@ -166,17 +163,12 @@ struct ContentView: View {
             // Short on purpose: ranking is a few milliseconds and runs off the main actor, so the
             // debounce only has to coalesce a fast typist's burst, not hide a slow search.
             guard (try? await Task.sleep(for: .milliseconds(50))) != nil else { return }
-            let hits = await FuzzySearch.rank(query: searchText,
-                                              in: sourcePackages,
-                                              commands: model.commandIndex)
-            // Animating at the mutation rather than with `.animation(value:)` on the grid: the
-            // value there would be the hit array, and diffing 16k elements every body pass is
-            // exactly the cost this view was just rescued from.
-            withAnimation(Self.reflow) { results[ranked] = hits }
+            results[ranked] = await FuzzySearch.rank(query: searchText,
+                                                     in: sourcePackages,
+                                                     commands: model.commandIndex)
         }
         .task(id: browseKey) {
-            let hits = sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
-            withAnimation(Self.reflow) { browseHits = hits }
+            browseHits = sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
         .onChange(of: model.findRequests) { searchFocused = true }
