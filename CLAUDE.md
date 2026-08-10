@@ -25,6 +25,13 @@ open "$(xcodebuild -project Brewery.xcodeproj -scheme Brewery -configuration Deb
 - `buildServer.json` (gitignored, machine-specific) bridges sourcekit-lsp to the Xcode project. Regenerate if the scheme changes:
   `xcode-build-server config -project Brewery.xcodeproj -scheme Brewery`
 
+## Design
+
+Top-class UI/UX is a hard requirement, not a nice-to-have. Follow Apple HIG and native macOS
+patterns (System Settings grammar for controls, App Store composition for catalog surfaces);
+prefer stock components with Liquid Glass chrome over custom drawing. Verify every visible change
+with the screenshot loop (temporary XCTest attachment walk) before committing.
+
 ## Commits
 
 Feel free to commit sparingly when needed.

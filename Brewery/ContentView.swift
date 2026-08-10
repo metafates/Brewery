@@ -105,6 +105,9 @@ struct ContentView: View {
     @AppStorage("discover.kindFilter") private var kindFilter: KindFilter = .all
     @AppStorage("discover.hideDeprecated") private var hideDeprecated = false
     @AppStorage("installed.scope") private var installedScope: InstalledScope = .onRequest
+    /// Installed's own kind filter — deliberately separate state from Discover's: switching tabs
+    /// must not carry one tab's filter into the other.
+    @AppStorage("installed.kindFilter") private var installedKindFilter: KindFilter = .all
 
     @State private var selection: SidebarSection? = .discover
     /// Ranked results per section, so leaving a tab and coming back shows that tab's results at
@@ -254,10 +257,17 @@ struct ContentView: View {
     private var sourcePackages: [Package] {
         switch section {
         case .discover: filtered(model.catalog)
-        case .installed: model.installedPackages(scope: installedScope)
+        case .installed: installedFiltered(model.installedPackages(scope: installedScope))
         case .outdated: model.outdatedPackages
         case .services: model.servicePackages
         }
+    }
+
+    /// Installed's kind pre-filter — same position in the pipeline as Discover's: before ranking,
+    /// and governing empty-query browsing too. A few hundred items, so no caching needed.
+    private func installedFiltered(_ packages: [Package]) -> [Package] {
+        guard installedKindFilter != .all else { return packages }
+        return packages.filter(installedKindFilter.matches)
     }
 
     /// Discover's pre-filter. It runs before `FuzzySearch.rank`, so ranking only ever sees fewer
@@ -280,9 +290,13 @@ struct ContentView: View {
         case .discover:
             filtersActive ? "No packages match the filters" : nil
         case .installed:
-            installedScope == .onRequest && !model.installed.isEmpty
-                ? "No packages installed on request"
-                : section.emptyMessage
+            if installedKindFilter != .all, !model.installed.isEmpty {
+                "No installed packages match the filter"
+            } else if installedScope == .onRequest, !model.installed.isEmpty {
+                "No packages installed on request"
+            } else {
+                section.emptyMessage
+            }
         case .outdated, .services:
             section.emptyMessage
         }
@@ -312,6 +326,7 @@ struct ContentView: View {
         let kindFilter: KindFilter
         let hideDeprecated: Bool
         let installedScope: InstalledScope
+        let installedKindFilter: KindFilter
         /// Not a count: a tap rescan can swap entries while netting zero, which a count cannot see.
         let catalogGeneration: Int
         let installedCount: Int
@@ -324,6 +339,7 @@ struct ContentView: View {
                   kindFilter: kindFilter,
                   hideDeprecated: hideDeprecated,
                   installedScope: installedScope,
+                  installedKindFilter: installedKindFilter,
                   catalogGeneration: model.catalogGeneration,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
@@ -335,7 +351,8 @@ struct ContentView: View {
                                       query: searchText,
                                       kindFilter: kindFilter,
                                       hideDeprecated: hideDeprecated,
-                                      installedScope: installedScope),
+                                      installedScope: installedScope,
+                                      installedKindFilter: installedKindFilter),
                   catalogGeneration: model.catalogGeneration,
                   commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
@@ -366,6 +383,7 @@ struct ContentView: View {
         let kindFilter: KindFilter
         let hideDeprecated: Bool
         let installedScope: InstalledScope
+        let installedKindFilter: KindFilter
     }
 
     // MARK: - Counts
@@ -392,7 +410,7 @@ struct ContentView: View {
     private var isNarrowed: Bool {
         switch section {
         case .discover: filtersActive
-        case .installed: installedScope != .onRequest
+        case .installed: installedScope != .onRequest || installedKindFilter != .all
         case .outdated, .services: false
         }
     }
@@ -432,6 +450,22 @@ struct ContentView: View {
             }
         }
         if section == .installed {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Picker("Kind", selection: $installedKindFilter) {
+                        ForEach(KindFilter.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Label("Filter", systemImage: installedKindFilter != .all
+                          ? "line.3.horizontal.decrease.circle.fill"
+                          : "line.3.horizontal.decrease.circle")
+                }
+                .help("Filter by kind")
+                .accessibilityLabel("Filter")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Picker("Scope", selection: $installedScope) {
                     ForEach(InstalledScope.allCases) { scope in
