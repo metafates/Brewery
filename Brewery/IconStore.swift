@@ -33,11 +33,44 @@ actor IconStore {
     /// the cap by an earlier session could sit there through every short session that follows.
     private var unsweptBytes = IconStore.sweepInterval
 
+    /// How long a host that failed to *answer at all* is left alone. A transport failure earns no
+    /// disk marker (it says nothing about the host), but without some backoff every reappearance of
+    /// the card re-fires the request — which on a network where the icon host resolves slowly means
+    /// the grid spends forever re-asking questions it already knows time out.
+    private static let retryDelay: TimeInterval = 5 * 60
+
+    /// mtime is the LRU clock, and LRU does not need second precision. Re-stamping it on every read
+    /// costs a write syscall per icon per appearance, serialized behind this actor.
+    private static let touchInterval: TimeInterval = 24 * 60 * 60
+
+    private var failedAt: [String: Date] = [:]
+
+    /// Icons are decoration: a slow lookup must never hold a connection slot the way the default
+    /// 60 s timeout does. Its own session so these limits cannot affect catalog downloads.
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        // Every icon comes from one host, so only the session's first lookup can be slow — after it
+        // resolves, the OS has the answer. The budget therefore has to outlast one bad resolution
+        // (a resolver that falls back takes ~5 s here) or no icon ever loads; what keeps the UI free
+        // is the concurrency cap, not a short timeout.
+        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 30
+        configuration.httpMaximumConnectionsPerHost = 8
+        return URLSession(configuration: configuration)
+    }()
+
     private let directory = CatalogStore.supportDirectory
         .appending(path: "Icons", directoryHint: .isDirectory)
 
+    /// `AsyncImage` threw a scrolled-away load away, which capped how much could ever be in flight.
+    /// Not cancelling is what fixes icons-only-load-after-clicking, but it removes that cap, so the
+    /// cap has to come from somewhere: at most this many downloads run at once and the rest queue.
+    private static let maxConcurrentFetches = 6
+
     private let memory = NSCache<NSString, NSImage>()
     private var inFlight: [String: Task<NSImage?, Never>] = [:]
+    private var activeFetches = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
 
     init() {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -53,11 +86,43 @@ actor IconStore {
         if let entry = read(key) {
             if let image = entry.image { memory.setObject(image, forKey: key as NSString) }
             // Stale-while-revalidate: hand back what we have, refresh out of band.
-            if !entry.fresh { _ = fetch(host: host, key: key) }
+            if !entry.fresh, !isCoolingDown(key) { _ = fetch(host: host, key: key) }
             return entry.image
         }
 
+        // A host that just failed to answer gets left alone rather than re-asked on every
+        // reappearance of the card — otherwise a resolver that times out costs the grid the same
+        // stall over and over for as long as the user scrolls.
+        guard !isCoolingDown(key) else { return nil }
+
         return await fetch(host: host, key: key).value
+    }
+
+    private func isCoolingDown(_ key: String) -> Bool {
+        guard let failed = failedAt[key] else { return false }
+        guard Date.now.timeIntervalSince(failed) < Self.retryDelay else {
+            failedAt[key] = nil
+            return false
+        }
+        return true
+    }
+
+    /// A plain async semaphore. The slot is handed straight to the next waiter rather than released
+    /// and re-taken, so a queued host cannot be overtaken by a fresh caller.
+    private func acquireSlot() async {
+        guard activeFetches >= Self.maxConcurrentFetches else {
+            activeFetches += 1
+            return
+        }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    private func releaseSlot() {
+        if waiting.isEmpty {
+            activeFetches -= 1
+        } else {
+            waiting.removeFirst().resume()
+        }
     }
 
     // MARK: - Pure helpers
@@ -112,13 +177,20 @@ actor IconStore {
     /// touches mtime and leaves birthtime alone.
     private func read(_ key: String) -> Entry? {
         let url = fileURL(key)
-        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .creationDateKey]),
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .creationDateKey,
+                                                            .contentModificationDateKey]),
               let size = values.fileSize else { return nil }
 
+        let now = Date.now
         let fresh = Self.isMarkerFresh(birthtime: values.creationDate ?? .distantPast,
-                                       now: .now,
+                                       now: now,
                                        ttl: Self.ttl)
-        try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: url.path)
+        // Only re-stamp a clock the LRU reads in days. Touching on every read costs one write
+        // syscall per icon per appearance, all of it serialized behind this actor.
+        if let accessed = values.contentModificationDate,
+           now.timeIntervalSince(accessed) > Self.touchInterval {
+            try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: url.path)
+        }
 
         // Zero bytes is the negative marker: it renders as our SF Symbol fallback, never as
         // DuckDuckGo's stand-in globe, because empty data simply cannot decode.
@@ -173,7 +245,9 @@ actor IconStore {
         if let existing = inFlight[key] { return existing }
 
         let task = Task {
+            await self.acquireSlot()
             let bytes = await Self.download(host: host)
+            self.releaseSlot()
             return self.finish(key: key, bytes: bytes)
         }
         inFlight[key] = task
@@ -182,9 +256,14 @@ actor IconStore {
 
     private func finish(key: String, bytes: Data?) -> NSImage? {
         inFlight[key] = nil
-        // nil means we never got an answer (offline, DNS): retry next launch rather than poison
-        // the cache with a week-long marker.
-        guard let bytes else { return nil }
+        // nil means we never got an answer (offline, slow DNS). That says nothing about the host, so
+        // it earns no week-long disk marker — just a short in-memory cooldown, so the grid stops
+        // re-asking a question that is currently timing out.
+        guard let bytes else {
+            failedAt[key] = .now
+            return nil
+        }
+        failedAt[key] = nil
 
         let image = bytes.isEmpty ? nil : NSImage(data: bytes)
         write(image == nil ? Data() : bytes, key: key)
@@ -198,7 +277,7 @@ actor IconStore {
         guard let url = faviconURL(host: host) else { return Data() }
         // Icons no longer route through URLCache: this store *is* the cache.
         let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
-        guard let (data, response) = try? await URLSession.shared.data(for: request) else { return nil }
+        guard let (data, response) = try? await session.data(for: request) else { return nil }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             return Data()
         }
