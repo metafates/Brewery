@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-/// The three fixed destinations of the sidebar.
+/// The fixed destinations of the sidebar.
 nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     case discover, installed, outdated, services
 

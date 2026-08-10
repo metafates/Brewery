@@ -1,41 +1,45 @@
 # Brewery
 
-A native macOS app for browsing and managing Homebrew packages.
+A native macOS app for Homebrew. SwiftUI, no third-party dependencies.
 
-Search the full catalogue — around 16,000 formulae and casks — see what you have
-installed, and keep it up to date, without leaving the keyboard or reaching for a
-terminal. Written in SwiftUI with no third-party dependencies.
+Search the full catalog of roughly 16,000 formulae and casks, see what you have
+installed, update it, and manage background services, all without opening a
+terminal. Packages from your third-party taps show up too, read straight off
+disk.
 
 ## What it does
 
-- **Search everything.** Fuzzy matching across the whole catalogue, including by the
-  commands a formula provides: typing `convert` finds `imagemagick`, and the card says
-  why it matched.
-- **Filter what you browse.** Formulae, casks, or fonts; optionally hiding deprecated
-  packages. Installed narrows to what you asked for rather than everything that came
-  along as a dependency.
-- **See the whole package.** Install counts over the last 90 days, caveats with the real
-  Homebrew prefix substituted in, provided commands, conflicts, license, dependencies,
-  and — for anything pulled in as a dependency — what required it.
-- **Install and update.** Per package or everything at once, with live output, a queue
-  you can cancel from, and cards that flip as operations land.
+- Fuzzy search across everything, including the commands a formula provides:
+  typing `convert` finds `imagemagick`, and the card tells you why it matched.
+- Browsing sorted by popularity, with filters for kind (formulae, casks, fonts)
+  and source (taps only), plus an on-request scope so dependencies stay out of
+  your way.
+- Package pages with install counts, caveats rendered the way brew means them
+  (copyable command blocks included), provided commands, cask contents, service
+  details, conflicts, licenses, and a navigable dependency graph.
+- Install and update, per package or all at once, with live logs and a
+  cancellable queue.
+- A Services tab in the style of Login Items: see every brew service, its
+  status, and a switch to start or stop it.
 
 ## Non-destructive by design
 
-Brewery can install and upgrade. It cannot uninstall, clean up, pin, or zap, and this is
-enforced by construction rather than by discipline: every brew invocation comes from a
-closed enum of seven commands, there is no path that execs brew with arbitrary arguments,
-and a test fails the build if a destructive token ever appears in one. `brew`'s own
-periodic cleanup — which `install` and `upgrade` trigger by default — is switched off on
-every invocation.
+Brewery installs, upgrades, and toggles services. It cannot uninstall, clean
+up, pin, or zap. This is enforced by construction rather than by discipline:
+every brew invocation comes from a closed enum of ten commands, nothing execs
+brew with arbitrary arguments, and a test fails the build if a destructive
+token ever shows up. Brew's own periodic cleanup, which install and upgrade
+normally trigger, is switched off on every invocation.
 
 ## Requirements
 
 - macOS 26 or later
-- [Homebrew](https://brew.sh) at `/opt/homebrew` (Apple silicon) or `/usr/local` (Intel).
-  If it is missing, the app says so and links you to the installer.
+- [Homebrew](https://brew.sh) at `/opt/homebrew` (Apple silicon) or
+  `/usr/local` (Intel). If it is missing, the app says so and links to the
+  installer.
 
-The app is not sandboxed, because it runs the `brew` binary.
+The app is not sandboxed. It runs the `brew` binary, which a sandbox would
+forbid.
 
 ## Building
 
@@ -44,9 +48,9 @@ xcodebuild -project Brewery.xcodeproj -scheme Brewery -configuration Debug build
 xcodebuild test -project Brewery.xcodeproj -scheme Brewery -destination 'platform=macOS' -only-testing:BreweryTests
 ```
 
-`ARCHITECTURE.md` documents the design and the Homebrew behaviour it depends on;
-`CLAUDE.md` has the day-to-day commands.
+`ARCHITECTURE.md` documents the design and the Homebrew behavior it depends
+on. `CLAUDE.md` has the day-to-day commands.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).

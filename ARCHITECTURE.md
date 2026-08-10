@@ -101,7 +101,7 @@ Every keg carries an install-time receipt, and it answers all of v2's dependency
 
 ## File layout
 
-~16 Swift files, flat in `Brewery/`. Targets use filesystem-synchronized groups — **never edit `project.pbxproj` to add files**.
+~18 Swift files, flat in `Brewery/`. Targets use filesystem-synchronized groups — **never edit `project.pbxproj` to add files**.
 
 | File | Responsibility |
 |---|---|
@@ -120,7 +120,7 @@ Every keg carries an install-time receipt, and it answers all of v2's dependency
 | `ContentView.swift` | `NavigationSplitView` shell: sidebar, `.searchable`, operations popover, brew-missing state |
 | `PackageGridView.swift` | `ScrollView` + `LazyVGrid` of cards, empty states |
 | `PackageCardView.swift` | One card: icon, name, status line, description, action button |
-| `PackageDetailView.swift` | Sheet: header, homepage link, warnings, action button, operation log |
+| `PackageDetailView.swift` | Sheet: `DetailPage` per drill-down level (manual stack, footer back button, swipe-back monitor), header, links, caveats renderer (`CaveatFormat`/`RichText`/`CopyButton`), Contents/Service sections, operation log |
 | `PackageIconView.swift` | icon view backed by `IconStore` (v3; was `AsyncImage`), SF Symbol fallbacks |
 | `OperationLogView.swift` | Monospaced auto-scrolling log for one operation |
 
