@@ -71,6 +71,7 @@ struct PackageDetailView: View {
                     }
 
                     if let text = displayed.resolvedCaveats(prefix: model.client.prefix), !text.isEmpty {
+                        Divider()
                         caveats(text)
                     }
 
@@ -417,26 +418,24 @@ struct PackageDetailView: View {
     /// backticks mean inline code, two-space-indented lines are commands and paths, blank lines
     /// separate paragraphs. Rendered as such — prose with real code spans, indented runs as
     /// copyable code blocks — instead of the undifferentiated slab a single `Text` makes.
+    /// A plain section like Commands and Dependencies, not a `GroupBox`: the box indented its
+    /// label off the shared margin, and its container doubled the code blocks' own chips.
     private func caveats(_ text: String) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(CaveatFormat.blocks(of: text).enumerated()), id: \.offset) { _, block in
-                    switch block {
-                    case .text(let paragraph):
-                        // AppKit-backed on purpose: links get the pointing hand over exactly
-                        // the link (and open on click) — per-run cursors are beyond SwiftUI Text.
-                        RichText(text: CaveatFormat.attributed(paragraph))
-                    case .code(let code):
-                        codeBlock(code)
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Caveats")
+
+            ForEach(Array(CaveatFormat.blocks(of: text).enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .text(let paragraph):
+                    // AppKit-backed on purpose: links get the pointing hand over exactly
+                    // the link (and open on click) — per-run cursors are beyond SwiftUI Text.
+                    RichText(text: CaveatFormat.attributed(paragraph))
+                case .code(let code):
+                    codeBlock(code)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label("Caveats", systemImage: "info.circle")
-                .font(.subheadline)
-                .fontWeight(.semibold)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// One indented run — commands meant to be executed, so they come with a copy button.
