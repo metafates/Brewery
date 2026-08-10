@@ -142,7 +142,10 @@ struct PackageDetailView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
+        // Centered, not top-aligned: the v4 tap row made the info column taller than the icon,
+        // and a top-pinned icon reads off-center against the stat rows. Centering is also right
+        // when the column is the *shorter* one (a minimal package's three lines).
+        HStack(alignment: .center, spacing: 16) {
             PackageIconView(package: displayed, size: 96)
                 .accessibilityHidden(true)
 
@@ -199,7 +202,6 @@ struct PackageDetailView: View {
             Spacer(minLength: 8)
 
             action
-                .padding(.top, 2)
         }
     }
 
