@@ -48,10 +48,6 @@ struct PackageDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !stack.isEmpty {
-                backBar
-            }
-
             // Every page in the drill-down stays mounted: the top page covers its parent, and
             // going back reveals the parent exactly as it was left — scroll position included.
             // Identity is the stack slot, so revisiting a package deeper down never collides.
@@ -74,6 +70,22 @@ struct PackageDetailView: View {
             Divider()
 
             HStack(spacing: 12) {
+                // Back lives in the footer, bottom-left — the dialog grammar — because the
+                // footer's height never changes: a bar above the content skewed the layout
+                // every time the first push or the last pop toggled it. ⌘[ is the platform's
+                // Go Back; Escape keeps closing the sheet.
+                if !stack.isEmpty {
+                    Button {
+                        pop()
+                    } label: {
+                        Label(stack.count >= 2 ? stack[stack.count - 2].title : package.title,
+                              systemImage: "chevron.backward")
+                    }
+                    .buttonStyle(.borderless)
+                    .keyboardShortcut("[", modifiers: .command)
+                    .help("Back")
+                    .transition(.opacity)
+                }
                 Spacer()
                 // Left of Done, and not prominent: Done is the default action, and two filled
                 // buttons side by side would leave neither reading as the one Return triggers.
@@ -121,29 +133,6 @@ struct PackageDetailView: View {
         if model.latestOperation(for: displayed) != nil { return 580 }
         return hasSections ? 520 : 380
     }
-
-    // MARK: - Navigation
-
-    /// Named, not just a chevron: "‹ openssl@3" says exactly where back leads. ⌘[ is the
-    /// platform's Go Back; Escape keeps closing the sheet — the existing contract.
-    private var backBar: some View {
-        HStack {
-            Button {
-                pop()
-            } label: {
-                Label(stack.count >= 2 ? stack[stack.count - 2].title : package.title,
-                      systemImage: "chevron.backward")
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut("[", modifiers: .command)
-            .help("Back")
-            Spacer()
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 2)
-    }
-
 
     /// The `.app` bundles this cask put on disk and that are still there. Resolved on each pass
     /// rather than cached: an app dragged to the Trash should stop being offered.
