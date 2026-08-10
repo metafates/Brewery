@@ -320,10 +320,11 @@ Alternatives considered: keeping `URLCache` + retry-on-appear (doesn't fix cance
 
 ## Project setting changes
 
-1. `project.pbxproj`: `ENABLE_APP_SANDBOX = YES` → `NO` in **both** app-target configurations (Debug + Release). The app execs brew — impossible sandboxed. `ENABLE_HARDENED_RUNTIME = YES` stays. (This is the only pbxproj edit ever needed; source files are picked up by the synced groups.)
+1. `project.pbxproj`: `ENABLE_APP_SANDBOX = YES` → `NO` in **both** app-target configurations (Debug + Release). The app execs brew — impossible sandboxed. `ENABLE_HARDENED_RUNTIME = YES` stays. (Build settings are the only reason to touch the pbxproj; source files are picked up by the synced groups and must never be added by hand.)
 2. Delete `Brewery/Item.swift`; strip SwiftData from `BreweryApp.swift`.
 3. Update `CLAUDE.md`'s "SwiftUI + SwiftData" line.
-4. Nothing else: no Info.plist keys, no entitlements file, no packages.
+4. Bundle metadata, in both app-target configurations, via `GENERATE_INFOPLIST_FILE`'s build settings rather than a checked-in plist: `INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.developer-tools` (a front end for a package manager is developer tooling) and `INFOPLIST_KEY_NSHumanReadableCopyright`. Everything else in the plist — identifier, versions, `LSMinimumSystemVersion`, `CFBundleIconName` — is derived from settings Xcode already sets.
+5. Nothing else: no checked-in Info.plist, no entitlements file, no packages.
 
 ## Tests
 
