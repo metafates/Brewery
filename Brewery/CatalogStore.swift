@@ -41,7 +41,7 @@ nonisolated struct CatalogStore {
     static let maxCacheAge: TimeInterval = 24 * 60 * 60
 
     /// Bumped whenever `Package`'s shape changes; a mismatch discards the cache and re-downloads.
-    static let cacheVersion = 3
+    static let cacheVersion = 4
 
     /// Application Support/Brewery, created on demand.
     static var supportDirectory: URL {
@@ -187,6 +187,18 @@ nonisolated struct CatalogStore {
     // Both catalogs carry far more per entry than the UI needs (bottles, artifacts, variations…);
     // these throwaway types declare only the keys we read and `JSONDecoder` drops the rest.
 
+    /// Decodes a value only if it has the shape we expect, and yields nil otherwise instead of
+    /// throwing. One entry with a surprising shape would otherwise abort the whole 8.5k decode —
+    /// which is exactly how a handful of null elements in `conflicts_with_reasons` once left the
+    /// app with no catalog at all.
+    private struct Lenient<Value: Decodable>: Decodable {
+        let value: Value?
+
+        init(from decoder: any Decoder) throws {
+            value = try? decoder.singleValueContainer().decode(Value.self)
+        }
+    }
+
     private struct FormulaEntry: Decodable {
         struct Versions: Decodable {
             let stable: String?
@@ -196,6 +208,7 @@ nonisolated struct CatalogStore {
         let desc: String?
         let homepage: String?
         let versions: Versions?
+        let license: Lenient<String>?
         let deprecated: Bool?
         let disabled: Bool?
         let caveats: String?
@@ -205,7 +218,7 @@ nonisolated struct CatalogStore {
         let conflictsWithReasons: [String?]?
 
         enum CodingKeys: String, CodingKey {
-            case name, desc, homepage, versions, deprecated, disabled, caveats
+            case name, desc, homepage, versions, license, deprecated, disabled, caveats
             case conflictsWith = "conflicts_with"
             case conflictsWithReasons = "conflicts_with_reasons"
         }
@@ -237,7 +250,8 @@ nonisolated struct CatalogStore {
                     caveats: entry.caveats,
                     conflicts: zipConflicts(entry.conflictsWith, entry.conflictsWithReasons),
                     commands: commands[entry.name] ?? [],
-                    installs90d: installs[entry.name])
+                    installs90d: installs[entry.name],
+                    license: entry.license?.value)
         }
     }
 

@@ -372,6 +372,11 @@ final class AppModel {
         operations.last { $0.targetID == package.id }
     }
 
+    /// The queued or running operation on this package, if any — what a card's Cancel acts on.
+    func activeOperation(for package: Package) -> BrewOperation? {
+        operations.last { $0.targetID == package.id && !$0.isFinished }
+    }
+
     var isQueueActive: Bool { operations.contains { !$0.isFinished } }
 
     var activeCount: Int { operations.filter { !$0.isFinished }.count }

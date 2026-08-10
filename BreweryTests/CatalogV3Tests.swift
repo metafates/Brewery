@@ -298,7 +298,9 @@ struct CatalogV3Tests {
 
     @Test("a cache without the v3 schema stamp is treated as no cache")
     func cacheVersionMismatch() throws {
-        #expect(CatalogStore.cacheVersion == 3)
+        // Bumped to 4 when `license` joined Package: an older file decodes without it and would
+        // otherwise be served as if it were complete.
+        #expect(CatalogStore.cacheVersion == 4)
         #expect(CatalogCache(fetchedAt: .now, packages: []).version == CatalogStore.cacheVersion)
 
         // What the shipped v2 file looks like: no `version` key at all, so the decode throws — which
@@ -325,5 +327,43 @@ struct CatalogV3Tests {
         let fontconfig = Package(kind: .formula, name: "font-util", displayName: nil, desc: nil,
                                  homepage: nil, version: "1.4.1", deprecated: false, disabled: false)
         #expect(!fontconfig.isFont)
+    }
+}
+
+@Suite("License decoding")
+struct LicenseDecodingTests {
+
+    @Test("A formula's SPDX license is carried through")
+    func decodesLicense() throws {
+        let json = """
+        [{"name":"wget","desc":"Internet file retriever","homepage":"https://www.gnu.org/software/wget/",
+          "versions":{"stable":"1.25.0"},"license":"GPL-3.0-or-later","deprecated":false,"disabled":false}]
+        """.data(using: .utf8)!
+        let package = try #require(try CatalogStore.decodeFormulae(json).first)
+        #expect(package.license == "GPL-3.0-or-later")
+        #expect(package.licenseLabel == "GPL-3.0-or-later")
+    }
+
+    /// The field is a plain string today, but it has a history of being an SPDX expression object.
+    /// One surprising entry must not take the whole catalog down with it.
+    @Test("An unexpected license shape decodes as nil rather than throwing")
+    func toleratesUnexpectedLicenseShape() throws {
+        let json = """
+        [{"name":"a","versions":{"stable":"1"},"license":{"any_of":["MIT","Apache-2.0"]}},
+         {"name":"b","versions":{"stable":"2"},"license":"MIT"}]
+        """.data(using: .utf8)!
+        let packages = try CatalogStore.decodeFormulae(json)
+        #expect(packages.count == 2)
+        #expect(packages[0].licenseLabel == nil)
+        #expect(packages[1].licenseLabel == "MIT")
+    }
+
+    @Test("Casks carry no license")
+    func casksHaveNoLicense() throws {
+        let json = """
+        [{"token":"iterm2","name":["iTerm2"],"version":"3.5.11","homepage":"https://iterm2.com/"}]
+        """.data(using: .utf8)!
+        let package = try #require(try CatalogStore.decodeCasks(json).first)
+        #expect(package.licenseLabel == nil)
     }
 }

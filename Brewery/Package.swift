@@ -31,6 +31,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let conflicts: [Conflict] // formulae only; cask `conflicts_with` has another shape and is skipped
     let commands: [String]    // formulae only; the executables this formula installs
     let installs90d: Int?     // nil when the package is absent from the analytics files
+    let license: String?      // formulae only; SPDX identifier
 
     /// Written out rather than synthesized: a `let` with an inline default drops out of the
     /// implicit memberwise init, which would break every existing `Package(kind:…)` call site.
@@ -45,7 +46,8 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
          caveats: String? = nil,
          conflicts: [Conflict] = [],
          commands: [String] = [],
-         installs90d: Int? = nil) {
+         installs90d: Int? = nil,
+         license: String? = nil) {
         self.kind = kind
         self.name = name
         self.displayName = displayName
@@ -58,6 +60,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         self.conflicts = conflicts
         self.commands = commands
         self.installs90d = installs90d
+        self.license = license
     }
 
     var id: String { Package.packageID(kind: kind, name: name) }
@@ -68,6 +71,9 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     }
 
     var title: String { displayName ?? name }
+
+    /// SPDX identifier, formulae only — casks carry no license in the API.
+    var licenseLabel: String? { license?.isEmpty == false ? license : nil }
 
     /// What kind of thing this is, in a word. The icon cannot say it: once a favicon loads it
     /// replaces the SF Symbol that would have distinguished a formula from a cask.

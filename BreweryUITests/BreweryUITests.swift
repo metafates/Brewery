@@ -155,3 +155,34 @@ extension BreweryUITests {
         XCTAssertEqual(field.value as? String, "vim", "The query was not restored.")
     }
 }
+
+/// Regression: narrowing a search down to a single card must not shift the grid vertically.
+extension BreweryUITests {
+    /// Cards are the only large buttons on screen; toolbar items are small.
+    private func topCardY(_ app: XCUIApplication) -> (y: CGFloat, count: Int) {
+        let cards = app.buttons.allElementsBoundByIndex
+            .map(\.frame)
+            .filter { $0.height > 100 && $0.width > 150 }
+        return (cards.map(\.origin.y).min() ?? -1, cards.count)
+    }
+
+    func testGridDoesNotShiftWhenNarrowingToOneResult() throws {
+        let app = launched()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
+        sleep(20)
+
+        focusSearch(app, typing: "wget")
+        sleep(2)
+        let many = topCardY(app)
+        XCTAssertGreaterThan(many.count, 1, "Expected several cards for the wider query.")
+
+        app.typeText("paste")   // appended -> "wgetpaste", a single result
+        sleep(2)
+        let one = topCardY(app)
+        XCTAssertEqual(one.count, 1, "Expected exactly one card.")
+
+        print("GRID_Y many=\(many.y) (\(many.count) cards) one=\(one.y) (\(one.count) cards) delta=\(one.y - many.y)")
+        XCTAssertEqual(one.y, many.y, accuracy: 0.5,
+                       "Grid shifted by \(one.y - many.y)pt when narrowing to one result.")
+    }
+}

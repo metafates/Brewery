@@ -143,6 +143,13 @@ struct PackageDetailView: View {
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("\(installs.formatted(.number)) installs in the last 90 days")
                 }
+
+                if let license = displayed.licenseLabel {
+                    Label(license, systemImage: "doc.text")
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .accessibilityLabel("License \(license)")
+                }
             }
             .font(.subheadline)
 

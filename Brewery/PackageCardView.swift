@@ -154,9 +154,22 @@ struct PackageCardView: View {
             .help("\(package.title) is installed.")
 
         case .busy:
-            ProgressView()
-                .controlSize(.small)
-                .accessibilityLabel("Working on \(package.title)")
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Working on \(package.title)")
+                // Only when this package has its own operation: a card made busy by Upgrade All has
+                // nothing of its own to stop.
+                if let operation = model.activeOperation(for: package) {
+                    Button { model.cancel(operation) } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Cancel")
+                    .accessibilityLabel("Cancel \(package.title)")
+                }
+            }
         }
     }
 }
