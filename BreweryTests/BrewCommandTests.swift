@@ -15,7 +15,8 @@ struct BrewCommandTests {
 
     @Test("read commands")
     func readArguments() {
-        #expect(BrewCommand.listFormulae.arguments == ["list", "--versions"])
+        // Bare `brew list --versions` lists casks as well, so the kind token is load-bearing.
+        #expect(BrewCommand.listFormulae.arguments == ["list", "--formula", "--versions"])
         #expect(BrewCommand.listCasks.arguments == ["list", "--cask", "--versions"])
         #expect(BrewCommand.outdated.arguments == ["outdated", "--json=v2"])
     }
@@ -122,7 +123,11 @@ struct BrewCommandTests {
             case .upgradeAll:
                 // Bare `brew upgrade` — no name, so there is nothing to disambiguate.
                 #expect(arguments == ["upgrade"])
-            case .listFormulae, .listCasks, .outdated, .update:
+            case .listFormulae:
+                // The one read command that carries a kind token, and it must: without it brew
+                // lists casks alongside formulae.
+                #expect(arguments == ["list", "--formula", "--versions"])
+            case .listCasks, .outdated, .update:
                 #expect(!arguments.contains("--formula"))
             }
         }

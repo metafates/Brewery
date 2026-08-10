@@ -67,9 +67,26 @@ struct PackageCardView: View {
             if model.outdated[package.id]?.pinned == true {
                 Text("pinned").foregroundStyle(.secondary)
             }
+            if isDependency {
+                dependencyTag
+            }
         }
         .font(.caption)
         .lineLimit(1)
+    }
+
+    /// Installed, but nobody asked for it directly — the detail sheet's "Required by" says who did.
+    private var isDependency: Bool {
+        model.installed[package.id]?.onRequest == false
+    }
+
+    /// Metadata, not an action: subdued enough that it never reads as a button.
+    private var dependencyTag: some View {
+        Text("dependency")
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(.quaternary, in: .capsule)
     }
 
     /// Casks report versions like "2.1.50,56f0a83" — only the part a human reads is shown.

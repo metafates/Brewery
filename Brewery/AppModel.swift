@@ -11,7 +11,11 @@ import Observation
 /// queue needs no locks.
 @Observable
 final class AppModel {
-    var catalog: [Package] = []
+    private(set) var catalog: [Package] = []
+    /// `catalog` keyed by `Package.ID`. The detail sheet resolves one `Package` per dependency and
+    /// per dependent, and a linear scan of ~16k entries per lookup (each comparison building a
+    /// fresh interpolated `id`) stalls the main actor visibly on a package with many deps.
+    private var catalogIndex: [Package.ID: Package] = [:]
     var catalogLoading = false
     var catalogFailed = false
 
@@ -19,6 +23,10 @@ final class AppModel {
     /// under a second to re-query.
     var installed: [Package.ID: InstalledInfo] = [:]
     var outdated: [Package.ID: OutdatedInfo] = [:]
+
+    /// "Who requires X", inverted from the receipt dependency lists and rebuilt on every refresh,
+    /// in the same step as the installed overlay it is derived from.
+    var dependents: [Package.ID: [Package.ID]] = [:]
 
     var operations: [BrewOperation] = []
     var brewMissing = false
@@ -37,6 +45,7 @@ final class AppModel {
     private var didBootstrap = false
     private var didEnqueueSessionUpdate = false
     private var runningTask: Task<Void, Never>?
+    private var refreshGeneration = 0
 
     init() {
         brewMissing = !client.isAvailable
@@ -52,7 +61,7 @@ final class AppModel {
 
         let cache = CatalogStore.loadCache()
         if let cache {
-            catalog = cache.packages
+            setCatalog(cache.packages)
             catalogFetchedAt = cache.fetchedAt
         }
 
@@ -86,7 +95,7 @@ final class AppModel {
 
         do {
             let cache = try await CatalogStore.fetch()
-            catalog = cache.packages
+            setCatalog(cache.packages)
             catalogFetchedAt = cache.fetchedAt
         } catch {
             // A stale catalog still beats an error screen; only a cold start with no cache fails.
@@ -94,20 +103,63 @@ final class AppModel {
         }
     }
 
-    /// Both reads at once — brew serializes only mutations, so concurrent reads are safe.
+    /// The only way `catalog` changes, so the ID index can never drift from it.
+    private func setCatalog(_ packages: [Package]) {
+        catalog = packages
+        catalogIndex = Dictionary(packages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Both reads at once — brew serializes only mutations, so concurrent reads are safe. The
+    /// receipt sweep runs on the result and everything is published in one step: an overlay whose
+    /// on-request flags have not landed yet would briefly show dependency-only kegs as directly
+    /// installed.
     private func refreshState() async {
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+
         brewMissing = !client.isAvailable
         guard client.isAvailable else {
             installed = [:]
             outdated = [:]
+            dependents = [:]
             return
         }
 
         let installedTask = Task { try await self.client.listInstalled() }
         let outdatedTask = Task { try await self.client.outdated() }
 
-        if let result = try? await installedTask.value { installed = result }
-        if let result = try? await outdatedTask.value { outdated = result }
+        let installedResult = try? await installedTask.value
+        let outdatedResult = try? await outdatedTask.value
+
+        let folded: [Package.ID: InstalledInfo]?
+        if let installedResult {
+            folded = await withReceipts(installedResult)
+        } else {
+            folded = nil
+        }
+
+        // A refresh started later holds the fresher answer; the sweep is slow enough that a ⌘R or a
+        // post-mutation refresh can overtake this one, and a late write would mix the two.
+        guard generation == refreshGeneration else { return }
+        if let folded {
+            installed = folded
+            dependents = Receipts.invertDependents(folded)
+        }
+        if let outdatedResult { outdated = outdatedResult }
+    }
+
+    /// Folds each keg's install receipt into its overlay entry. Nothing to read without a prefix,
+    /// in which case the defaults stand (`onRequest: true` — never hide the unexplained).
+    private func withReceipts(_ installed: [Package.ID: InstalledInfo]) async -> [Package.ID: InstalledInfo] {
+        guard let prefix = client.prefix else { return installed }
+        let receipts = await Receipts.sweep(prefix: prefix, installed: installed)
+
+        var result = installed
+        for (id, receipt) in receipts {
+            result[id]?.onRequest = receipt.onRequest
+            result[id]?.dependencies = receipt.dependencies
+        }
+        return result
     }
 
     // MARK: - Derived state
@@ -141,6 +193,26 @@ final class AppModel {
     var installedPackages: [Package] {
         merged(catalog.filter { installed[$0.id] != nil },
                with: installed.mapValues { $0.versions })
+    }
+
+    /// The Installed section under the scope picker. `.all` is the full list; `.onRequest` drops the
+    /// kegs that are only on disk because something else needed them.
+    func installedPackages(scope: InstalledScope) -> [Package] {
+        switch scope {
+        case .all:
+            installedPackages
+        case .onRequest:
+            installedPackages.filter { installed[$0.id]?.onRequest ?? true }
+        }
+    }
+
+    /// Turns an overlay key back into a package for the dependency and required-by rows: the
+    /// catalog when it covers it, otherwise the same synthesized entry the Installed section uses —
+    /// a dependency pulled in from a tap exists only on disk.
+    func package(for id: Package.ID) -> Package? {
+        if let known = catalogIndex[id] { return known }
+        guard let info = installed[id] else { return nil }
+        return Self.synthesize(id: id, versions: info.versions)
     }
 
     var outdatedPackages: [Package] {

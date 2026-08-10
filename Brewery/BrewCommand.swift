@@ -24,7 +24,9 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     var arguments: [String] {
         switch self {
         case .listFormulae:
-            ["list", "--versions"]
+            // `--formula` is not redundant: bare `brew list --versions` prints casks too, which
+            // would enter the overlay under bogus `formula:<token>` keys.
+            ["list", "--formula", "--versions"]
         case .listCasks:
             ["list", "--cask", "--versions"]
         case .outdated:

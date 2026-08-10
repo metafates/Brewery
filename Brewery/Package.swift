@@ -42,6 +42,11 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
 
 nonisolated struct InstalledInfo: Equatable, Hashable {
     var versions: [String]
+    /// From the install receipt. A missing receipt means `true`: never hide something just
+    /// because we could not explain it.
+    var onRequest: Bool = true
+    /// Formulae only: installed runtime dependencies as short names, `declared_directly` first.
+    var dependencies: [String] = []
 }
 
 nonisolated struct OutdatedInfo: Equatable, Hashable {

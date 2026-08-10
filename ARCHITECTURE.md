@@ -9,11 +9,12 @@ A native macOS GUI for Homebrew. SwiftUI, macOS 26, zero third-party dependencie
 3. Management of installed items — **v1 is non-destructive only**: install and upgrade (per item + upgrade all).
 4. App Store-like cards; native macOS look per Apple HIG.
 5. Simple, maintainable code. KISS and YAGNI throughout.
+6. **(v2)** Filters and dependency visibility: search scoped to formulae/casks with an option to hide deprecated entries; Installed scoped to directly-installed items (with an "all" escape hatch); per-package installed dependencies; and, for items pulled in as dependencies, who requires them.
 
 ## Non-goals (v1)
 
 - **No destructive brew commands.** No `uninstall`, `zap`, `cleanup`, `pin`/`unpin`, `--force`. Hard safety requirement — structurally enforced, see [Safety](#safety).
-- No taps management, no services, no doctor, no dependency graphs.
+- No taps management, no services, no doctor. No dependency *graph visualization* — v2 shows flat dependency/dependent lists from install receipts, nothing more.
 - No analytics-based popularity ranking (the scorer already front-loads exact/prefix matches; revisit only if search feels bad in practice).
 - No Settings pane, no multiple windows, no log persistence across launches.
 - No App Store distribution (the app cannot be sandboxed — it execs `brew`).
@@ -30,9 +31,19 @@ Facts below were verified by reading the Homebrew source (brew 6.x, `Library/Hom
 ### Installed state
 
 - Formulae live in `$(brew --prefix)/Cellar/<name>/<version>/`, casks in `Caskroom/<token>/` (installed version derivable only via the `.metadata` glob — fiddly). Instead of walking directories, use brew's own fast paths:
-  - `brew list --versions` and `brew list --cask --versions` — plain text `name v1 [v2...]` per line, implemented in pure Bash (`list.sh`), no Ruby startup, sub-second. (The `--json` variant requires `jq` — avoided.)
+  - `brew list --formula --versions` and `brew list --cask --versions` — plain text `name v1 [v2...]` per line, implemented in pure Bash (`list.sh`), no Ruby startup, sub-second. (The `--json` variant requires `jq` — avoided.) The `--formula` token is required: bare `brew list --versions` prints casks alongside formulae (verified live: 352 lines vs 309 + 43), which would key every cask into the overlay a second time as `formula:<token>`.
   - `brew outdated --json=v2` → `{"formulae":[{name, installed_versions[], current_version, pinned, pinned_version}], "casks":[...]}`. **Exits 0 even when items are outdated** (only exits 1 when given explicit names). <1 s with a warm cache. Cask `name` is the token; formula `name` is the full name.
-- Prefix: probe `/opt/homebrew/bin/brew` (Apple silicon), then `/usr/local/bin/brew` (Intel). `brew --prefix` is canonical but we only need the binary path.
+- Prefix: probe `/opt/homebrew/bin/brew` (Apple silicon), then `/usr/local/bin/brew` (Intel). `brew --prefix` is canonical; we derive it as the brew binary's grandparent directory — the same rule `bin/brew` itself uses (`HOMEBREW_PREFIX="${HOMEBREW_BREW_FILE%/*/*}"`).
+
+### Install receipts (v2)
+
+Every keg carries an install-time receipt, and it answers all of v2's dependency questions locally — no brew subprocess:
+
+- `Cellar/<name>/<version>/INSTALL_RECEIPT.json` (formulae): `installed_on_request` (bool; brew treats an absent field as `false`, `tab.rb`) and `runtime_dependencies` — an **array** of `{full_name, version, pkg_version, declared_directly}` covering the full flattened runtime closure at install time. Verified live: `wget` → `installed_on_request: true`, deps `libunistring`, `gettext`, `libidn2`, `ca-certificates`…; `abseil` (pulled in as a dep) → `false`.
+- `Caskroom/<token>/.metadata/INSTALL_RECEIPT.json` (casks): has `installed_on_request` too, **but `runtime_dependencies` is an object, not an array** (observed live: `{}`) — a different shape than formulae. v2 reads only `installed_on_request` from cask receipts; cask dependency lists are deferred (cask deps are rare, and the non-empty object shape is unverified).
+- Receipts are snapshots: a formula upgraded later rewrites its receipt, but the list can drift from what `brew deps` would compute today. Accepted — intersecting with the live installed set (below) prunes stale entries.
+- `brew deps --installed` / `brew uses --installed` were considered and rejected: Ruby startup per call, and the receipts already hold the same answer as plain local file reads.
+- Cross-check for free: `brew list --installed-on-request` exists (`cmd/list.rb:43`, Ruby path) — used only as a build-step verify, not at runtime.
 
 ### Driving brew from a GUI
 
@@ -52,7 +63,7 @@ Facts below were verified by reading the Homebrew source (brew 6.x, `Library/Hom
 
 ## File layout
 
-~14 Swift files, flat in `Brewery/`. Targets use filesystem-synchronized groups — **never edit `project.pbxproj` to add files**.
+~15 Swift files, flat in `Brewery/`. Targets use filesystem-synchronized groups — **never edit `project.pbxproj` to add files**.
 
 | File | Responsibility |
 |---|---|
@@ -63,6 +74,7 @@ Facts below were verified by reading the Homebrew source (brew 6.x, `Library/Hom
 | `BrewClient.swift` | brew binary discovery, `Process` exec with async line streaming, cancellation; static pure parsers for brew output |
 | `BrewOperation.swift` | `@Observable` per-operation: command, state, capped live log buffer |
 | `CatalogStore.swift` | download → slim-decode → cache file → `[Package]`; staleness check |
+| `Receipts.swift` *(v2)* | `@concurrent` sweep of `INSTALL_RECEIPT.json` files → on-request flags + dependency lists; pure parser |
 | `FuzzySearch.swift` | Pure scorer + `@concurrent` ranking |
 | `ContentView.swift` | `NavigationSplitView` shell: sidebar, `.searchable`, operations popover, brew-missing state |
 | `PackageGridView.swift` | `ScrollView` + `LazyVGrid` of cards, empty states |
@@ -96,7 +108,12 @@ struct Package: Codable, Identifiable, Hashable {
 Install-state overlays live in `AppModel`, keyed by `Package.ID`, never persisted (they're <1 s to re-query):
 
 ```swift
-struct InstalledInfo { var versions: [String] }
+struct InstalledInfo {
+    var versions: [String]
+    var onRequest: Bool         // v2, from receipt; missing receipt → true (never hide the unknown)
+    var dependencies: [String]  // v2, formulae only: installed runtime deps, short names
+}
+
 struct OutdatedInfo  { var installed: [String]; var current: String; var pinned: Bool }
 
 enum PackageStatus {
@@ -115,7 +132,12 @@ The views are dumb renderers of `[Package]` + `status(for:)`:
 - **Installed** — catalog packages present in `installed`, **plus synthesized `Package`s** for installed items missing from the catalog (e.g. from third-party taps): name + kind, `version` = installed version (the only version we know), nil desc/homepage, `deprecated`/`disabled` = false.
 - **Outdated** — packages present in `outdated`. Pinned items are shown with the Update button disabled and a "pinned" label (we never touch pins). The section mirrors bare `brew outdated`'s **non-greedy default**: `version :latest` casks never appear, and `auto_updates` casks (browsers, editors) appear only when the installed bundle's `Info.plist` version lags the cask version (`cask/cask.rb`); the `--greedy` variants are deliberately out of scope for v1 — those apps update themselves.
 
-Overlay refresh happens on launch, on ⌘R, and after every mutating operation completes (success or failure).
+Overlay refresh happens on launch, on ⌘R, and after every mutating operation completes (success or failure). **(v2)** Each refresh also sweeps the receipts (`Receipts.swift`, `@concurrent` — ~350 small JSON reads, tens of ms): the keg read is the one whose version dir matches the *last* version `brew list` reported; `runtime_dependencies` `full_name`s are normalized to short names per the join rule. `AppModel` then inverts the dependency map once into `dependents: [Package.ID: [Package.ID]]` — "who depends on X" is a dictionary lookup, no graph machinery.
+
+**(v2) Filters** are plain view-local state, persisted with `@AppStorage`:
+
+- **Discover**: kind (`All | Formulae | Casks`) + a "Hide deprecated" toggle (hides `deprecated || disabled` — a disabled package is further along the same lifecycle and can't be installed anyway). Applied as a pre-filter to the array handed to `FuzzySearch.rank`, so ranking cost only ever shrinks. (`.searchScopes` was considered for the kind filter and rejected: scopes only surface while search is active, and the filter must also govern empty-query browsing.)
+- **Installed**: scope picker `On Request` (default) | `All`. On Request shows `onRequest == true` items; All adds dependency-only items, each carded with a small "dependency" tag.
 
 ## Safety
 
@@ -123,7 +145,7 @@ Destructive operations are **unrepresentable**, not merely un-called:
 
 ```swift
 enum BrewCommand: Equatable {
-    case listFormulae         // ["list", "--versions"]
+    case listFormulae         // ["list", "--formula", "--versions"]
     case listCasks            // ["list", "--cask", "--versions"]
     case outdated             // ["outdated", "--json=v2"]
     case update               // ["update"]
@@ -240,8 +262,9 @@ Wiring — no Combine, no search actor:
 
 - **Window**: single `WindowGroup`, `NavigationSplitView`. Sidebar: Discover (`sparkle.magnifyingglass`), Installed (`checkmark.circle`), Outdated (`arrow.triangle.2.circlepath`) with `.badge(outdatedCount)`. Stock components get Liquid Glass chrome for free.
 - **Search**: `.searchable` on the detail column; Discover = full-catalog fuzzy, Installed/Outdated = fuzzy over that section's array.
+- **(v2) Filter controls**: Discover's toolbar gets a filter `Menu` (`line.3.horizontal.decrease.circle`, filled variant when any filter is active) holding the kind `Picker` and the "Hide deprecated" `Toggle`; Installed's toolbar gets the `On Request | All` scope `Picker` inline (two options don't need a menu).
 - **Grid**: `LazyVGrid(columns: [GridItem(.adaptive(minimum: 230))])`. Card: 44 pt icon, name (headline), status line (version; "1.2 → 1.3" in orange when outdated, cask comma-versions like `2.1.50,56f0a83` truncated at the comma for display; "deprecated" in red), 2-line description, trailing button — `Install` / `Update` (`.borderedProminent`) / checkmark (installed, disabled) / mini `ProgressView` (busy). `disabled` packages: button disabled with explanation in detail.
-- **Detail**: `.sheet(item: $selectedPackage)` — App Store-like, keeps grid scroll position. Large icon, name + kind tag, version(s), deprecation/disabled banner, homepage `Link`, action button, and the package's latest operation log if any.
+- **Detail**: `.sheet(item: $selectedPackage)` — App Store-like, keeps grid scroll position. Large icon, name + kind tag, version(s), deprecation/disabled banner, homepage `Link`, action button, and the package's latest operation log if any. **(v2)** Two more sections when installed: **Dependencies** — the receipt's installed runtime deps as tappable rows (icon, name, installed version; `declared_directly` ones sorted first); **Required by** — the inverted map's entries for this package (present for any depended-on item, which is also how a dependency-only item explains why it exists). Tapping a row swaps the sheet's `selectedPackage` in place — no navigation stack.
 - **Operations popover** (Safari-downloads pattern): toolbar item shows a spinner + count while the queue is active; popover lists session operations with state icons — a Cancel button on the running one, a remove (✕) button on queued ones — each expandable into `OperationLogView` (monospaced, `defaultScrollAnchor(.bottom)`, `Error:`/`Warning:` tinted). Auto-presents once on failure.
 - **Menu bar**: Refresh ⌘R (brew re-probe + installed + outdated + catalog staleness check), Upgrade All ⇧⌘U; Find (⌘F) focuses the search field via `.searchFocused` — wired explicitly rather than trusting the automatic ⌘F binding, which has historically been inconsistent on macOS.
 - **Quit while a mutation runs**: `NSApplicationDelegateAdaptor` + `applicationShouldTerminate` shows a confirm dialog when an install/upgrade is running. On confirmed quit, the running brew gets `interrupt()` (the same SIGINT path as Cancel) and up to 5 s to exit; if it still hasn't (rare — brew traps INT), quit anyway and accept the orphan as the lesser evil versus a hung quit. Queued-but-unstarted operations are simply discarded.
@@ -261,6 +284,7 @@ Swift Testing, unit only — no UI tests in v1, no BrewClient integration tests 
 - **FuzzySearchTests**: ordering exact > prefix > word-boundary > substring > subsequence; case-insensitivity; no-match → nil; desc-only match ranks below any name match; `"git"` ranks `git` above `gitless`/`gitui`; cask found by display name ("visual studio" → `visual-studio-code`).
 - **ParsingTests**: `parseListVersions` — normal lines, multi-version lines (`python@3.12 3.12.1 3.12.4`), empty output, trailing newline. `parseOutdated` — fixture with formulae + casks incl. a pinned entry, empty arrays. Catalog slim-decode — inline fixture snippets copied from real `formula.json`/`cask.json` entries; unknown keys ignored; null `desc`/`homepage` ok.
 - **BrewCommandTests**: exact argv per case + the destructive-token tripwire described in [Safety](#safety).
+- **(v2) ReceiptTests**: fixture receipt JSONs — `installed_on_request` true/false/absent (absent → `false`, matching brew's `tab.rb`); `runtime_dependencies` extraction with a tap-qualified `full_name` normalized to its short name; cask receipt with object-shaped `runtime_dependencies` decodes without error and yields no deps; missing-file default (→ `onRequest: true`); dependents-map inversion on a three-package fixture.
 
 ## Build order
 
@@ -273,6 +297,7 @@ Each step builds and is independently verifiable (`xcodebuild ... | xcbeautify` 
 5. **Mutations** — mutating cases, `BrewOperation`, queue + pump, live logs, buttons, popover, post-op refresh, session `brew update`. *Verify: install a tiny formula (e.g. `cowsay`), watch the live log, card flips to installed.*
 6. **Icons** — URLCache + `PackageIconView`. *Verify: favicons appear; offline relaunch still shows cached ones.*
 7. **Polish** — detail sheet, askpass helper (verify with a pkg cask), menu commands, empty states, Upgrade All.
+8. **v2: Filters & dependencies** — `Receipts.swift` + tests, `InstalledInfo` fields, dependents inversion, Discover filter menu, Installed scope picker, detail Dependencies/Required-by sections. *Verify: tests pass; Installed "On Request" matches `brew list --installed-on-request` in Terminal; a known dep (e.g. `ca-certificates`) shows its dependents and carries the "dependency" tag under All; kind filter + hide-deprecated visibly shrink Discover.*
 
 ## Risks & mitigations
 

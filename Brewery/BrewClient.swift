@@ -21,6 +21,10 @@ final class BrewClient {
 
     var isAvailable: Bool { path != nil }
 
+    /// HOMEBREW_PREFIX, derived as the brew binary's grandparent directory — the same rule
+    /// `bin/brew` uses (`HOMEBREW_PREFIX="${HOMEBREW_BREW_FILE%/*/*}"`).
+    var prefix: URL? { path?.deletingLastPathComponent().deletingLastPathComponent() }
+
     init() {
         discover()
     }
@@ -199,7 +203,8 @@ final class BrewClient {
     }
 
     /// `brew outdated` reports formulae by tap-qualified name; overlay keys use the keg name.
-    static func shortName(_ name: String) -> String {
+    /// `nonisolated` because the `@concurrent` receipt sweep normalizes `full_name`s with it.
+    nonisolated static func shortName(_ name: String) -> String {
         name.split(separator: "/").last.map(String.init) ?? name
     }
 

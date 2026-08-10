@@ -47,8 +47,51 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     }
 }
 
+/// Discover's kind filter. Applied to the array before it reaches the ranker, which is why it is
+/// plain state and not `.searchScopes`: scopes only surface while a search is active, and the
+/// filter has to govern empty-query browsing just the same.
+nonisolated enum KindFilter: String, CaseIterable, Identifiable {
+    case all, formulae, casks
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .formulae: "Formulae"
+        case .casks: "Casks"
+        }
+    }
+
+    func matches(_ package: Package) -> Bool {
+        switch self {
+        case .all: true
+        case .formulae: package.kind == .formula
+        case .casks: package.kind == .cask
+        }
+    }
+}
+
+/// The Installed section's scope: what the user asked for, or everything that is on disk.
+nonisolated enum InstalledScope: String, CaseIterable, Identifiable {
+    case onRequest, all
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .onRequest: "On Request"
+        case .all: "All"
+        }
+    }
+}
+
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+
+    @AppStorage("discover.kindFilter") private var kindFilter: KindFilter = .all
+    @AppStorage("discover.hideDeprecated") private var hideDeprecated = false
+    @AppStorage("installed.scope") private var installedScope: InstalledScope = .onRequest
 
     @State private var selection: SidebarSection? = .discover
     @State private var searchText = ""
@@ -86,7 +129,10 @@ struct ContentView: View {
         } detail: {
             detail
                 .navigationTitle(section.title)
-                .toolbar { operationsToolbar }
+                .toolbar {
+                    filterToolbar
+                    operationsToolbar
+                }
                 .searchable(text: $searchText, prompt: section.searchPrompt)
                 .searchFocused($searchFocused)
         }
@@ -122,7 +168,7 @@ struct ContentView: View {
             PackageGridView(packages: displayedPackages,
                             isSearching: isSearching,
                             onSelect: { selectedPackage = $0 },
-                            emptyMessage: section.emptyMessage)
+                            emptyMessage: emptyMessage)
         }
     }
 
@@ -136,9 +182,37 @@ struct ContentView: View {
 
     private var sourcePackages: [Package] {
         switch section {
-        case .discover: model.catalog
-        case .installed: model.installedPackages
+        case .discover: filtered(model.catalog)
+        case .installed: model.installedPackages(scope: installedScope)
         case .outdated: model.outdatedPackages
+        }
+    }
+
+    /// Discover's pre-filter. It runs before `FuzzySearch.rank`, so ranking only ever sees fewer
+    /// candidates, and because it sits on the source array it governs browsing with no query too.
+    private func filtered(_ packages: [Package]) -> [Package] {
+        guard filtersActive else { return packages }
+        return packages.filter { package in
+            // A disabled package is further along the same lifecycle as a deprecated one, and
+            // cannot be installed at all.
+            kindFilter.matches(package) && !(hideDeprecated && (package.deprecated || package.disabled))
+        }
+    }
+
+    private var filtersActive: Bool { kindFilter != .all || hideDeprecated }
+
+    /// Discover has no empty state of its own — by the time it renders, the catalog is loaded — but
+    /// a filter can empty it, and so can the On Request scope on a machine whose kegs are all deps.
+    private var emptyMessage: String? {
+        switch section {
+        case .discover:
+            filtersActive ? "No packages match the filters" : nil
+        case .installed:
+            installedScope == .onRequest && !model.installed.isEmpty
+                ? "No packages installed on request"
+                : section.emptyMessage
+        case .outdated:
+            section.emptyMessage
         }
     }
 
@@ -156,16 +230,63 @@ struct ContentView: View {
                   query: searchText,
                   catalogCount: model.catalog.count,
                   installedCount: model.installed.count,
-                  outdatedCount: model.outdated.count)
+                  outdatedCount: model.outdated.count,
+                  kindFilter: kindFilter,
+                  hideDeprecated: hideDeprecated,
+                  installedScope: installedScope)
     }
 
-    /// Re-ranks on a new query, a section switch, or any change to the arrays being searched.
+    /// Re-ranks on a new query, a section switch, a filter change, or any change to the arrays
+    /// being searched.
     private struct SearchKey: Equatable {
         let section: SidebarSection
         let query: String
         let catalogCount: Int
         let installedCount: Int
         let outdatedCount: Int
+        let kindFilter: KindFilter
+        let hideDeprecated: Bool
+        let installedScope: InstalledScope
+    }
+
+    // MARK: - Filters
+
+    /// Each section carries only its own control; Outdated has none.
+    @ToolbarContentBuilder private var filterToolbar: some ToolbarContent {
+        if section == .discover {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Picker("Kind", selection: $kindFilter) {
+                        ForEach(KindFilter.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    .pickerStyle(.inline)
+
+                    Toggle("Hide Deprecated", isOn: $hideDeprecated)
+                } label: {
+                    // The filled variant is the tell that the grid is not showing everything.
+                    Label("Filter", systemImage: filtersActive
+                          ? "line.3.horizontal.decrease.circle.fill"
+                          : "line.3.horizontal.decrease.circle")
+                }
+                .help("Filter")
+                .accessibilityLabel("Filter")
+            }
+        }
+        if section == .installed {
+            ToolbarItem(placement: .primaryAction) {
+                Picker("Scope", selection: $installedScope) {
+                    ForEach(InstalledScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help("Show packages you installed, or everything on disk including dependencies")
+                .accessibilityLabel("Installed Scope")
+            }
+        }
     }
 
     // MARK: - Operations
