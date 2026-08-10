@@ -45,13 +45,30 @@ struct PackageDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    if let url = displayed.homepageURL {
-                        Link(destination: url) {
-                            Label(url.host() ?? "Homepage", systemImage: "safari")
+                    if displayed.homepageURL != nil || displayed.rubySourceURL != nil {
+                        HStack(spacing: 16) {
+                            if let url = displayed.homepageURL {
+                                Link(destination: url) {
+                                    Label(url.host() ?? "Homepage", systemImage: "safari")
+                                }
+                                .accessibilityLabel("Open the \(displayed.title) homepage")
+                            }
+                            // The .rb file this package is defined by, on GitHub. Labelled with the
+                            // file name: "wget.rb" says exactly what will open.
+                            if let source = displayed.rubySourceURL,
+                               let file = displayed.rubySourceFileName {
+                                Link(destination: source) {
+                                    Label {
+                                        Text(file).monospaced()
+                                    } icon: {
+                                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                                    }
+                                }
+                                .accessibilityLabel("Open the \(displayed.title) definition source")
+                            }
                         }
                         // Links get the pointing hand; nothing else in the app does.
                         .pointerStyle(.link)
-                        .accessibilityLabel("Open the \(displayed.title) homepage")
                     }
 
                     if let text = displayed.resolvedCaveats(prefix: model.client.prefix), !text.isEmpty {

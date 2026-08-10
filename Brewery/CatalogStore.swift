@@ -41,7 +41,7 @@ nonisolated struct CatalogStore {
     static let maxCacheAge: TimeInterval = 24 * 60 * 60
 
     /// Bumped whenever `Package`'s shape changes; a mismatch discards the cache and re-downloads.
-    static let cacheVersion = 4
+    static let cacheVersion = 5
 
     /// Application Support/Brewery, created on demand.
     static var supportDirectory: URL {
@@ -216,11 +216,13 @@ nonisolated struct CatalogStore {
         /// Elements are nullable: the API expresses "conflict with no stated reason" as a `null`
         /// *inside* the array (live on `watch`, `parrot`, `rakudo*`), not as a shorter array.
         let conflictsWithReasons: [String?]?
+        let rubySourcePath: String?
 
         enum CodingKeys: String, CodingKey {
             case name, desc, homepage, versions, license, deprecated, disabled, caveats
             case conflictsWith = "conflicts_with"
             case conflictsWithReasons = "conflicts_with_reasons"
+            case rubySourcePath = "ruby_source_path"
         }
     }
 
@@ -233,6 +235,12 @@ nonisolated struct CatalogStore {
         let deprecated: Bool?
         let disabled: Bool?
         let caveats: String?
+        let rubySourcePath: String?
+
+        enum CodingKeys: String, CodingKey {
+            case token, name, desc, homepage, version, deprecated, disabled, caveats
+            case rubySourcePath = "ruby_source_path"
+        }
     }
 
     static func decodeFormulae(_ data: Data,
@@ -251,7 +259,8 @@ nonisolated struct CatalogStore {
                     conflicts: zipConflicts(entry.conflictsWith, entry.conflictsWithReasons),
                     commands: commands[entry.name] ?? [],
                     installs90d: installs[entry.name],
-                    license: entry.license?.value)
+                    license: entry.license?.value,
+                    rubySourcePath: entry.rubySourcePath)
         }
     }
 
@@ -266,7 +275,8 @@ nonisolated struct CatalogStore {
                     deprecated: entry.deprecated ?? false,
                     disabled: entry.disabled ?? false,
                     caveats: entry.caveats,
-                    installs90d: installs[entry.token])
+                    installs90d: installs[entry.token],
+                    rubySourcePath: entry.rubySourcePath)
         }
     }
 }

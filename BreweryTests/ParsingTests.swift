@@ -251,8 +251,13 @@ struct CatalogDecodingTests {
         #expect(wget.deprecated == false)
         #expect(wget.disabled == false)
         #expect(wget.id == "formula:wget")
+        #expect(wget.rubySourceURL
+                == URL(string: "https://github.com/Homebrew/homebrew-core/blob/HEAD/Formula/w/wget.rb"))
+        #expect(wget.rubySourceFileName == "wget.rb")
 
         let libfoo = packages[1]
+        // No ruby_source_path in the payload → no source link, never a guessed one.
+        #expect(libfoo.rubySourceURL == nil)
         #expect(libfoo.desc == nil)
         #expect(libfoo.homepage == nil)
         #expect(libfoo.homepageURL == nil)
@@ -284,6 +289,8 @@ struct CatalogDecodingTests {
         #expect(vscode.disabled == false)
         #expect(vscode.id == "cask:visual-studio-code")
         #expect(vscode.iconURL == URL(string: "https://icons.duckduckgo.com/ip3/code.visualstudio.com.ico"))
+        #expect(vscode.rubySourceURL
+                == URL(string: "https://github.com/Homebrew/homebrew-cask/blob/HEAD/Casks/v/visual-studio-code.rb"))
 
         let mystery = packages[1]
         #expect(mystery.displayName == nil)

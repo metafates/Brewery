@@ -32,6 +32,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let commands: [String]    // formulae only; the executables this formula installs
     let installs90d: Int?     // nil when the package is absent from the analytics files
     let license: String?      // formulae only; SPDX identifier
+    let rubySourcePath: String? // repo-relative .rb path, e.g. "Formula/w/wget.rb"; nil when synthesized
 
     /// Written out rather than synthesized: a `let` with an inline default drops out of the
     /// implicit memberwise init, which would break every existing `Package(kind:…)` call site.
@@ -47,7 +48,8 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
          conflicts: [Conflict] = [],
          commands: [String] = [],
          installs90d: Int? = nil,
-         license: String? = nil) {
+         license: String? = nil,
+         rubySourcePath: String? = nil) {
         self.kind = kind
         self.name = name
         self.displayName = displayName
@@ -61,6 +63,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         self.commands = commands
         self.installs90d = installs90d
         self.license = license
+        self.rubySourcePath = rubySourcePath
     }
 
     var id: String { Package.packageID(kind: kind, name: name) }
@@ -95,6 +98,21 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     }
 
     var homepageURL: URL? { homepage.flatMap(URL.init(string:)) }
+
+    /// The package's `.rb` definition on GitHub. The path comes from the API
+    /// (`ruby_source_path`, tap-relative), so homebrew-core's sharding scheme
+    /// (`Formula/w/wget.rb`, `Formula/lib/…`) is never guessed here; the catalog covers only the
+    /// two core taps, so the kind names the repo.
+    var rubySourceURL: URL? {
+        guard let rubySourcePath else { return nil }
+        let repo = kind == .formula ? "homebrew-core" : "homebrew-cask"
+        return URL(string: "https://github.com/Homebrew/\(repo)/blob/HEAD/\(rubySourcePath)")
+    }
+
+    /// "wget.rb" — the link label for `rubySourceURL`.
+    var rubySourceFileName: String? {
+        rubySourcePath.flatMap { $0.split(separator: "/").last.map(String.init) }
+    }
 
     /// Favicon of the package homepage; nil when there is no homepage host to ask about.
     var iconURL: URL? {
