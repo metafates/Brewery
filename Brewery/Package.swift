@@ -11,6 +11,12 @@ nonisolated enum PackageKind: String, Codable, Hashable, CaseIterable {
     case formula, cask
 }
 
+/// One entry of a formula's `conflicts_with` list, paired with its reason when the API gives one.
+nonisolated struct Conflict: Codable, Hashable {
+    let name: String
+    let reason: String?
+}
+
 /// One catalog entry — a formula or a cask. Purely descriptive: install state lives in `AppModel`.
 nonisolated struct Package: Codable, Identifiable, Hashable {
     let kind: PackageKind
@@ -21,6 +27,38 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let version: String
     let deprecated: Bool
     let disabled: Bool        // disabled packages cannot be installed
+    let caveats: String?      // may embed a literal "$HOMEBREW_PREFIX" — see `resolvedCaveats`
+    let conflicts: [Conflict] // formulae only; cask `conflicts_with` has another shape and is skipped
+    let commands: [String]    // formulae only; the executables this formula installs
+    let installs90d: Int?     // nil when the package is absent from the analytics files
+
+    /// Written out rather than synthesized: a `let` with an inline default drops out of the
+    /// implicit memberwise init, which would break every existing `Package(kind:…)` call site.
+    init(kind: PackageKind,
+         name: String,
+         displayName: String?,
+         desc: String?,
+         homepage: String?,
+         version: String,
+         deprecated: Bool,
+         disabled: Bool,
+         caveats: String? = nil,
+         conflicts: [Conflict] = [],
+         commands: [String] = [],
+         installs90d: Int? = nil) {
+        self.kind = kind
+        self.name = name
+        self.displayName = displayName
+        self.desc = desc
+        self.homepage = homepage
+        self.version = version
+        self.deprecated = deprecated
+        self.disabled = disabled
+        self.caveats = caveats
+        self.conflicts = conflicts
+        self.commands = commands
+        self.installs90d = installs90d
+    }
 
     var id: String { Package.packageID(kind: kind, name: name) }
 
@@ -30,6 +68,18 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     }
 
     var title: String { displayName ?? name }
+
+    /// Font casks live in homebrew/cask under a `font-` prefix; they get a glyph, never a favicon.
+    var isFont: Bool { kind == .cask && name.hasPrefix("font-") }
+
+    /// Caveats embed a literal "$HOMEBREW_PREFIX"; swap in the real prefix for display.
+    func resolvedCaveats(prefix: URL?) -> String? {
+        guard let caveats else { return nil }
+        guard let prefix else { return caveats }
+        var root = prefix.path(percentEncoded: false)
+        if root.count > 1, root.hasSuffix("/") { root.removeLast() }
+        return caveats.replacingOccurrences(of: "$HOMEBREW_PREFIX", with: root)
+    }
 
     var homepageURL: URL? { homepage.flatMap(URL.init(string:)) }
 

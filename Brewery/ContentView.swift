@@ -51,7 +51,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
 /// plain state and not `.searchScopes`: scopes only surface while a search is active, and the
 /// filter has to govern empty-query browsing just the same.
 nonisolated enum KindFilter: String, CaseIterable, Identifiable {
-    case all, formulae, casks
+    case all, formulae, casks, fonts
 
     var id: String { rawValue }
 
@@ -60,6 +60,7 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
         case .all: "All"
         case .formulae: "Formulae"
         case .casks: "Casks"
+        case .fonts: "Fonts"
         }
     }
 
@@ -67,7 +68,10 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: true
         case .formulae: package.kind == .formula
-        case .casks: package.kind == .cask
+        // Fonts are casks, but Casks has to mean "apps" here: leaving them in would make Fonts a
+        // subset of a filter the user just picked, and the option pointless.
+        case .casks: package.kind == .cask && !package.isFont
+        case .fonts: package.isFont
         }
     }
 }
@@ -94,8 +98,7 @@ struct ContentView: View {
     @AppStorage("installed.scope") private var installedScope: InstalledScope = .onRequest
 
     @State private var selection: SidebarSection? = .discover
-    @State private var searchText = ""
-    @State private var results: [Package] = []
+    @State private var results: [SearchHit] = []
     /// The section `results` were ranked over; a switch invalidates them until the task re-ranks.
     @State private var resultsSection: SidebarSection?
     @State private var selectedPackage: Package?
@@ -129,11 +132,12 @@ struct ContentView: View {
         } detail: {
             detail
                 .navigationTitle(section.title)
+                .navigationSubtitle(subtitle)
                 .toolbar {
                     filterToolbar
                     operationsToolbar
                 }
-                .searchable(text: $searchText, prompt: section.searchPrompt)
+                .searchable(text: searchQuery, prompt: section.searchPrompt)
                 .searchFocused($searchFocused)
         }
         .task(id: searchKey) {
@@ -145,7 +149,9 @@ struct ContentView: View {
             // Debounce. The sleep throws when the next keystroke replaces this task — a bare
             // `try? await` would swallow that and let the stale ranking assign anyway.
             guard (try? await Task.sleep(for: .milliseconds(120))) != nil else { return }
-            results = await FuzzySearch.rank(query: searchText, in: sourcePackages)
+            results = await FuzzySearch.rank(query: searchText,
+                                             in: sourcePackages,
+                                             commands: model.commandIndex)
             resultsSection = section
         }
         .onChange(of: model.findRequests) { searchFocused = true }
@@ -165,16 +171,26 @@ struct ContentView: View {
             ProgressView("Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            PackageGridView(packages: displayedPackages,
+            PackageGridView(hits: displayedHits,
                             isSearching: isSearching,
                             onSelect: { selectedPackage = $0 },
-                            emptyMessage: emptyMessage)
+                            emptyMessage: emptyMessage,
+                            resetToken: searchKey.window)
         }
     }
 
     // MARK: - Search
 
     private var section: SidebarSection { selection ?? .discover }
+
+    /// Per-tab, and in the model rather than in `@State`: switching sections destroys the detail
+    /// view along with anything it holds, so a query stored here would not survive the round trip.
+    private var searchText: String { model.queries[section] ?? "" }
+
+    private var searchQuery: Binding<String> {
+        Binding(get: { model.queries[section] ?? "" },
+                set: { model.queries[section] = $0 })
+    }
 
     private var isSearching: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -220,33 +236,79 @@ struct ContentView: View {
     /// is rendered straight from the model and stays live as operations finish. Results from
     /// another section are equally unusable: during the debounce after a section switch the new
     /// section's own array stands in, never the old section's cards.
-    private var displayedPackages: [Package] {
-        guard isSearching, resultsSection == section else { return sourcePackages }
+    private var displayedHits: [SearchHit] {
+        guard isSearching, resultsSection == section else {
+            return sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
+        }
         return results
     }
 
+    /// What the grid will render, without building the hits to count them.
+    private var displayedCount: Int {
+        guard isSearching, resultsSection == section else { return sourcePackages.count }
+        return results.count
+    }
+
     private var searchKey: SearchKey {
-        SearchKey(section: section,
-                  query: searchText,
+        SearchKey(window: WindowToken(section: section,
+                                      query: searchText,
+                                      kindFilter: kindFilter,
+                                      hideDeprecated: hideDeprecated,
+                                      installedScope: installedScope),
                   catalogCount: model.catalog.count,
+                  commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
-                  outdatedCount: model.outdated.count,
-                  kindFilter: kindFilter,
-                  hideDeprecated: hideDeprecated,
-                  installedScope: installedScope)
+                  outdatedCount: model.outdated.count)
     }
 
     /// Re-ranks on a new query, a section switch, a filter change, or any change to the arrays
     /// being searched.
     private struct SearchKey: Equatable {
-        let section: SidebarSection
-        let query: String
+        let window: WindowToken
         let catalogCount: Int
+        /// The command index lands a beat after the catalog it is derived from; without this a
+        /// query typed during launch would keep results that never saw the index.
+        let commandCount: Int
         let installedCount: Int
         let outdatedCount: Int
+    }
+
+    /// The part of the key that changes *which* packages are listed — the grid restarts its render
+    /// window on it. A refresh landing new versions deliberately does not.
+    private struct WindowToken: Hashable {
+        let section: SidebarSection
+        let query: String
         let kindFilter: KindFilter
         let hideDeprecated: Bool
         let installedScope: InstalledScope
+    }
+
+    // MARK: - Counts
+
+    /// `.navigationSubtitle` is where macOS puts a count (Mail's message counts live there). It
+    /// reports what the grid actually renders, so a search or a filter narrows it too.
+    private var subtitle: String {
+        guard section != .discover || !model.catalog.isEmpty else { return "" }
+
+        let count = displayedCount
+        let formatted = count.formatted(.number)
+        guard !isSearching, !isNarrowed else {
+            return count == 1 ? "1 result" : "\(formatted) results"
+        }
+        switch section {
+        case .discover: return count == 1 ? "1 package" : "\(formatted) packages"
+        case .installed: return "\(formatted) installed"
+        case .outdated: return "\(formatted) outdated"
+        }
+    }
+
+    /// Whether the section is showing something other than its plain default listing.
+    private var isNarrowed: Bool {
+        switch section {
+        case .discover: filtersActive
+        case .installed: installedScope != .onRequest
+        case .outdated: false
+        }
     }
 
     // MARK: - Filters

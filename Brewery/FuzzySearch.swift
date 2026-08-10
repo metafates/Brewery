@@ -5,6 +5,16 @@
 
 import Foundation
 
+/// One ranked result. Carries *why* it matched so a card can caption a command hit — a package
+/// surfaced only because it provides `convert` otherwise looks like a false positive.
+nonisolated struct SearchHit: Identifiable, Hashable {
+    let package: Package
+    /// Non-nil only when the command index produced the winning score.
+    let matchedCommand: String?
+
+    var id: Package.ID { package.id }
+}
+
 /// Pure fuzzy scorer over the catalog. Everything works on lowercased UTF-8 bytes: the query is
 /// normalized once per search and candidates are folded into a single reused buffer, so ranking the
 /// full ~16k package catalog on every keystroke stays allocation-free.
@@ -12,6 +22,14 @@ nonisolated enum FuzzySearch {
 
     /// Ranked results handed to the grid are capped; an empty query is uncapped.
     static let resultLimit = 200
+
+    /// A query exactly naming a provided command. Below a prefix match on purpose: someone typing
+    /// `convert` probably wants imagemagick, but a formula literally named that still wins.
+    static let commandExactScore = 850
+
+    /// Command-prefix matching needs at least two characters — one letter prefixes thousands of
+    /// executables and would drown the name matches.
+    static let commandPrefixMinimum = 2
 
     // MARK: - Scoring
 
@@ -35,20 +53,34 @@ nonisolated enum FuzzySearch {
 
     /// Filters and orders `packages` by descending score, tie-broken by shorter then alphabetical
     /// name. An empty query bypasses ranking and returns everything, alphabetical and uncapped.
-    @concurrent static func rank(query: String, in packages: [Package]) async -> [Package] {
+    ///
+    /// `commands` maps a provided executable to every package in the *whole* catalog that installs
+    /// it, so a command hit only ever counts for a package actually present in `packages` —
+    /// Installed and Outdated pass their own subset and must never surface a stranger.
+    @concurrent static func rank(query: String, in packages: [Package],
+                                 commands: [String: [Package.ID]] = [:]) async -> [SearchHit] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return packages.sorted(by: isOrderedBefore) }
+        guard !trimmed.isEmpty else {
+            return packages.sorted(by: isOrderedBefore).map { SearchHit(package: $0, matchedCommand: nil) }
+        }
 
         var q: [UInt8] = []
         fold(&q, trimmed)
         var buffer: [UInt8] = []
         buffer.reserveCapacity(64)
 
-        var scored: [(package: Package, score: Int)] = []
+        let byCommand = commandScores(query: q, commands: commands)
+
+        var scored: [(package: Package, score: Int, command: String?)] = []
         scored.reserveCapacity(256)
         for package in packages {
-            if let value = score(query: q, package: package, buffer: &buffer) {
-                scored.append((package, value))
+            let nameScore = score(query: q, package: package, buffer: &buffer)
+            // Strictly beats: a tie means the name matched too, and "Provides x" would mislead.
+            if !byCommand.isEmpty, let hit = byCommand[package.id],
+               hit.score > (nameScore ?? Int.min) {
+                scored.append((package, hit.score, hit.command))
+            } else if let nameScore {
+                scored.append((package, nameScore, nil))
             }
         }
         scored.sort { lhs, rhs in
@@ -58,7 +90,39 @@ nonisolated enum FuzzySearch {
             }
             return isOrderedBefore(lhs.package, rhs.package)
         }
-        return scored.prefix(resultLimit).map(\.package)
+        return scored.prefix(resultLimit).map { SearchHit(package: $0.package, matchedCommand: $0.command) }
+    }
+
+    /// Best command score per package ID: an exact command is 850, a prefix of one (≥ 2 chars) is
+    /// `600 - command length`. One pass over the index keys, folding into a reused buffer.
+    private static func commandScores(query q: [UInt8],
+                                      commands: [String: [Package.ID]]) -> [Package.ID: (score: Int, command: String)] {
+        guard !q.isEmpty, !commands.isEmpty else { return [:] }
+
+        var best: [Package.ID: (score: Int, command: String)] = [:]
+        var buffer: [UInt8] = []
+        buffer.reserveCapacity(64)
+
+        for (command, ids) in commands {
+            fold(&buffer, command)
+            let value: Int
+            if buffer == q {
+                value = commandExactScore
+            } else if q.count >= commandPrefixMinimum, buffer.count > q.count,
+                      matches(q, in: buffer, at: 0) {
+                value = 600 - buffer.count
+            } else {
+                continue
+            }
+            for id in ids {
+                if let existing = best[id],
+                   existing.score > value || (existing.score == value && existing.command <= command) {
+                    continue  // ties resolve alphabetically, so the caption never depends on hash order
+                }
+                best[id] = (value, command)
+            }
+        }
+        return best
     }
 
     // MARK: - Byte-level implementation

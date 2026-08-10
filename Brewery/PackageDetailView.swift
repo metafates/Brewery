@@ -51,6 +51,20 @@ struct PackageDetailView: View {
                         .accessibilityLabel("Open the \(displayed.title) homepage")
                     }
 
+                    if let text = displayed.resolvedCaveats(prefix: model.client.prefix), !text.isEmpty {
+                        caveats(text)
+                    }
+
+                    if !displayed.commands.isEmpty {
+                        Divider()
+                        commands
+                    }
+
+                    if !displayed.conflicts.isEmpty {
+                        Divider()
+                        conflicts
+                    }
+
                     if !deps.isEmpty {
                         Divider()
                         related("Dependencies", packages: deps)
@@ -79,12 +93,18 @@ struct PackageDetailView: View {
             }
             .padding(16)
         }
-        .frame(width: 520, height: height(hasRelated: !deps.isEmpty || !requiredBy.isEmpty))
+        .frame(width: 520, height: height(hasSections: !deps.isEmpty || !requiredBy.isEmpty || hasDetails))
     }
 
-    private func height(hasRelated: Bool) -> CGFloat {
+    /// Caveats, commands and conflicts fill the sheet the same way the related lists do, so they
+    /// earn the taller frame too — everything past it scrolls.
+    private var hasDetails: Bool {
+        displayed.caveats?.isEmpty == false || !displayed.commands.isEmpty || !displayed.conflicts.isEmpty
+    }
+
+    private func height(hasSections: Bool) -> CGFloat {
         if model.latestOperation(for: displayed) != nil { return 580 }
-        return hasRelated ? 520 : 380
+        return hasSections ? 520 : 380
     }
 
     // MARK: - Header
@@ -112,6 +132,12 @@ struct PackageDetailView: View {
                 }
 
                 versionLine
+
+                if let installs = displayed.installs90d {
+                    Label("\(installs.formatted(.number)) installs (90 days)", systemImage: "chart.bar")
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("\(installs.formatted(.number)) installs in the last 90 days")
+                }
             }
             .font(.subheadline)
 
@@ -217,6 +243,78 @@ struct PackageDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
+    // MARK: - Caveats, commands, conflicts
+
+    /// Homebrew prints these after an install; the paths and commands in them are meant to be
+    /// copied, hence the selectable text.
+    private func caveats(_ text: String) -> some View {
+        GroupBox {
+            Text(text)
+                .font(.callout)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Label("Caveats", systemImage: "info.circle")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+        }
+    }
+
+    /// The executables the formula puts on `PATH`, as one copyable list — a word list, not chips.
+    private var commands: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sectionTitle("Commands")
+
+            Text(displayed.commands.joined(separator: " · "))
+                .font(.callout)
+                .monospaced()
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Formulae that cannot be installed alongside this one. Each name is a row like a dependency,
+    /// so following one retargets the sheet; a name the catalog does not cover stays plain text.
+    private var conflicts: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            sectionTitle("Conflicts with")
+
+            ForEach(displayed.conflicts, id: \.name) { conflict in
+                if let package = model.package(for: Package.packageID(kind: .formula, name: conflict.name)) {
+                    RelatedRow(package: package,
+                               version: model.installed[package.id]?.versions.last,
+                               detail: conflict.reason) {
+                        displayed = package
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(conflict.name)
+                        if let reason = conflict.reason, !reason.isEmpty {
+                            Text(reason)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .font(.subheadline)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline)
+            .fontWeight(.semibold)
+            .padding(.bottom, 2)
+    }
+
     // MARK: - Dependencies
 
     /// The receipt's runtime dependencies, in receipt order — `declared_directly` ones lead, and
@@ -238,10 +336,7 @@ struct PackageDetailView: View {
 
     private func related(_ title: String, packages: [Package]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .padding(.bottom, 2)
+            sectionTitle(title)
 
             ForEach(packages) { item in
                 RelatedRow(package: item, version: model.installed[item.id]?.versions.last) {
@@ -288,6 +383,8 @@ struct PackageDetailView: View {
 private struct RelatedRow: View {
     let package: Package
     let version: String?
+    /// Secondary line under the name — the conflict reason; nil for dependency rows.
+    var detail: String? = nil
     let action: () -> Void
 
     @State private var isHovering = false
@@ -297,8 +394,16 @@ private struct RelatedRow: View {
             HStack(spacing: 8) {
                 PackageIconView(package: package, size: 22)
 
-                Text(package.title)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(package.title)
+                        .lineLimit(1)
+
+                    if let detail, !detail.isEmpty {
+                        Text(detail)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
 
                 Spacer(minLength: 8)
 
@@ -321,9 +426,16 @@ private struct RelatedRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
-        .accessibilityLabel(version.map { "\(package.title), version \($0.shortVersion)" } ?? package.title)
+        .accessibilityLabel(label)
         .accessibilityHint("Shows package details")
         .help("Show \(package.title)")
+    }
+
+    private var label: String {
+        var parts = [package.title]
+        if let version, !version.isEmpty { parts.append("version \(version.shortVersion)") }
+        if let detail, !detail.isEmpty { parts.append(detail) }
+        return parts.joined(separator: ", ")
     }
 
     private var shape: RoundedRectangle {

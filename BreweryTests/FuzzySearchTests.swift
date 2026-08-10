@@ -13,7 +13,7 @@ struct FuzzySearchTests {
 
     // MARK: - Fixtures
 
-    private static func formula(_ name: String, desc: String? = nil) -> Package {
+    private static func formula(_ name: String, desc: String? = nil, commands: [String] = []) -> Package {
         Package(kind: .formula,
                 name: name,
                 displayName: nil,
@@ -21,7 +21,8 @@ struct FuzzySearchTests {
                 homepage: nil,
                 version: "1.0",
                 deprecated: false,
-                disabled: false)
+                disabled: false,
+                commands: commands)
     }
 
     private static func cask(_ token: String, displayName: String?, desc: String? = nil) -> Package {
@@ -105,7 +106,7 @@ struct FuzzySearchTests {
         #expect(FuzzySearch.score(query: "find", package: weakestNameMatch) == 100)
 
         let ranked = await FuzzySearch.rank(query: "find", in: [descOnly, weakestNameMatch])
-        #expect(ranked.map(\.name) == ["f-i-n-d", "fd"])
+        #expect(ranked.map(\.package.name) == ["f-i-n-d", "fd"])
     }
 
     @Test("\"git\" ranks git above gitless and gitui")
@@ -119,11 +120,11 @@ struct FuzzySearchTests {
         ]
 
         let ranked = await FuzzySearch.rank(query: "git", in: packages)
-        #expect(ranked.map(\.name) == ["git", "gitui", "gitless", "lazygit", "tig"])
+        #expect(ranked.map(\.package.name) == ["git", "gitui", "gitless", "lazygit", "tig"])
 
         // Case must not change the outcome.
         let upper = await FuzzySearch.rank(query: "GIT", in: packages)
-        #expect(upper.map(\.name) == ranked.map(\.name))
+        #expect(upper.map(\.package.name) == ranked.map(\.package.name))
     }
 
     @Test("a cask is found by its display name")
@@ -139,7 +140,7 @@ struct FuzzySearchTests {
         #expect(FuzzySearch.score(query: "visual studio", package: vscode) == 900 - 18)
 
         let ranked = await FuzzySearch.rank(query: "visual studio", in: [noise, other, vscode])
-        #expect(ranked.map(\.name) == ["visual-studio-code"])
+        #expect(ranked.map(\.package.name) == ["visual-studio-code"])
     }
 
     // MARK: - Ranking rules
@@ -149,7 +150,7 @@ struct FuzzySearchTests {
         let packages = [Self.formula("wget"), Self.formula("aria2"), Self.cask("iterm2", displayName: "iTerm2")]
 
         let ranked = await FuzzySearch.rank(query: "   ", in: packages)
-        #expect(ranked.map(\.name) == ["aria2", "iterm2", "wget"])
+        #expect(ranked.map(\.package.name) == ["aria2", "iterm2", "wget"])
         #expect(ranked.count == packages.count)
     }
 
@@ -162,6 +163,76 @@ struct FuzzySearchTests {
         // Same score (prefix, equal length) → shorter name first, then alphabetical.
         let tied = [Self.formula("ab-two"), Self.formula("ab-one"), Self.formula("ab")]
         let order = await FuzzySearch.rank(query: "ab", in: tied)
-        #expect(order.map(\.name) == ["ab", "ab-one", "ab-two"])
+        #expect(order.map(\.package.name) == ["ab", "ab-one", "ab-two"])
+    }
+
+    // MARK: - Command index (v3)
+
+    /// The index the app actually feeds the ranker, so these tests exercise the real inversion too.
+    private static func index(_ packages: [Package]) async -> [String: [Package.ID]] {
+        await AppModel.buildCommandIndex(packages)
+    }
+
+    @Test("the command index lists every provider of a command")
+    func commandIndexInversion() async {
+        let packages = [
+            Self.formula("openjdk", commands: ["java", "javac"]),
+            Self.formula("openjdk@17", commands: ["java"]),
+            Self.cask("temurin", displayName: "Eclipse Temurin"),
+        ]
+
+        let index = await Self.index(packages)
+        #expect(index["java"]?.sorted() == ["formula:openjdk", "formula:openjdk@17"])
+        #expect(index["javac"] == ["formula:openjdk"])
+        // Casks carry no commands, so the index can only ever point at a formula.
+        #expect(index.values.allSatisfy { $0.allSatisfy { $0.hasPrefix("formula:") } })
+    }
+
+    @Test("an exact command match ranks below a name-exact package and above a substring name match")
+    func commandExactRanking() async {
+        let packages = [
+            Self.formula("convert", desc: "Unit conversion tool"),
+            Self.formula("imagemagick", desc: "Tools and libraries to manipulate images",
+                         commands: ["convert", "identify", "mogrify"]),
+            Self.formula("reconvert"),
+        ]
+
+        let ranked = await FuzzySearch.rank(query: "convert",
+                                            in: packages,
+                                            commands: await Self.index(packages))
+
+        #expect(ranked.map(\.package.name) == ["convert", "imagemagick", "reconvert"])
+        // Only the package the index surfaced explains itself; a name match must stay uncaptioned.
+        #expect(ranked.map(\.matchedCommand) == [nil, "convert", nil])
+    }
+
+    @Test("command-prefix matching needs at least two characters")
+    func commandPrefixMinimum() async {
+        // netpbm's name shares no letter with "j", so only the index can ever surface it here.
+        let packages = [Self.formula("netpbm", commands: ["jpegtopnm", "pnmtojpeg"])]
+        let index = await Self.index(packages)
+
+        let two = await FuzzySearch.rank(query: "jp", in: packages, commands: index)
+        #expect(two.map(\.package.name) == ["netpbm"])
+        #expect(two.first?.matchedCommand == "jpegtopnm")   // 600 - 9, the shorter prefix hit wins
+
+        let one = await FuzzySearch.rank(query: "j", in: packages, commands: index)
+        #expect(one.isEmpty)
+    }
+
+    @Test("a command hit never surfaces a package outside the passed subset")
+    func commandHitRespectsSubset() async {
+        let imagemagick = Self.formula("imagemagick", desc: "Tools and libraries to manipulate images",
+                                       commands: ["convert", "identify"])
+        let imageoptim = Self.cask("imageoptim", displayName: "ImageOptim", desc: "Image compressor")
+        let index = await Self.index([imagemagick, imageoptim])
+
+        // The index maps commands over the whole catalog…
+        let whole = await FuzzySearch.rank(query: "convert", in: [imagemagick, imageoptim], commands: index)
+        #expect(whole.map(\.package.name) == ["imagemagick"])
+
+        // …but Installed and Outdated pass a subset, which must never gain a stranger.
+        let subset = await FuzzySearch.rank(query: "convert", in: [imageoptim], commands: index)
+        #expect(subset.isEmpty)
     }
 }

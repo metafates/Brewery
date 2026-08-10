@@ -16,6 +16,9 @@ final class AppModel {
     /// per dependent, and a linear scan of ~16k entries per lookup (each comparison building a
     /// fresh interpolated `id`) stalls the main actor visibly on a package with many deps.
     private var catalogIndex: [Package.ID: Package] = [:]
+    /// "Which packages provide this executable", from the catalog's command lists. Search consults
+    /// it so `convert` finds imagemagick; the detail sheet just reads `package.commands`.
+    private(set) var commandIndex: [String: [Package.ID]] = [:]
     var catalogLoading = false
     var catalogFailed = false
 
@@ -34,6 +37,11 @@ final class AppModel {
     /// Set once when an operation fails so the operations popover can auto-present; the view
     /// clears it after showing.
     var failureToPresent: BrewOperation?
+
+    /// One search query per sidebar section, so queries never leak across tabs and each survives
+    /// switching away and back. It lives here rather than in the view because switching sections
+    /// tears the detail column down, taking any `@State` query with it.
+    var queries: [SidebarSection: String] = [:]
 
     /// Bumped by the ⌘F menu command. `ContentView` observes it and moves focus to the search
     /// field — the automatic ⌘F binding has historically been unreliable on macOS.
@@ -61,7 +69,7 @@ final class AppModel {
 
         let cache = CatalogStore.loadCache()
         if let cache {
-            setCatalog(cache.packages)
+            await setCatalog(cache.packages)
             catalogFetchedAt = cache.fetchedAt
         }
 
@@ -95,7 +103,7 @@ final class AppModel {
 
         do {
             let cache = try await CatalogStore.fetch()
-            setCatalog(cache.packages)
+            await setCatalog(cache.packages)
             catalogFetchedAt = cache.fetchedAt
         } catch {
             // A stale catalog still beats an error screen; only a cold start with no cache fails.
@@ -103,10 +111,27 @@ final class AppModel {
         }
     }
 
-    /// The only way `catalog` changes, so the ID index can never drift from it.
-    private func setCatalog(_ packages: [Package]) {
+    /// The only way `catalog` changes, so neither derived index can drift from it. The catalog is
+    /// published before the first suspension — the grid never waits on the command index — and
+    /// awaiting the build here keeps the two paths (cache, fresh download) from landing out of order.
+    private func setCatalog(_ packages: [Package]) async {
         catalog = packages
         catalogIndex = Dictionary(packages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        commandIndex = await Self.buildCommandIndex(packages)
+    }
+
+    /// Inverts the per-formula command lists into "who provides this executable". ~60k names across
+    /// the catalog, which is why it is `@concurrent`: a plain `nonisolated async func` would build
+    /// the whole thing on the main actor. Keys keep their original case — `FuzzySearch` folds them.
+    @concurrent nonisolated static func buildCommandIndex(_ packages: [Package]) async -> [String: [Package.ID]] {
+        var index: [String: [Package.ID]] = [:]
+        index.reserveCapacity(packages.count * 4)
+        for package in packages {
+            for command in package.commands {
+                index[command, default: []].append(package.id)
+            }
+        }
+        return index
     }
 
     /// Both reads at once — brew serializes only mutations, so concurrent reads are safe. The

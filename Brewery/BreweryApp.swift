@@ -13,13 +13,6 @@ struct BreweryApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
 
-    init() {
-        // Package icons are plain `AsyncImage` favicon loads; a real shared cache is what makes
-        // them survive a relaunch.
-        URLCache.shared = URLCache(memoryCapacity: 50 * 1024 * 1024,
-                                   diskCapacity: 256 * 1024 * 1024)
-    }
-
     var body: some Scene {
         WindowGroup {
             ContentView()

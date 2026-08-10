@@ -9,10 +9,12 @@ import SwiftUI
 /// the package right now. The whole card is a button that opens the detail sheet; the action button
 /// is overlaid rather than nested so both stay individually clickable and focusable.
 struct PackageCardView: View {
-    let package: Package
+    let hit: SearchHit
     let onSelect: () -> Void
 
     @Environment(AppModel.self) private var model
+
+    private var package: Package { hit.package }
 
     var body: some View {
         Button(action: onSelect) {
@@ -38,8 +40,11 @@ struct PackageCardView: View {
                     .lineLimit(2, reservesSpace: true)
 
                 // A hidden twin reserves exactly the room the overlaid action button needs,
-                // whatever the text size.
-                HStack(spacing: 0) {
+                // whatever the text size — and leaves the rest of that row for the caption.
+                HStack(spacing: 8) {
+                    if let command = hit.matchedCommand {
+                        providesCaption(command)
+                    }
                     Spacer(minLength: 0)
                     actionButton.hidden()
                 }
@@ -52,6 +57,17 @@ struct PackageCardView: View {
         .overlay(alignment: .bottomTrailing) {
             actionButton.padding(12)
         }
+    }
+
+    /// Why this card is here at all: a package matched only because it provides the executable the
+    /// user typed reads as a false positive without saying so. It rides the row the action button
+    /// already reserves, so a captioned card is exactly as tall as its neighbours.
+    private func providesCaption(_ command: String) -> some View {
+        Text("Provides \(Text(command).monospaced())")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 
     // MARK: - Status line
@@ -174,10 +190,13 @@ private struct CardButtonStyle: ButtonStyle {
 }
 
 #Preview {
-    PackageCardView(package: Package(kind: .cask, name: "iterm2", displayName: "iTerm2",
-                                     desc: "Terminal emulator as alternative to Apple's Terminal app",
-                                     homepage: "https://iterm2.com/", version: "3.5.11",
-                                     deprecated: false, disabled: false),
+    PackageCardView(hit: SearchHit(package: Package(kind: .cask, name: "iterm2",
+                                                    displayName: "iTerm2",
+                                                    desc: "Terminal emulator as alternative to Apple's Terminal app",
+                                                    homepage: "https://iterm2.com/",
+                                                    version: "3.5.11",
+                                                    deprecated: false, disabled: false),
+                                   matchedCommand: nil),
                     onSelect: {})
     .environment(AppModel())
     .frame(width: 260)
