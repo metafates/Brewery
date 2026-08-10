@@ -56,7 +56,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
 /// plain state and not `.searchScopes`: scopes only surface while a search is active, and the
 /// filter has to govern empty-query browsing just the same.
 nonisolated enum KindFilter: String, CaseIterable, Identifiable {
-    case all, formulae, casks, fonts, taps
+    case all, formulae, casks, fonts
 
     var id: String { rawValue }
 
@@ -66,7 +66,6 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
         case .formulae: "Formulae"
         case .casks: "Casks"
         case .fonts: "Fonts"
-        case .taps: "From Taps"
         }
     }
 
@@ -78,9 +77,6 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
         // subset of a filter the user just picked, and the option pointless.
         case .casks: package.kind == .cask && !package.isFont
         case .fonts: package.isFont
-        // Everything the local tap scan contributed — the escape hatch from the popularity sort,
-        // where mostly-uncounted tap items otherwise sit at the bottom of 16k rows.
-        case .taps: package.tap != nil
         }
     }
 }
@@ -105,9 +101,13 @@ struct ContentView: View {
     @AppStorage("discover.kindFilter") private var kindFilter: KindFilter = .all
     @AppStorage("discover.hideDeprecated") private var hideDeprecated = false
     @AppStorage("installed.scope") private var installedScope: InstalledScope = .onRequest
+    /// A source is not a kind: a tap item IS a formula or cask, so "from taps" is a combinable
+    /// toggle like Hide Deprecated, never a kind-picker case — "casks from taps" must be sayable.
+    @AppStorage("discover.tapsOnly") private var tapsOnly = false
     /// Installed's own kind filter — deliberately separate state from Discover's: switching tabs
     /// must not carry one tab's filter into the other.
     @AppStorage("installed.kindFilter") private var installedKindFilter: KindFilter = .all
+    @AppStorage("installed.tapsOnly") private var installedTapsOnly = false
 
     @State private var selection: SidebarSection? = .discover
     /// Ranked results per section, so leaving a tab and coming back shows that tab's results at
@@ -266,8 +266,13 @@ struct ContentView: View {
     /// Installed's kind pre-filter — same position in the pipeline as Discover's: before ranking,
     /// and governing empty-query browsing too. A few hundred items, so no caching needed.
     private func installedFiltered(_ packages: [Package]) -> [Package] {
-        guard installedKindFilter != .all else { return packages }
-        return packages.filter(installedKindFilter.matches)
+        guard installedKindFilter != .all || installedTapsOnly else { return packages }
+        return packages.filter { package in
+            // The effective tap, not `package.tap`: an installed tap item whose name collides
+            // with core joins the core catalog entry, but its receipt knows the truth.
+            installedKindFilter.matches(package)
+                && !(installedTapsOnly && model.effectiveTap(for: package) == nil)
+        }
     }
 
     /// Discover's pre-filter. It runs before `FuzzySearch.rank`, so ranking only ever sees fewer
@@ -277,11 +282,13 @@ struct ContentView: View {
         return packages.filter { package in
             // A disabled package is further along the same lifecycle as a deprecated one, and
             // cannot be installed at all.
-            kindFilter.matches(package) && !(hideDeprecated && (package.deprecated || package.disabled))
+            kindFilter.matches(package)
+                && !(hideDeprecated && (package.deprecated || package.disabled))
+                && !(tapsOnly && package.tap == nil)
         }
     }
 
-    private var filtersActive: Bool { kindFilter != .all || hideDeprecated }
+    private var filtersActive: Bool { kindFilter != .all || hideDeprecated || tapsOnly }
 
     /// Discover has no empty state of its own — by the time it renders, the catalog is loaded — but
     /// a filter can empty it, and so can the On Request scope on a machine whose kegs are all deps.
@@ -290,7 +297,7 @@ struct ContentView: View {
         case .discover:
             filtersActive ? "No packages match the filters" : nil
         case .installed:
-            if installedKindFilter != .all, !model.installed.isEmpty {
+            if installedKindFilter != .all || installedTapsOnly, !model.installed.isEmpty {
                 "No installed packages match the filter"
             } else if installedScope == .onRequest, !model.installed.isEmpty {
                 "No packages installed on request"
@@ -327,6 +334,8 @@ struct ContentView: View {
         let hideDeprecated: Bool
         let installedScope: InstalledScope
         let installedKindFilter: KindFilter
+        let tapsOnly: Bool
+        let installedTapsOnly: Bool
         /// Not a count: a tap rescan can swap entries while netting zero, which a count cannot see.
         let catalogGeneration: Int
         let installedCount: Int
@@ -340,6 +349,8 @@ struct ContentView: View {
                   hideDeprecated: hideDeprecated,
                   installedScope: installedScope,
                   installedKindFilter: installedKindFilter,
+                  tapsOnly: tapsOnly,
+                  installedTapsOnly: installedTapsOnly,
                   catalogGeneration: model.catalogGeneration,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
@@ -352,7 +363,9 @@ struct ContentView: View {
                                       kindFilter: kindFilter,
                                       hideDeprecated: hideDeprecated,
                                       installedScope: installedScope,
-                                      installedKindFilter: installedKindFilter),
+                                      installedKindFilter: installedKindFilter,
+                                      tapsOnly: tapsOnly,
+                                      installedTapsOnly: installedTapsOnly),
                   catalogGeneration: model.catalogGeneration,
                   commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
@@ -384,6 +397,8 @@ struct ContentView: View {
         let hideDeprecated: Bool
         let installedScope: InstalledScope
         let installedKindFilter: KindFilter
+        let tapsOnly: Bool
+        let installedTapsOnly: Bool
     }
 
     // MARK: - Counts
@@ -410,7 +425,7 @@ struct ContentView: View {
     private var isNarrowed: Bool {
         switch section {
         case .discover: filtersActive
-        case .installed: installedScope != .onRequest || installedKindFilter != .all
+        case .installed: installedScope != .onRequest || installedKindFilter != .all || installedTapsOnly
         case .outdated, .services: false
         }
     }
@@ -439,6 +454,7 @@ struct ContentView: View {
                     .pickerStyle(.inline)
 
                     Toggle("Hide Deprecated", isOn: $hideDeprecated)
+                    Toggle("From Taps Only", isOn: $tapsOnly)
                 } label: {
                     // The filled variant is the tell that the grid is not showing everything.
                     Label("Filter", systemImage: filtersActive
@@ -458,8 +474,10 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(.inline)
+
+                    Toggle("From Taps Only", isOn: $installedTapsOnly)
                 } label: {
-                    Label("Filter", systemImage: installedKindFilter != .all
+                    Label("Filter", systemImage: installedKindFilter != .all || installedTapsOnly
                           ? "line.3.horizontal.decrease.circle.fill"
                           : "line.3.horizontal.decrease.circle")
                 }
