@@ -98,14 +98,15 @@ struct ContentView: View {
     @AppStorage("installed.scope") private var installedScope: InstalledScope = .onRequest
 
     @State private var selection: SidebarSection? = .discover
-    @State private var results: [SearchHit] = []
+    /// Ranked results per section, so leaving a tab and coming back shows that tab's results at
+    /// once. A single array meant visiting a tab with an empty query cleared it, and the return
+    /// trip flashed the unfiltered listing until the re-rank landed.
+    @State private var results: [SidebarSection: [SearchHit]] = [:]
     /// The browse listing, built once per change of the underlying array rather than per body pass.
     /// Rebuilding it inline cost two full walks of the 16k catalog every time the body ran — and,
     /// worse, handed SwiftUI a fresh array each time, so its cheap CoW identity check for "did this
     /// change?" degraded into a 16k element-by-element comparison.
     @State private var browseHits: [SearchHit] = []
-    /// The section `results` were ranked over; a switch invalidates them until the task re-ranks.
-    @State private var resultsSection: SidebarSection?
     @State private var selectedPackage: Package?
     @State private var showOperations = false
     @FocusState private var searchFocused: Bool
@@ -152,9 +153,9 @@ struct ContentView: View {
                 .searchFocused($searchFocused)
         }
         .task(id: searchKey) {
+            let ranked = section
             guard isSearching else {
-                results = []
-                resultsSection = nil
+                results[ranked] = nil
                 return
             }
             // Debounce. The sleep throws when the next keystroke replaces this task — a bare
@@ -162,10 +163,9 @@ struct ContentView: View {
             // Short on purpose: ranking is a few milliseconds and runs off the main actor, so the
             // debounce only has to coalesce a fast typist's burst, not hide a slow search.
             guard (try? await Task.sleep(for: .milliseconds(50))) != nil else { return }
-            results = await FuzzySearch.rank(query: searchText,
-                                             in: sourcePackages,
-                                             commands: model.commandIndex)
-            resultsSection = section
+            results[ranked] = await FuzzySearch.rank(query: searchText,
+                                                     in: sourcePackages,
+                                                     commands: model.commandIndex)
         }
         .task(id: browseKey) {
             browseHits = sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
@@ -255,14 +255,16 @@ struct ContentView: View {
     /// another section are equally unusable: during the debounce after a section switch the new
     /// section's own array stands in, never the old section's cards.
     private var displayedHits: [SearchHit] {
-        guard isSearching, resultsSection == section else { return browseHits }
-        return results
+        guard isSearching else { return browseHits }
+        // Falling back to the listing only happens the very first time a section is searched,
+        // before its first ranking lands.
+        return results[section] ?? browseHits
     }
 
     /// What the grid will render. Reads the cached array rather than rebuilding it to count it.
     private var displayedCount: Int {
-        guard isSearching, resultsSection == section else { return browseHits.count }
-        return results.count
+        guard isSearching else { return browseHits.count }
+        return (results[section] ?? browseHits).count
     }
 
     /// What the browse listing is made of. Deliberately excludes the query: while a search is being

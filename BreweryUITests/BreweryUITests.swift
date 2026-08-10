@@ -112,3 +112,31 @@ extension BreweryUITests {
         print("EMPTY_SECTION_FOCUS_SECONDS \(Date().timeIntervalSince(t1))")
     }
 }
+
+/// Regression: a query typed in one tab must still be showing *its results* on return, not the
+/// unfiltered listing. The flash was brief, so this asserts the count the moment the tab is back.
+extension BreweryUITests {
+    func testSearchResultsSurviveTabSwitch() throws {
+        let app = launched()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 60))
+        sleep(20)
+
+        field.click()
+        field.typeText("vim")
+        sleep(2)
+        let searched = app.buttons.matching(NSPredicate(format: "label == %@", "Install")).count
+        XCTAssertLessThan(searched, 40, "Search did not narrow the grid; got \(searched) cards.")
+
+        app.staticTexts["Installed"].click()
+        sleep(2)
+        app.staticTexts["Discover"].click()
+
+        // Read immediately — no settle — so a fallback to the full listing would be caught.
+        let onReturn = app.buttons.matching(NSPredicate(format: "label == %@", "Install")).count
+        print("CARDS_AFTER_RETURN \(onReturn) vs SEARCHED \(searched)")
+        XCTAssertLessThan(onReturn, 40,
+                          "Returning to Discover showed the unfiltered listing (\(onReturn) cards).")
+        XCTAssertEqual(field.value as? String, "vim", "The query was not restored.")
+    }
+}
