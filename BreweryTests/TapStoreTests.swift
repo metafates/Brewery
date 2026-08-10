@@ -82,7 +82,7 @@ struct TapStoreTests {
         #expect(TapStore.parseFormula("class Helper\n  desc \"still not one\"\nend") == nil)
     }
 
-    @Test("cask parsing: token guard, display name, :latest version stays absent")
+    @Test("cask parsing: token guard, display name, :latest version stays absent, artifacts")
     func caskParsing() throws {
         let text = """
         cask "widget-app" do
@@ -90,12 +90,20 @@ struct TapStoreTests {
           name "Widget App"
           desc "Does widget things"
           homepage "https://widget.example"
+          app "Widget.app"
+          app "Widget Helper.app"
+          binary "Widget.app/Contents/MacOS/widgetctl"
         end
         """
         let parsed = try #require(TapStore.parseCask(text))
         #expect(parsed.displayName == "Widget App")
         #expect(parsed.desc == "Does widget things")
         #expect(parsed.version == nil)
+        // Every app stanza collected; the binary's command is the path's basename.
+        #expect(parsed.artifacts == [
+            CaskArtifact(kind: .app, names: ["Widget.app", "Widget Helper.app"]),
+            CaskArtifact(kind: .binary, names: ["widgetctl"])
+        ])
         #expect(TapStore.parseCask("class NotACask < Formula\nend") == nil)
     }
 

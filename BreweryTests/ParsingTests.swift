@@ -214,7 +214,13 @@ struct CatalogDecodingTests {
             "url": "https://update.code.visualstudio.com/1.96.2/darwin-universal/stable",
             "version": "1.96.2",
             "sha256": "no_check",
-            "artifacts": [{ "app": ["Visual Studio Code.app"] }, { "zap": [{ "trash": ["~/Library/Caches/com.microsoft.VSCode"] }] }],
+            "artifacts": [
+              { "uninstall": [{ "launchctl": "com.microsoft.VSCode" }] },
+              { "app": ["Visual Studio Code.app"], "target": "/Applications/Visual Studio Code.app" },
+              { "binary": ["$APPDIR/Visual Studio Code.app/Contents/Resources/app/bin/code"], "target": "$HOMEBREW_PREFIX/bin/code" },
+              { "binary": ["$APPDIR/Visual Studio Code.app/Contents/Resources/app/bin/code-tunnel", { "target": "$HOMEBREW_PREFIX/bin/code-tunnel" }], "target": "$HOMEBREW_PREFIX/bin/code-tunnel" },
+              { "zap": [{ "trash": ["~/Library/Caches/com.microsoft.VSCode"] }] }
+            ],
             "depends_on": { "macos": { ">=": ["11"] } },
             "conflicts_with": null,
             "caveats": null,
@@ -291,6 +297,16 @@ struct CatalogDecodingTests {
         #expect(vscode.iconURL == URL(string: "https://icons.duckduckgo.com/ip3/code.visualstudio.com.ico"))
         #expect(vscode.rubySourceURL
                 == URL(string: "https://github.com/Homebrew/homebrew-cask/blob/HEAD/Casks/v/visual-studio-code.rb"))
+        // Payload only, aggregated by kind: uninstall/zap plumbing drops out; the binary names
+        // come from the target basenames (the source is a $APPDIR path); the inline {target}
+        // object mixed into the second binary's array is skipped, not a name.
+        #expect(vscode.artifacts == [
+            CaskArtifact(kind: .app, names: ["Visual Studio Code.app"]),
+            CaskArtifact(kind: .binary, names: ["code", "code-tunnel"])
+        ])
+
+        // No artifacts key at all (mystery-app) → empty, not a decode failure.
+        #expect(packages[1].artifacts.isEmpty)
 
         let mystery = packages[1]
         #expect(mystery.displayName == nil)

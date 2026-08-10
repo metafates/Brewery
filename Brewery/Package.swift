@@ -17,6 +17,85 @@ nonisolated struct Conflict: Codable, Hashable {
     let reason: String?
 }
 
+/// What a cask puts on the machine, aggregated by kind — the payload half of the API's
+/// `artifacts` array. Plumbing (zap, uninstall, flight steps, completions, manpages) is
+/// deliberately absent: this answers "what do I get", not "how does brew clean up".
+nonisolated struct CaskArtifact: Codable, Hashable {
+    let kind: Kind
+    let names: [String]
+
+    /// Raw values are the JSON keys. The order here is the display order: the headline payload
+    /// first, then the system add-ons.
+    enum Kind: String, Codable, CaseIterable {
+        case app
+        case suite
+        case binary
+        case pkg
+        case installer
+        case font
+        case qlplugin
+        case prefpane = "prefpane"
+        case screenSaver = "screen_saver"
+        case dictionary
+        case inputMethod = "input_method"
+        case internetPlugin = "internet_plugin"
+        case keyboardLayout = "keyboard_layout"
+        case mdimporter
+        case colorpicker
+        case audioUnitPlugin = "audio_unit_plugin"
+        case vstPlugin = "vst_plugin"
+        case vst3Plugin = "vst3_plugin"
+        case service
+
+        /// Singular/plural handled by the caller via `names.count`.
+        var label: String {
+            switch self {
+            case .app: "App"
+            case .suite: "Suite"
+            case .binary: "Commands"   // the same concept a formula's Commands section names
+            case .pkg, .installer: "Installer"
+            case .font: "Fonts"
+            case .qlplugin: "Quick Look"
+            case .prefpane: "Preference Pane"
+            case .screenSaver: "Screen Saver"
+            case .dictionary: "Dictionary"
+            case .inputMethod: "Input Method"
+            case .internetPlugin: "Internet Plugin"
+            case .keyboardLayout: "Keyboard Layout"
+            case .mdimporter: "Spotlight Importer"
+            case .colorpicker: "Color Picker"
+            case .audioUnitPlugin: "Audio Unit"
+            case .vstPlugin: "VST Plugin"
+            case .vst3Plugin: "VST 3 Plugin"
+            case .service: "Service"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .app, .suite: "macwindow"
+            case .binary: "terminal"
+            case .pkg, .installer: "shippingbox"
+            case .font: "textformat"
+            case .qlplugin: "eye"
+            case .prefpane: "gearshape"
+            case .screenSaver: "sparkles.tv"
+            case .dictionary: "character.book.closed"
+            case .inputMethod: "keyboard"
+            case .internetPlugin: "network"
+            case .keyboardLayout: "keyboard"
+            case .mdimporter: "magnifyingglass"
+            case .colorpicker: "eyedropper"
+            case .audioUnitPlugin, .vstPlugin, .vst3Plugin: "waveform"
+            case .service: "gearshape.2"
+            }
+        }
+
+        /// Commands read as code; everything else is a display name.
+        var isMonospaced: Bool { self == .binary }
+    }
+}
+
 /// One catalog entry — a formula or a cask. Purely descriptive: install state lives in `AppModel`.
 nonisolated struct Package: Codable, Identifiable, Hashable {
     let kind: PackageKind
@@ -35,6 +114,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let rubySourcePath: String? // repo-relative .rb path, e.g. "Formula/w/wget.rb"; nil when synthesized
     let tap: String?          // "user/repo" for third-party taps; nil = core (implied by kind)
     let tapRemote: String?    // the tap clone's git remote, for source links; nil for core
+    let artifacts: [CaskArtifact] // casks only; payload artifacts aggregated by kind
 
     /// Written out rather than synthesized: a `let` with an inline default drops out of the
     /// implicit memberwise init, which would break every existing `Package(kind:…)` call site.
@@ -53,7 +133,8 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
          license: String? = nil,
          rubySourcePath: String? = nil,
          tap: String? = nil,
-         tapRemote: String? = nil) {
+         tapRemote: String? = nil,
+         artifacts: [CaskArtifact] = []) {
         self.kind = kind
         self.name = name
         self.displayName = displayName
@@ -70,6 +151,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         self.rubySourcePath = rubySourcePath
         self.tap = tap
         self.tapRemote = tapRemote
+        self.artifacts = artifacts
     }
 
     var id: String { Package.packageID(kind: kind, name: name) }

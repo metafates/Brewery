@@ -80,6 +80,11 @@ struct PackageDetailView: View {
                         commands
                     }
 
+                    if !displayed.artifacts.isEmpty {
+                        Divider()
+                        contents
+                    }
+
                     if !displayed.conflicts.isEmpty {
                         Divider()
                         conflicts
@@ -132,10 +137,11 @@ struct PackageDetailView: View {
         .onExitCommand { dismiss() }
     }
 
-    /// Caveats, commands and conflicts fill the sheet the same way the related lists do, so they
-    /// earn the taller frame too — everything past it scrolls.
+    /// Caveats, commands, contents and conflicts fill the sheet the same way the related lists
+    /// do, so they earn the taller frame too — everything past it scrolls.
     private var hasDetails: Bool {
-        displayed.caveats?.isEmpty == false || !displayed.commands.isEmpty || !displayed.conflicts.isEmpty
+        displayed.caveats?.isEmpty == false || !displayed.commands.isEmpty
+            || !displayed.artifacts.isEmpty || !displayed.conflicts.isEmpty
     }
 
     private func height(hasSections: Bool) -> CGFloat {
@@ -396,6 +402,56 @@ struct PackageDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// What the cask puts on the machine — the payload counterpart of a formula's Commands.
+    /// A two-column grid: kind (icon + label) on the left, names on the right, so several kinds
+    /// (app, commands, installer…) read as one aligned table rather than stacked fragments.
+    private var contents: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sectionTitle("Contents")
+
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 5) {
+                ForEach(displayed.artifacts, id: \.kind) { artifact in
+                    GridRow {
+                        Label(label(for: artifact), systemImage: artifact.kind.symbol)
+                            .foregroundStyle(.secondary)
+                            .gridColumnAlignment(.leading)
+                        Text(names(for: artifact))
+                            .fontDesign(artifact.kind.isMonospaced ? .monospaced : nil)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .font(.callout)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func label(for artifact: CaskArtifact) -> String {
+        artifact.kind == .app && artifact.names.count > 1 ? "Apps" : artifact.kind.label
+    }
+
+    /// Apps read as products, not files — ".app" is dropped. Fonts collapse to a count: a font
+    /// cask is one typeface shipped as many weight files, and listing twelve `.ttf` names says
+    /// less than "12 font files". Everything else is the `·`-joined list the Commands section
+    /// already taught.
+    private func names(for artifact: CaskArtifact) -> String {
+        switch artifact.kind {
+        case .app, .suite:
+            return artifact.names
+                .map { $0.hasSuffix(".app") ? String($0.dropLast(".app".count)) : $0 }
+                .joined(separator: " · ")
+        case .font:
+            return artifact.names.count == 1
+                ? artifact.names[0]
+                : "\(artifact.names.count) font files"
+        default:
+            return artifact.names.joined(separator: " · ")
+        }
     }
 
     /// Formulae that cannot be installed alongside this one. Each name is a row like a dependency,

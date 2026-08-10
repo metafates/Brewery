@@ -47,7 +47,7 @@ nonisolated struct CatalogStore {
     static let maxCacheAge: TimeInterval = 24 * 60 * 60
 
     /// Bumped whenever `Package`'s shape changes; a mismatch discards the cache and re-downloads.
-    static let cacheVersion = 5
+    static let cacheVersion = 6
 
     /// Application Support/Brewery, created on demand.
     static var supportDirectory: URL {
@@ -245,10 +245,72 @@ nonisolated struct CatalogStore {
         let disabled: Bool?
         let caveats: String?
         let rubySourcePath: String?
+        let artifacts: [ArtifactEntry]?
 
         enum CodingKeys: String, CodingKey {
-            case token, name, desc, homepage, version, deprecated, disabled, caveats
+            case token, name, desc, homepage, version, deprecated, disabled, caveats, artifacts
             case rubySourcePath = "ruby_source_path"
+        }
+    }
+
+    /// One element of a cask's `artifacts` array: a single-key object — `{"app": ["iTerm.app"],
+    /// "target": "/Applications/iTerm.app"}` — whose key names the artifact kind. Payload kinds
+    /// decode; plumbing (`zap`, `uninstall`, flight steps, completions, manpages) and unknown
+    /// kinds yield nil and drop out. The meaningful display name is the basename of the sibling
+    /// `target` when there is one — for binaries the source is a `$APPDIR/…` path and the target
+    /// is what lands on `PATH` — else of each source string. Inline `{"target": …}` objects mixed
+    /// into the arrays (docker-desktop) are skipped; their entries carry a sibling target anyway.
+    struct ArtifactEntry: Decodable {
+        let kind: CaskArtifact.Kind?
+        let names: [String]
+
+        private struct DynamicKey: CodingKey {
+            let stringValue: String
+            let intValue: Int? = nil
+            init?(stringValue: String) { self.stringValue = stringValue }
+            init?(intValue: Int) { nil }
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: DynamicKey.self)
+            let target = DynamicKey(stringValue: "target").flatMap {
+                try? container.decodeIfPresent(String.self, forKey: $0)
+            }
+
+            for key in container.allKeys {
+                guard let found = CaskArtifact.Kind(rawValue: key.stringValue) else { continue }
+                let sources = ((try? container.decode([Lenient<String>].self, forKey: key)) ?? [])
+                    .compactMap(\.value)
+                kind = found
+                if let target {
+                    names = [Self.basename(target)]
+                } else {
+                    names = sources.map(Self.basename)
+                }
+                return
+            }
+            kind = nil
+            names = []
+        }
+
+        private static func basename(_ path: String) -> String {
+            path.split(separator: "/").last.map(String.init) ?? path
+        }
+    }
+
+    /// Groups the payload entries by kind in `Kind`'s declaration order — the display order —
+    /// deduplicating names.
+    static func aggregateArtifacts(_ entries: [ArtifactEntry]) -> [CaskArtifact] {
+        var byKind: [CaskArtifact.Kind: [String]] = [:]
+        var seen: Set<String> = []
+        for entry in entries {
+            guard let kind = entry.kind, !entry.names.isEmpty else { continue }
+            for name in entry.names where seen.insert("\(kind.rawValue):\(name)").inserted {
+                byKind[kind, default: []].append(name)
+            }
+        }
+        return CaskArtifact.Kind.allCases.compactMap { kind in
+            byKind[kind].map { CaskArtifact(kind: kind, names: $0) }
         }
     }
 
@@ -285,7 +347,8 @@ nonisolated struct CatalogStore {
                     disabled: entry.disabled ?? false,
                     caveats: entry.caveats,
                     installs90d: installs[entry.token],
-                    rubySourcePath: entry.rubySourcePath)
+                    rubySourcePath: entry.rubySourcePath,
+                    artifacts: aggregateArtifacts(entry.artifacts ?? []))
         }
     }
 }

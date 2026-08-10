@@ -112,7 +112,8 @@ nonisolated enum TapStore {
                        license: parsed.license,
                        rubySourcePath: sourcePath,
                        tap: tap,
-                       tapRemote: remote)
+                       tapRemote: remote,
+                       artifacts: kind == .cask ? parsed.artifacts : [])
     }
 
     // MARK: - File discovery
@@ -185,8 +186,18 @@ nonisolated enum TapStore {
         var version: String?
         var license: String?
         var displayName: String?   // casks only: the first `name "…"` stanza
+        var apps: [String] = []    // casks only: every `app "…"` stanza
+        var binaries: [String] = [] // casks only: every `binary "…"` stanza, basenames
         var deprecated = false
         var disabled = false
+
+        /// The payload in `CaskArtifact` form — apps first, then commands, matching the catalog.
+        var artifacts: [CaskArtifact] {
+            var result: [CaskArtifact] = []
+            if !apps.isEmpty { result.append(CaskArtifact(kind: .app, names: apps)) }
+            if !binaries.isEmpty { result.append(CaskArtifact(kind: .binary, names: binaries)) }
+            return result
+        }
     }
 
     /// nil unless the file declares `class … < Formula` — a stray root-level Ruby file (release
@@ -232,6 +243,14 @@ nonisolated enum TapStore {
                 result.license = quoted(line)
             } else if result.displayName == nil, line.hasPrefix("name ") {
                 result.displayName = quoted(line)
+            } else if line.hasPrefix("app ") {
+                // Every stanza, not the first: a cask can ship several apps.
+                if let app = quoted(line) { result.apps.append(app) }
+            } else if line.hasPrefix("binary ") {
+                // The stanza names a path inside the staged download; the command is its basename.
+                if let binary = quoted(line)?.split(separator: "/").last.map(String.init) {
+                    result.binaries.append(binary)
+                }
             } else if line.hasPrefix("deprecate!") {
                 result.deprecated = true
             } else if line.hasPrefix("disable!") {
