@@ -103,6 +103,10 @@ struct PackageDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20)
             }
+            // The content only — the footer stays crisp and usable: a refresh never blocks Done.
+            // What the veil covers is exactly what ⌘R re-checks; the rows update in place when
+            // it lands.
+            .refreshVeil(model.isRefreshing)
 
             Divider()
 

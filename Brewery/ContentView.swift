@@ -516,11 +516,13 @@ struct ContentView: View {
     }
 }
 
-private extension View {
+extension View {
     /// ⌘R feedback in the content itself, not just the toolbar glyph: the listing stays put but
     /// recedes — blurred and dimmed, never hidden, because the data on screen is still valid while
     /// it is re-checked — behind a glass capsule naming the work. On a warm cache the whole thing
     /// is a soft half-second pulse, which is exactly the acknowledgment a fast refresh needs.
+    /// Worn by the grid and by an open detail sheet's content alike — the sheet is frontmost, so
+    /// without its own veil a ⌘R would look ignored.
     func refreshVeil(_ active: Bool) -> some View {
         blur(radius: active ? 6 : 0)
             .opacity(active ? 0.5 : 1)
