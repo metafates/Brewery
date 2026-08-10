@@ -413,20 +413,64 @@ struct PackageDetailView: View {
 
     // MARK: - Caveats, commands, conflicts
 
-    /// Homebrew prints these after an install; the paths and commands in them are meant to be
-    /// copied, hence the selectable text.
+    /// Homebrew prints these after an install, and they follow conventions worth honoring:
+    /// backticks mean inline code, two-space-indented lines are commands and paths, blank lines
+    /// separate paragraphs. Rendered as such — prose with real code spans, indented runs as
+    /// copyable code blocks — instead of the undifferentiated slab a single `Text` makes.
     private func caveats(_ text: String) -> some View {
         GroupBox {
-            Text(text)
-                .font(.callout)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(CaveatFormat.blocks(of: text).enumerated()), id: \.offset) { _, block in
+                    switch block {
+                    case .text(let paragraph):
+                        Text(Self.inlineMarkdown(paragraph))
+                            .font(.callout)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    case .code(let code):
+                        codeBlock(code)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
             Label("Caveats", systemImage: "info.circle")
                 .font(.subheadline)
                 .fontWeight(.semibold)
         }
+    }
+
+    /// Inline-only on purpose: full Markdown would collapse the newlines the text depends on.
+    /// A parse failure falls back to the raw string — a caveat is never lost to formatting.
+    private static func inlineMarkdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text,
+                               options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
+    }
+
+    /// One indented run — commands meant to be executed, so they come with a copy button.
+    private func codeBlock(_ code: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(code)
+                .font(.callout)
+                .monospaced()
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(code, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help("Copy")
+            .accessibilityLabel("Copy command")
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
     }
 
     /// The executables the formula puts on `PATH`, as one copyable list — a word list, not chips.
@@ -656,6 +700,53 @@ struct PackageDetailView: View {
         case .failed: "Failed"
         case .cancelled: "Cancelled"
         }
+    }
+}
+
+/// Splits a caveat into its conventional blocks: prose paragraphs and indented command runs.
+/// Pure and line-based — brew's caveats are hand-written text, not real Markdown, so the only
+/// structure worth trusting is the one every formula actually uses.
+nonisolated enum CaveatFormat {
+    enum Block: Equatable {
+        case text(String)
+        case code(String)
+    }
+
+    static func blocks(of text: String) -> [Block] {
+        var blocks: [Block] = []
+        var textLines: [String] = []
+        var codeLines: [String] = []
+
+        func flushText() {
+            let paragraph = textLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !paragraph.isEmpty { blocks.append(.text(paragraph)) }
+            textLines = []
+        }
+        func flushCode() {
+            guard !codeLines.isEmpty else { return }
+            // Strip the common indent; what remains is what the user would type.
+            let indent = codeLines.map { $0.prefix { $0 == " " || $0 == "\t" }.count }.min() ?? 0
+            blocks.append(.code(codeLines.map { String($0.dropFirst(indent)) }.joined(separator: "\n")))
+            codeLines = []
+        }
+
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            let isBlank = line.trimmingCharacters(in: .whitespaces).isEmpty
+            let isIndented = line.hasPrefix("  ") || line.hasPrefix("\t")
+            if isBlank {
+                flushText()
+                flushCode()
+            } else if isIndented {
+                flushText()
+                codeLines.append(line)
+            } else {
+                flushCode()
+                textLines.append(line)
+            }
+        }
+        flushText()
+        flushCode()
+        return blocks
     }
 }
 
