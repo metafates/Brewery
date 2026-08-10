@@ -820,11 +820,15 @@ private struct CopyButton: View {
             }
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .contentTransition(.symbolEffect(.replace))
-                .foregroundStyle(copied ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+                // The z-axis story: the old glyph recedes, the new one arrives — and the same
+                // motion plays the reset. Doubled speed; a confirmation should be a blink.
+                .contentTransition(.symbolEffect(.replace.downUp, options: .speed(2)))
+                // Both glyphs live in one fixed box — without it the swap reflows the row by
+                // the width difference between the two symbols.
+                .frame(width: 18, height: 16)
+                .foregroundStyle(.secondary)
         }
         .buttonStyle(.borderless)
-        .animation(.smooth(duration: 0.25), value: copied)
         .help("Copy")
         .accessibilityLabel(copied ? "Copied" : "Copy command")
     }
