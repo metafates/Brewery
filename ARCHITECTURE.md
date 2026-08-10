@@ -11,11 +11,12 @@ A native macOS GUI for Homebrew. SwiftUI, macOS 26, zero third-party dependencie
 5. Simple, maintainable code. KISS and YAGNI throughout.
 6. **(v2)** Filters and dependency visibility: search scoped to formulae/casks with an option to hide deprecated entries; Installed scoped to directly-installed items (with an "all" escape hatch); per-package installed dependencies; and, for items pulled in as dependencies, who requires them.
 7. **(v3)** Richer package pages and a faster shell: provided commands per formula (command-not-found data) and search-by-command; caveats, conflicts, and 90-day install analytics in the detail sheet; a Fonts filter with a native glyph instead of favicons; per-tab search state; item counts in the window subtitle; windowed grid rendering; and a real icon cache.
+8. **(v4)** Taps overhaul: packages from installed third-party taps join the catalog (local scan, zero subprocesses) and are searchable in Discover; every item answers "which tap is this from"; install/upgrade pass tap-qualified names, which is also what brew 6.x's tap-trust gate requires; all with **zero performance regression** — taps ride in as metadata, the join rule, safety whitelist and every hot path stay untouched.
 
 ## Non-goals (v1)
 
 - **No destructive brew commands.** No `uninstall`, `zap`, `cleanup`, `pin`/`unpin`, `--force`. Hard safety requirement — structurally enforced, see [Safety](#safety).
-- No taps management, no services, no doctor. No dependency *graph visualization* — v2 shows flat dependency/dependent lists from install receipts, nothing more.
+- No taps management *commands* — no `tap`, `untap`, `trust`. **(v4)** reads installed taps from disk and surfaces their packages; adding, removing and trusting taps stays in the terminal. (The one trust write that happens is brew's own: installing by qualified name auto-trusts the item — disclosed in the UI, see v4.) No services, no doctor. No dependency *graph visualization* — v2 shows flat dependency/dependent lists from install receipts, nothing more.
 - No analytics-based popularity *ranking* — v3 displays install counts in the detail sheet, but they still don't feed the search scorer (revisit only if search feels bad in practice).
 - No Settings pane, no multiple windows, no log persistence across launches.
 - No App Store distribution (the app cannot be sandboxed — it execs `brew`).
@@ -31,6 +32,22 @@ Facts below were verified by reading the Homebrew source (brew 6.x, `Library/Hom
 - **(v3)** Catalog entries also carry `caveats` (string, may embed a literal `$HOMEBREW_PREFIX` — verified on `php`) and, for formulae, `conflicts_with` + `conflicts_with_reasons` (parallel arrays; verified on `vim`: `["ex-vi", "macvim", …]` with human-readable reasons). Cask `conflicts_with` is a differently-shaped object — deferred.
 - **(v3) Command database**: brew's `command-not-found` data — which executables each formula installs — is generated from the internal API's per-formula `executables` array (`api.rb:282-309`, published at `ghcr.io/v2/homebrew/command-not-found/executables`, `api.rb:314`). formulae.brew.sh serves the same file publicly: `GET /api/internal/executables.txt`, ~350 KB, one line per formula, format `name:cmd1 cmd2 …` (verified live; brew keeps its own copy at `~/Library/Caches/Homebrew/api/internal/executables.txt`). We download the public file with the catalog — no dependence on brew's cache dir; if the endpoint ever moves, the feature degrades to hidden, nothing else breaks.
 - **(v3) Analytics**: `GET /api/analytics/install/90d.json` (2.4 MB, ~32k items incl. tap formulae) → `{"items":[{"formula": "openssl@3", "count": "1,444,028", …}]}` — **counts are comma-formatted strings**. Casks: `GET /api/analytics/cask-install/homebrew-cask/90d.json` (440 KB) → keyed `{"formulae": {"<token>": [{"cask": "<token>", "count": "868"}]}}` — the top-level key really is `formulae` (historical misnaming) and it's a dict, not an array. Both verified live.
+
+### Taps (v4)
+
+Verified against brew 6.x source and live probes on a machine with five third-party taps:
+
+- **Location**: `<brew repository>/Library/Taps/<user>/homebrew-<repo>` — the *repository*, not the prefix (they differ on Intel: prefix `/usr/local`, repository `/usr/local/Homebrew`; `bin/brew:83-108`). The repository is `realpath(brew binary)/../..` — the same derivation `bin/brew` uses. **The directory listing is the tap list**: `brew tap` with no args is a pure-bash iteration of exactly this directory (`tap.sh`, 0.02 s) — so the GUI never needs a subprocess to enumerate taps. Tap name = lowercased `<user>/<repo minus the homebrew- prefix>` (`tap.rb:293-303`).
+- **Formula discovery** (`tap.rb:954-1031`): the formula dir is the **first existing** of `Formula/`, `HomebrewFormula/`, tap root — never a union; globbed recursively in the first two (third-party sharding is allowed; letter-sharding is a core-tap convention), **top level only** at root, so commands/casks aren't misread. Casks: always `Casks/**`. Duplicate basenames: longer path wins. Confirmed locally: charmbracelet/tap keeps `.rb` at the repo root; most taps use `Formula/`.
+- **Naming across brew commands**: `brew list --formula --versions` prints **short** keg names for tap items (the rack basename, `cmd/list.rb:307-312`; `--full-name` conflicts with `--versions`). `brew outdated --json=v2` reports formulae by tap-qualified `full_name` but casks by short token (`cmd/outdated.rb:196-216`). Both already pass through `shortName` normalization — **the v1 join rule survives taps unchanged**.
+- **Resolution order** (`formulary.rb:1230-1248`): the API loader precedes tap loaders, so a bare short name *always* resolves to homebrew/core when core has it — verified live: `glow` → core even though charmbracelet/tap ships one and it was installed from there. **Qualified names are therefore mandatory** for anything tap-scoped. Hazard: a qualified name whose tap is *not installed* makes brew clone the tap on demand (`cmd/install.rb:195-203`) — an implicit mutation the GUI must guard against (see the stale-receipt rule below).
+- **Trust gate (brew 6.x)**: `HOMEBREW_REQUIRE_TAP_TRUST` defaults **on** (`env_config.rb:654`). Loading an untrusted tap's formula raises unless the fully-qualified name appears verbatim in argv (`trust.rb:560-570`), and `install`/`upgrade` with qualified names **auto-trust the item persistently** (`cmd/install.rb:204`, `trust.rb:116-145` — a durable write to `~/.config/homebrew/trust.json`). Flip side: `Formula.installed` swallows load errors (`formula.rb:2649-2655`), so an installed formula from an *untrusted* tap **silently vanishes from `brew outdated`** — it looks up to date and Upgrade All skips it.
+- **Receipts name the tap**: `INSTALL_RECEIPT.json` → `source.tap` for formulae *and* casks (verified: `"homebrew/core"`, `"charmbracelet/tap"`). The v2 receipt sweep already reads these files, so the true origin of every installed item is one already-paid-for field away.
+- **Tap formula metadata without Ruby**: the DSL stanzas `desc "…"`, `homepage "…"`, `version "…"`, `license "…"` and `deprecate!`/`disable!` are line-anchored string literals a regex can extract. `version` is frequently *implicit* (derived from `url` by `Version.detect`'s dozens of heuristics — not reimplementable); licenses can be non-string expressions (`avr-gcc@14`). Extraction is therefore best-effort by design: absent version shows as absent. Cask stanzas are the same shapes.
+- **Remotes**: each tap's upstream is `remote.origin.url` in its `.git/config` — default scheme `https://github.com/<user>/homebrew-<repo>` (`tap.rb:406-410`) but custom remotes are supported, so *read* it (handling `.git` suffixes and `git@github.com:` SSH form), never assume.
+- **Analytics cover taps**: `install/90d.json` keys tap formulae by qualified name (`oven-sh/bun/bun`) among its ~32k entries — real install counts are available for tap packages via a dictionary lookup.
+- A core tap kept as a **git clone** (`homebrew/homebrew-cask` here, 7.7k files with sharded `Casks/<letter>/`) must be excluded from scanning — the API catalog already covers it, and scanning it would double every cask.
+- Rejected: `brew tap-info --json` on any hot path (per-tap GitHub API calls + git shell-outs, 1.2 s for 7 taps); the descriptions cache (`~/Library/Caches/Homebrew/descriptions.json` — trusted-taps-only, desc-only, best-effort); batch `brew info --json=v2` enrichment (~0.3 s per invocation — revisit only if regex fallback quality feels bad in practice).
 
 ### Installed state
 
@@ -79,7 +96,8 @@ Every keg carries an install-time receipt, and it answers all of v2's dependency
 | `BrewClient.swift` | brew binary discovery, `Process` exec with async line streaming, cancellation; static pure parsers for brew output |
 | `BrewOperation.swift` | `@Observable` per-operation: command, state, capped live log buffer |
 | `CatalogStore.swift` | download (catalog + executables + analytics) → slim-decode/merge → versioned cache file → `[Package]`; staleness check |
-| `Receipts.swift` *(v2)* | `@concurrent` sweep of `INSTALL_RECEIPT.json` files → on-request flags + dependency lists; pure parser |
+| `Receipts.swift` *(v2)* | `@concurrent` sweep of `INSTALL_RECEIPT.json` files → on-request flags + dependency lists **(v4: + `source.tap`)**; pure parser |
+| `TapStore.swift` *(v4)* | `@concurrent` local scan of `Library/Taps` → `[Package]` for third-party taps; pure regex parsers; zero subprocesses |
 | `IconStore.swift` *(v3)* | actor: favicon fetch with in-flight dedup and a concurrency cap → memory dictionary + disk LRU (byte-capped); negative-result markers |
 | `FuzzySearch.swift` | Pure scorer + `@concurrent` ranking |
 | `ContentView.swift` | `NavigationSplitView` shell: sidebar, `.searchable`, operations popover, brew-missing state |
@@ -112,6 +130,8 @@ struct Package: Codable, Identifiable, Hashable {
     let commands: [String]    // v3, formulae only; from executables.txt
     let installs90d: Int?     // v3; nil = not in the analytics files
     let license: String?      // v3; SPDX identifier, formulae only — casks have no such field
+    let rubySourcePath: String? // tap-relative .rb path from the API / the scan; nil when synthesized
+    let tap: String?          // v4; "user/repo" for third-party taps, nil = core (implied by kind)
     var id: String { "\(kind.rawValue):\(name)" }
     var isFont: Bool { kind == .cask && name.hasPrefix("font-") }
     var kindLabel: String     // "Formula" / "Cask" / "Font" — the icon can't say it once a favicon loads
@@ -132,6 +152,8 @@ struct InstalledInfo {
     var onRequest: Bool         // v2, from receipt; missing receipt → true (never hide the unknown)
     var dependencies: [String]  // v2, formulae only: installed runtime deps, short names
     var apps: [String]          // casks only: `.app` bundle names, from the receipt
+    var tap: String?            // v4, from receipt source.tap — NORMALIZED: homebrew/core,
+                                // homebrew/cask or absent → nil, else "user/repo"
 }
 
 struct OutdatedInfo  { var installed: [String]; var current: String; var pinned: Bool }
@@ -146,10 +168,30 @@ enum PackageStatus {
 
 `AppModel.status(for:)` merges the three sources; `busy` wins. A running `upgradeAll` marks every currently-outdated *unpinned* package busy (bare `brew upgrade` skips pinned ones). **Join rule**: `brew outdated` reports formulae by tap-qualified `full_name` (`user/tap/foo`) while `brew list` prints short keg names — normalize both to the last `/`-separated component, so an overlay key is always `kind:shortname`, matching `Package.ID`. Cross-tap name collisions are theoretically possible and accepted for v1.
 
+**(v4) The tap rules**, in one place because every consumer must agree:
+
+- **`Package.name` stays short.** The tap is a separate field, so `Package.ID`, the overlay joins, `shortName` and its three call sites are untouched — that is the whole no-regression story in one sentence.
+- **Effective tap** = `installed[id]?.tap ?? package.tap`. The receipt outranks the catalog because it records what was *actually* installed — the case that matters is a name collision where the catalog winner is core but the keg came from a tap. Display (card tag, detail row) and command construction read the same rule, so what the UI claims and what brew is told never diverge.
+- **Receipt normalization**: `source.tap` says `homebrew/core`/`homebrew/cask` for core installs; folding those to nil keeps "nil = core" true everywhere and stops every core upgrade from being needlessly tap-qualified.
+- **Command qualification** (`AppModel.install`/`upgrade`, the only place names reach brew): `effectiveTap` present *and in the current scan result* → `"\(tap)/\(name)"`, else the short name. The scan-membership guard is load-bearing: a stale receipt naming a since-untapped tap would otherwise make brew *clone the tap back* (its on-demand auto-tap path) — a mutation nobody ordered. `BrewCommand` is unchanged: the qualified name is still one argv element, argv is still exactly 3 elements, and the safety whitelist gains no cases.
+- **Compose** (`AppModel.composeCatalog()`): `catalog = coreCatalog + tapPackages` deduped by ID — core wins core-vs-tap, alphabetically-first tap wins tap-vs-tap (deterministic; extends v1's accepted-collision rule — the loser is invisible in Discover but its installed state still joins the winner's card). Recompose is skipped when a fresh scan equals the previous result (`[Package]` equality over ~200 entries). It rebuilds `catalogIndex` (16k dictionary, a few ms at ⌘R cadence) and bumps `catalogGeneration: Int`; **`commandIndex` rebuilds only when the core catalog changes** — tap formulae have no executables.txt data, and re-deriving a ~60k-key index per refresh would be the one real perf regression this design could cause.
+- **`catalogGeneration`** replaces `catalog.count` in the view-layer invalidation keys (`SearchKey`/`BrowseKey`): a count is a sound change-proxy only while the catalog can never change at equal size, which taps break (tap one repo, untap another, net zero). Deliberately **not** in `WindowToken` — a recompose must never reset the scroll window.
+- **`CatalogCache` gains `tapInstalls90d: [String: Int]?`** — the qualified-name subset of the formula analytics (keys containing `/`), captured at fetch time so compose can join real install counts for tap packages. Optional, so a v5 cache decodes it as nil and degrades to no counts until the next daily fetch — like `tap` on `Package` (nil = core = correct for every cached entry), **no cache-version bump is needed**. The composed catalog is never written back to the cache file; `CatalogStore` persists only its own core packages.
+
+**(v4) TapStore scan** — `@concurrent`, zero subprocesses, run at bootstrap, on ⌘R and inside `refreshState()` (post-mutation refreshes matter: the session `brew update` pulls tap clones, bumping versions mid-session), generation-guarded like the receipt sweep so a stale scan cannot overwrite a newer one:
+
+1. Taps root = `realpath(brew binary)/../../Library/Taps`; skip `homebrew/homebrew-core` and `homebrew/homebrew-cask` clones.
+2. Per tap: formula files from the **first existing** of `Formula/**`, `HomebrewFormula/**`, root `*.rb` (top level only); casks from `Casks/**`; duplicate basenames → longer path wins. All per brew's own `tap.rb` rules.
+3. Per file, line-anchored first-match regex for `desc`/`homepage`/`version`/`license` (first quoted string only) and `deprecate!`/`disable!` presence. A package is emitted **only** when the file declares `class … < Formula` (or a `cask "…"` stanza) — root-level stray Ruby must not become a card. Missing version → `""`, which the UI already hides.
+4. **Versioned-graveyard rule**: `<base>@*.rb` is skipped when `<base>.rb` exists in the same tap, *unless* that exact versioned name is installed (oven-sh/bun ships 165 dead `bun@x.y.z` files that would otherwise bury search); applies to scanned taps only — core's curated `python@3.12`-style entries are unaffected.
+5. Per tap, `remote.origin.url` from `.git/config` (`.git` suffix stripped, `git@github.com:` → `https://github.com/`; unparseable → no source link), and `installs90d` joined from `tapInstalls90d` by `"\(tap)/\(name)"`.
+
+~200 files on a typical tapped machine → tens of ms, off the main actor.
+
 The views are dumb renderers of `[Package]` + `status(for:)`:
 
 - **Discover** — the full catalog, fuzzy-filtered by search.
-- **Installed** — catalog packages present in `installed`, **plus synthesized `Package`s** for installed items missing from the catalog (e.g. from third-party taps): name + kind, `version` = installed version (the only version we know), nil desc/homepage, `deprecated`/`disabled` = false.
+- **Installed** — catalog packages present in `installed`, **plus synthesized `Package`s** for installed items missing from the catalog: name + kind, `version` = installed version (the only version we know), nil desc/homepage, `deprecated`/`disabled` = false. **(v4)** Rare now — the tap scan puts tapped items in the catalog proper, and `merged`'s covered-set check makes it stop synthesizing them automatically; synthesis remains the fallback for what no scan covers (e.g. a formula since deleted from its tap).
 - **Outdated** — packages present in `outdated`. Pinned items are shown with the Update button disabled and a "pinned" label (we never touch pins). The section mirrors bare `brew outdated`'s **non-greedy default**: `version :latest` casks never appear, and `auto_updates` casks (browsers, editors) appear only when the installed bundle's `Info.plist` version lags the cask version (`cask/cask.rb`); the `--greedy` variants are deliberately out of scope for v1 — those apps update themselves.
 
 Overlay refresh happens on launch, on ⌘R, and after every mutating operation completes (success or failure). **(v2)** Each refresh also sweeps the receipts (`Receipts.swift`, `@concurrent` — ~350 small JSON reads, tens of ms): the keg read is the one whose version dir matches the *last* version `brew list` reported; `runtime_dependencies` `full_name`s are normalized to short names per the join rule. `AppModel` then inverts the dependency map once into `dependents: [Package.ID: [Package.ID]]` — "who depends on X" is a dictionary lookup, no graph machinery.
@@ -271,6 +313,8 @@ Case-insensitive; query lowercased once. Per package, score = max over `name`, `
 | subsequence | 100 + contiguity bonus (adjacent matched pairs) |
 | name misses entirely, `desc` contains query as substring | 40 |
 
+**(v4)** For packages with `tap != nil` **only** (~200 of 16k), the qualified `"user/repo/name"` string is scored as one extra candidate, max'd with the others — so "charmbracelet" surfaces that tap's packages. Invariant, pinned by test: a qualified-string hit never outranks an exact short-name match elsewhere. Zero added cost for core entries — the extra fold is gated on the nil check.
+
 Command-exact sits between prefix and word-boundary deliberately: someone typing `convert` almost certainly wants the tool that provides it (imagemagick), but a formula literally *named* what you typed still wins. When the winning score came from the command index, the hit carries `matchedCommand` and the card shows a "Provides `convert`" caption — without it, command matches look like false positives. Two mechanics: the index maps commands to the *whole catalog*, so a command hit only counts when its package is in the `packages` argument (Installed/Outdated pass their subset and must not surface strangers); and the browse path (empty query) wraps its packages in `SearchHit(matchedCommand: nil)` so the grid renders one type.
 
 Tie-break: shorter name, then alphabetical. Search results capped at 200. An **empty query bypasses ranking entirely** and shows the full section listing, uncapped as *data* — rendering is windowed (v3, see Grid below). Discover's browse listing is sorted by 90-day installs (analytics ride the catalog; ties and unranked packages alphabetical) — an alphabetical walk of 16k packages opens on "0 A.D." and never reaches anything anyone installs; Installed and Outdated are inventories and stay alphabetical.
@@ -332,6 +376,11 @@ Alternatives considered: keeping `URLCache` + retry-on-appear (doesn't fix cance
 - **Animation** is deliberately sparse, and only where it hides a rough edge: icons crossfade in when they arrive, the card's action control blur-replaces between Install / spinner / checkmark, and the operations count rolls with `.numericText`. The grid does **not** animate rearranging — a reshuffle on every keystroke is noise, not feedback. The `.navigationSubtitle` count cannot animate: it is AppKit-rendered in the titlebar, so a `contentTransition` does not survive the trip.
 - **Quit while a mutation runs**: `NSApplicationDelegateAdaptor` + `applicationShouldTerminate` shows a confirm dialog when an install/upgrade is running. On confirmed quit, the running brew gets `interrupt()` (the same SIGINT path as Cancel) and up to 5 s to exit; if it still hasn't (rare — brew traps INT), quit anyway and accept the orphan as the lesser evil versus a hung quit. Queued-but-unstarted operations are simply discarded.
 - **Empty states**: `ContentUnavailableView.search` for no results; "Everything is up to date" in Outdated; full-window "Homebrew not found" with a brew.sh link; "Couldn't load catalog" + Retry when no cache and download failed.
+- **(v4) Taps in the UI** — identity everywhere, chrome nowhere:
+  - **Card**: the status line gains `TagLabel(owner)` for third-party items — the **owner segment only** (`charmbracelet`, not `charmbracelet/tap`): it is the identity people recognize, and the full string does not fit a caption row that already holds kind + version in a 230 pt column (`.truncationMode(.middle)` + low layout priority as backstop). Core items show no tap tag — 16k cards saying "homebrew/core" is noise, and the kind tag already implies core.
+  - **Detail sheet**: a `statRow` with the `spigot` SF Symbol (outline, matching the `chart.bar`/`doc.text` weight) shows the **full effective tap for every package** — core items show the derived `homebrew/core`/`homebrew/cask`, so "which tap is this from" is always answerable. For not-yet-installed tap items, the install button's `.help` and a one-line caption disclose the trust side effect: "Installing trusts charmbracelet/tap/gum in Homebrew".
+  - **Source link**: `rubySourceURL` is tap-aware — core keeps the kind→repo rule (pinned by tests); tap items build from the tap's git remote when it is github.com, otherwise no link (honest degrade).
+  - **Discover**: the filter menu's kind picker gains a **Taps** case (`tap != nil`), so tap packages are browsable as a set; in the popularity sort they carry real analytics counts where covered and sort by name among themselves otherwise.
 
 ## Project setting changes
 
@@ -355,6 +404,11 @@ Swift Testing for units; no BrewClient integration tests (they'd depend on machi
 - **(v3) CatalogV3Tests**: executables.txt line parsing (multi-command line, single, empty input); analytics count parsing (`"1,444,028"` → `1444028`; cask token-keyed dict shape); `Conflict` zipping incl. mismatched array lengths **and null elements**; caveats `$HOMEBREW_PREFIX` substitution; cache-version mismatch → treated as stale; `isFont` classification (`font-fira-code` yes, `firefox` no); `license` decoding, including an object-shaped value yielding nil rather than throwing.
 - **(v3) FuzzySearch additions**: exact command match ranks its provider above substring name matches but below a name-exact package; command hit carries `matchedCommand`; `≥ 2 chars` guard on command-prefix matching; font/cask/formula kind filtering composes with command hits (a command can only ever surface a formula).
 - **(v3) IconStoreTests**: eviction as a pure function — given `[(name, size, mtime)]` and a cap, returns the files to delete (oldest-first, stops at cap); negative-marker freshness logic (fresh marker → no fetch, expired → fetch).
+- **(v4) TapStoreTests**: first-existing-dir rule (a tap with `Formula/` *and* stray root `.rb` ignores the root files); the `class … < Formula` guard (root-level non-formula Ruby emits nothing); versioned-graveyard rule (skipped when the base exists, kept when that exact name is installed); regex fixtures — GoReleaser layout, explicit `version`, missing version (avr-gcc@14 shape), non-string license, escaped quotes in `desc`, interpolated `#{version}` in urls not matching; remote parsing (https with/without `.git`, `git@github.com:` SSH form, unreadable config → nil).
+- **(v4) Receipt additions**: `source.tap` fixtures — third-party (`"charmbracelet/tap"` → kept), `homebrew/core`/`homebrew/cask` (→ nil), absent `source` (→ nil), cask receipt shape (same field, same rule).
+- **(v4) Parsing additions**: outdated fixture pairing a tap-qualified formula `full_name` with a short cask token — pins that the join rule holds with taps in play.
+- **(v4) FuzzySearch additions**: "charmbracelet" surfaces that tap's packages; a qualified-candidate hit never outranks an exact short-name match; qualified scoring never fires for `tap == nil` packages.
+- **(v4) BrewCommand additions**: `install(name: "user/repo/foo")` argv is still exactly 3 elements and trips no destructive-token regex.
 
 ## Build order
 
@@ -373,6 +427,12 @@ Each step builds and is independently verifiable (`xcodebuild ... | xcbeautify` 
    b. *Detail sections*: installs stat, caveats (prefix substituted — check php's), commands, conflicts. *Verify: vim shows caveats + conflicts; a font cask shows neither favicon fetch nor commands.*
    c. *Shell*: per-tab queries, `.navigationSubtitle` counts, windowed grid, Fonts filter. *Verify: search Discover, switch to Installed (empty), return (restored); clearing a 16k-item search no longer hitches; subtitle count equals visible count.*
    d. *IconStore*: store + tests, `PackageIconView` rewire. *Verify: cold launch, scroll fast — icons fill in without the "loads only after clicking" bug; relaunch offline — icons persist; `Icons/` dir stays under 50 MB.*
+10. **v4: Taps** — in sub-steps, each buildable:
+   a. *TapStore + tests*: scan, regex parsers, graveyard rule, remote parsing. *Verify: tests pass; scan output on this machine lists charmbracelet/osx-cross/oven-sh/supabase/unhappychoice packages, exactly one `bun`, nothing from the homebrew/homebrew-cask clone.*
+   b. *Data + compose*: `Package.tap`, `InstalledInfo.tap` (+ receipt normalization), `tapInstalls90d`, `composeCatalog`, `catalogGeneration` into `SearchKey`/`BrowseKey`. *Verify: existing tests stay green untouched; `gum` appears in Discover; installed tap items stop being synthesized (desc/homepage present).*
+   c. *Commands*: effective-tap qualification with the scan-membership guard. *Verify: BrewCommand tests; a tap item's Update enqueues `upgrade --formula charmbracelet/tap/<name>`.*
+   d. *UI*: card owner tag, detail spigot row + trust caption, tap-aware source link, Taps filter. *Verify: screenshot loop — tap card, tap detail, Taps filter view, mixed-row card heights.*
+   e. *Perf gate*: the existing UI-test thresholds on the tap-augmented catalog. *Verify: search focus < 1 s, keystroke < 0.5 s, scroll < 1 s still pass.*
 
 ## Risks & mitigations
 
@@ -383,4 +443,8 @@ Each step builds and is independently verifiable (`xcodebuild ... | xcbeautify` 
 | ~48 MB raw JSON decode (peak a few × that) | `@concurrent`, transient, ≤1×/day; slim ~8 MB cache makes normal launches instant; swappable inside `CatalogStore` if ever needed |
 | Concurrent brew invocations (user runs brew in Terminal mid-operation) | brew's flock fails our op immediately with a readable error in the log — surfaced, not retried |
 | *(v3)* `api/internal/executables.txt` is an undocumented endpoint and could move | its failure degrades to empty `commands` — catalog, search-by-name, everything else unaffected; brew's local cache copy is a known fallback if it ever dies for good |
-| *(v3)* analytics counts join by name across ~32k tap-inclusive entries | exact-name join; tap formulae simply don't match catalog names and drop out — no mis-attribution possible |
+| *(v3)* analytics counts join by name across ~32k tap-inclusive entries | exact-name join; tap formulae match only through the v4 qualified-key join (`tapInstalls90d`) — no mis-attribution possible |
+| *(v4)* installing a tap item auto-trusts it persistently (brew-side, `trust.rb:116-145`) | disclosed on the install button (`.help` + caption); no other trust writes exist — the whitelist has no trust commands |
+| *(v4)* untrusted-tap installed formulae vanish silently from `brew outdated` (`formula.rb:2649-2655`) | accepted: such items look up to date and Upgrade All skips them; installing anything from the tap via Brewery trusts it and restores visibility |
+| *(v4)* a stale receipt naming a since-untapped tap would make brew re-clone it on a qualified upgrade | qualification requires the tap to be present in the current scan; otherwise the short name is passed |
+| *(v4)* same short name in two sources (core vs tap, tap vs tap) | deterministic winner (core, then alphabetically-first tap); loser invisible in Discover but its installed state joins the winner's card — the v1 accepted-collision rule, extended |
