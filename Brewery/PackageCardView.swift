@@ -55,7 +55,9 @@ struct PackageCardView: View {
         .buttonStyle(CardButtonStyle())
         .accessibilityHint("Shows package details")
         .overlay(alignment: .bottomTrailing) {
-            actionButton.padding(12)
+            actionButton
+                .padding(12)
+                .animation(.smooth(duration: 0.2), value: model.status(for: package))
         }
     }
 
@@ -120,8 +122,14 @@ struct PackageCardView: View {
 
     // MARK: - Action
 
-    @ViewBuilder
+    /// The control swaps as the package's state does — Install, then a spinner, then a checkmark.
+    /// Replacing them in place keeps that legible as one thing changing.
     private var actionButton: some View {
+        actionControl.transition(.blurReplace)
+    }
+
+    @ViewBuilder
+    private var actionControl: some View {
         switch model.status(for: package) {
         case .notInstalled:
             Button("Install") { model.install(package) }

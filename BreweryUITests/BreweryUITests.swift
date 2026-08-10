@@ -24,6 +24,19 @@ final class BreweryUITests: XCTestCase {
         return app
     }
 
+    /// Focus the search field via the app's own ⌘F command. A synthetic `.click()` on the field
+    /// only hovers on macOS, which let the typing tests pass while typing nowhere — a test that
+    /// measures nothing is worse than no test, so every caller asserts on the field's value after.
+    @discardableResult
+    private func focusSearch(_ app: XCUIApplication, typing text: String) -> XCUIElement {
+        app.typeKey("f", modifierFlags: .command)
+        app.typeText(text)
+        let field = app.searchFields.firstMatch
+        XCTAssertEqual(field.value as? String, text,
+                       "Text never reached the search field — the test would be measuring nothing.")
+        return field
+    }
+
     /// The shell renders and the sidebar has its three sections.
     func testLaunchesAndShowsSidebarSections() throws {
         let app = launched()
@@ -57,17 +70,21 @@ final class BreweryUITests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 60), "No search field.")
         sleep(20)
-        field.click()
+        app.typeKey("f", modifierFlags: .command)
 
         var worst: TimeInterval = 0
+        var typed = ""
         for character in ["w", "g", "e", "t"] {
             let start = Date()
-            field.typeText(character)
+            app.typeText(character)
             let elapsed = Date().timeIntervalSince(start)
             print("KEYSTROKE_SECONDS \(character) \(elapsed)")
             worst = max(worst, elapsed)
+            typed += character
         }
         print("WORST_KEYSTROKE_SECONDS \(worst)")
+        XCTAssertEqual(field.value as? String, typed,
+                       "Keystrokes never reached the field, so these timings mean nothing.")
         XCTAssertLessThan(worst, 0.5, "Slowest keystroke took \(worst)s.")
     }
 
@@ -118,12 +135,10 @@ extension BreweryUITests {
 extension BreweryUITests {
     func testSearchResultsSurviveTabSwitch() throws {
         let app = launched()
-        let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 60))
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
         sleep(20)
 
-        field.click()
-        field.typeText("vim")
+        let field = focusSearch(app, typing: "vim")
         sleep(2)
         let searched = app.buttons.matching(NSPredicate(format: "label == %@", "Install")).count
         XCTAssertLessThan(searched, 40, "Search did not narrow the grid; got \(searched) cards.")

@@ -36,6 +36,10 @@ struct PackageGridView: View {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(hits) { hit in
                         PackageCardView(hit: hit) { onSelect(hit.package) }
+                            // Cards that survive a search change slide to their new slot; the ones
+                            // that come and go fade instead of popping, so the reflow reads as one
+                            // set rearranging rather than the whole grid being replaced.
+                            .transition(.opacity)
                     }
                     if hits.count < totalCount {
                         // Inside the grid so the lazy container withholds it until it is scrolled

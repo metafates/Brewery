@@ -45,12 +45,17 @@ struct PackageIconView: View {
                     .interpolation(.high)
                     .scaledToFit()
                     .clipShape(shape)
+                    .transition(.opacity)
             } else {
                 // Loading: the same fallback symbol, dimmed. No spinners in the grid.
                 fallback.opacity(isLoading ? 0.4 : 1)
+                    .transition(.opacity)
             }
         }
         .frame(width: side, height: side)
+        // Icons arrive whenever the network says so. Crossfading the swap is the difference between
+        // a grid that fills in and a grid that flickers as you scroll through it.
+        .animation(.easeOut(duration: 0.2), value: image == nil)
         .accessibilityHidden(true)
         .task(id: host) {
             guard let host else {

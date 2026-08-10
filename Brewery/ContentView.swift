@@ -117,6 +117,9 @@ struct ContentView: View {
     private static let windowStep = 60
     @State private var window = ContentView.windowStep
 
+    /// Short enough to feel immediate, long enough that the eye can follow a card to its new slot.
+    private static let reflow: Animation = .smooth(duration: 0.22)
+
     var body: some View {
         Group {
             if model.brewMissing {
@@ -163,12 +166,17 @@ struct ContentView: View {
             // Short on purpose: ranking is a few milliseconds and runs off the main actor, so the
             // debounce only has to coalesce a fast typist's burst, not hide a slow search.
             guard (try? await Task.sleep(for: .milliseconds(50))) != nil else { return }
-            results[ranked] = await FuzzySearch.rank(query: searchText,
-                                                     in: sourcePackages,
-                                                     commands: model.commandIndex)
+            let hits = await FuzzySearch.rank(query: searchText,
+                                              in: sourcePackages,
+                                              commands: model.commandIndex)
+            // Animating at the mutation rather than with `.animation(value:)` on the grid: the
+            // value there would be the hit array, and diffing 16k elements every body pass is
+            // exactly the cost this view was just rescued from.
+            withAnimation(Self.reflow) { results[ranked] = hits }
         }
         .task(id: browseKey) {
-            browseHits = sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
+            let hits = sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
+            withAnimation(Self.reflow) { browseHits = hits }
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
         .onChange(of: model.findRequests) { searchFocused = true }
@@ -403,8 +411,12 @@ struct ContentView: View {
                         HStack(spacing: 5) {
                             ProgressView()
                                 .controlSize(.small)
+                            // Rolls between values, so a queue draining reads as a count going
+                            // down rather than as unrelated numbers replacing each other.
                             Text(model.activeCount, format: .number)
                                 .monospacedDigit()
+                                .contentTransition(.numericText(value: Double(model.activeCount)))
+                                .animation(.smooth(duration: 0.25), value: model.activeCount)
                         }
                     } else {
                         Image(systemName: "list.bullet.rectangle")
