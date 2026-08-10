@@ -95,6 +95,12 @@ struct PackageDetailView: View {
             }
             .padding(16)
         }
+        // The sheet gives initial focus to the first focusable thing it finds, and neither
+        // `defaultFocus` nor assigning `@FocusState` outranks it. So the content itself takes that
+        // focus and draws nothing for it: the sheet opens with no ring anywhere, and Tab from there
+        // walks the real controls, which keep theirs.
+        .focusable()
+        .focusEffectDisabled()
         .frame(width: 520, height: height(hasSections: !deps.isEmpty || !requiredBy.isEmpty || hasDetails))
         // Escape closes it. A sheet is window-modal on macOS, so clicking outside is not a
         // dismissal the platform offers — Escape and Done are.
@@ -136,19 +142,26 @@ struct PackageDetailView: View {
                     }
                 }
 
-                versionLine
+                statRow("tag") { versionLine }
 
                 if let installs = displayed.installs90d {
-                    Label("\(installs.formatted(.number)) installs (90 days)", systemImage: "chart.bar")
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("\(installs.formatted(.number)) installs in the last 90 days")
+                    statRow("chart.bar") {
+                        Text("\(installs.formatted(.number)) installs (90 days)")
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("\(installs.formatted(.number)) installs in the last 90 days")
                 }
 
                 if let license = displayed.licenseLabel {
-                    Label(license, systemImage: "doc.text")
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .accessibilityLabel("License \(license)")
+                    statRow("doc.text") {
+                        // Prefixed rather than suffixed: "MIT License" reads well but
+                        // "GPL-3.0-or-later License" does not, and SPDX identifiers are mostly the
+                        // latter shape.
+                        Text("License: \(license)")
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    .accessibilityLabel("License \(license)")
                 }
             }
             .font(.subheadline)
@@ -162,6 +175,17 @@ struct PackageDetailView: View {
 
     private var kindTag: some View {
         TagLabel(displayed.kindLabel).font(.caption)
+    }
+
+    /// One header stat. The glyph sits in a fixed-width column so the values line up down the
+    /// list — `chart.bar` and `doc.text` are not the same width, so `Label` alone leaves them ragged.
+    private func statRow(_ symbol: String, @ViewBuilder content: () -> some View) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            content()
+        }
     }
 
     @ViewBuilder
