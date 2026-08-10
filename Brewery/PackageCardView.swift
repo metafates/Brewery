@@ -76,6 +76,7 @@ struct PackageCardView: View {
 
     private var statusLine: some View {
         HStack(spacing: 6) {
+            TagLabel(package.kindLabel)
             versionLabel
             if package.disabled {
                 Text("disabled").foregroundStyle(.red)
@@ -86,7 +87,7 @@ struct PackageCardView: View {
                 Text("pinned").foregroundStyle(.secondary)
             }
             if isDependency {
-                dependencyTag
+                TagLabel("dependency")
             }
         }
         .font(.caption)
@@ -98,14 +99,6 @@ struct PackageCardView: View {
         model.installed[package.id]?.onRequest == false
     }
 
-    /// Metadata, not an action: subdued enough that it never reads as a button.
-    private var dependencyTag: some View {
-        Text("dependency")
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(.quaternary, in: .capsule)
-    }
 
     /// Casks report versions like "2.1.50,56f0a83" — only the part a human reads is shown.
     @ViewBuilder
@@ -165,6 +158,22 @@ struct PackageCardView: View {
                 .controlSize(.small)
                 .accessibilityLabel("Working on \(package.title)")
         }
+    }
+}
+
+/// A subdued metadata capsule — what a package is, or why it is on disk. Deliberately quiet:
+/// it is a label, and must never read as something to click.
+struct TagLabel: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(.quaternary, in: .capsule)
     }
 }
 

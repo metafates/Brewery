@@ -48,6 +48,8 @@ struct PackageDetailView: View {
                         Link(destination: url) {
                             Label(url.host() ?? "Homepage", systemImage: "safari")
                         }
+                        // Links get the pointing hand; nothing else in the app does.
+                        .pointerStyle(.link)
                         .accessibilityLabel("Open the \(displayed.title) homepage")
                     }
 
@@ -94,6 +96,9 @@ struct PackageDetailView: View {
             .padding(16)
         }
         .frame(width: 520, height: height(hasSections: !deps.isEmpty || !requiredBy.isEmpty || hasDetails))
+        // Escape closes it. A sheet is window-modal on macOS, so clicking outside is not a
+        // dismissal the platform offers — Escape and Done are.
+        .onExitCommand { dismiss() }
     }
 
     /// Caveats, commands and conflicts fill the sheet the same way the related lists do, so they
@@ -149,11 +154,7 @@ struct PackageDetailView: View {
     }
 
     private var kindTag: some View {
-        Text(displayed.kind == .cask ? "Cask" : "Formula")
-            .font(.caption)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(.quaternary, in: .capsule)
+        TagLabel(displayed.kindLabel).font(.caption)
     }
 
     @ViewBuilder

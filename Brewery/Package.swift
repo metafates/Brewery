@@ -69,6 +69,13 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
 
     var title: String { displayName ?? name }
 
+    /// What kind of thing this is, in a word. The icon cannot say it: once a favicon loads it
+    /// replaces the SF Symbol that would have distinguished a formula from a cask.
+    var kindLabel: String {
+        if isFont { return "Font" }
+        return kind == .formula ? "Formula" : "Cask"
+    }
+
     /// Font casks live in homebrew/cask under a `font-` prefix; they get a glyph, never a favicon.
     var isFont: Bool { kind == .cask && name.hasPrefix("font-") }
 
