@@ -255,9 +255,12 @@ struct PackageDetailView: View {
                 .controlSize(.small)
                 .accessibilityLabel("\(displayed.title) is being worked on")
         case .installed:
-            Label("Installed", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("\(displayed.title) is installed")
+            Label {
+                Text("Installed").foregroundStyle(.secondary)
+            } icon: {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            }
+            .accessibilityLabel("\(displayed.title) is installed")
         case .outdated:
             Button("Update") { model.upgrade(displayed) }
                 .buttonStyle(.borderedProminent)

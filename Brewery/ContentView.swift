@@ -169,7 +169,17 @@ struct ContentView: View {
                                                      commands: model.commandIndex)
         }
         .task(id: browseKey) {
-            browseHits = sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
+            var packages = sourcePackages
+            // Discover browses by popularity, not by name: an alphabetical walk of 16k packages
+            // opens on "0 A.D." and never reaches anything anyone installs. Installed and Outdated
+            // are inventories, where alphabetical is the order you scan.
+            if section == .discover {
+                packages.sort {
+                    let (a, b) = ($0.installs90d ?? 0, $1.installs90d ?? 0)
+                    return a == b ? $0.name < $1.name : a > b
+                }
+            }
+            browseHits = packages.map { SearchHit(package: $0, matchedCommand: nil) }
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
         .onChange(of: model.findRequests) { searchFocused = true }
@@ -356,8 +366,17 @@ struct ContentView: View {
 
     // MARK: - Filters
 
-    /// Each section carries only its own control; Outdated has none.
+    /// Each section carries only its own control. Outdated's is the bulk action itself: the menu
+    /// bar's ⇧⌘U is invisible from here, and the section whose whole job is updating should not
+    /// make the user update one card at a time.
     @ToolbarContentBuilder private var filterToolbar: some ToolbarContent {
+        if section == .outdated, model.outdatedCount > 0 {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Update All") { model.upgradeAll() }
+                    .disabled(upgradeAllPending)
+                    .help("Update all outdated packages")
+            }
+        }
         if section == .discover {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -412,6 +431,13 @@ struct ContentView: View {
 
     private func refresh() {
         Task { await model.refresh() }
+    }
+
+    /// An Upgrade All already on the queue makes a second press pure duplication.
+    private var upgradeAllPending: Bool {
+        model.operations.contains {
+            $0.command == .upgradeAll && ($0.state == .queued || $0.state == .running)
+        }
     }
 
     /// Not offered on Discover: an empty grid there means a filter is hiding things, and

@@ -39,14 +39,18 @@ struct PackageCardView: View {
                     // Reserved so every card in a row is the same height.
                     .lineLimit(2, reservesSpace: true)
 
-                // A hidden twin reserves exactly the room the overlaid action button needs,
-                // whatever the text size — and leaves the rest of that row for the caption.
+                // A hidden twin reserves the room the overlaid action control needs — always the
+                // tallest variant, so a card's height never depends on which state it is in and
+                // mixed rows stay flush.
                 HStack(spacing: 8) {
                     if let command = hit.matchedCommand {
                         providesCaption(command)
                     }
                     Spacer(minLength: 0)
-                    actionButton.hidden()
+                    Button("Install") {}
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .hidden()
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -143,13 +147,14 @@ struct PackageCardView: View {
                              : "Update \(package.title)")
 
         case .installed:
-            // A disabled button: the checkmark is an affordance, not an action.
-            Button(action: {}) {
-                Image(systemName: "checkmark")
+            // A label, not a disabled button: state should not dress up as a dead control,
+            // and disabled chrome washes the checkmark out to near-invisibility.
+            Label {
+                Text("Installed").foregroundStyle(.secondary)
+            } icon: {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(true)
+            .font(.subheadline)
             .accessibilityLabel("Installed")
             .help("\(package.title) is installed.")
 
