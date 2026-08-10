@@ -92,7 +92,23 @@ private struct ServiceRow: View {
 
     /// Speaks only when it has something to say — running, scheduled, or failed. The quiet
     /// states are what the switch position already shows.
-    @ViewBuilder private var statusCaption: some View {
+    private var statusCaption: some View {
+        ServiceStatusLabel(package: package)
+            .font(.caption)
+    }
+}
+
+/// The colored-dot status line, shared by the Services rows and the detail sheet so both name a
+/// state the same way. `quietLabel` gives the boring states a word where one is needed — the
+/// sheet's toggle row must be labeled (a switch anchored to nothing reads as decoration), while
+/// list rows stay silent and let the switch position speak.
+struct ServiceStatusLabel: View {
+    let package: Package
+    var quietLabel: String?
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
         switch model.serviceStatus(for: package)?.health {
         case .started:
             caption("Running", color: .green)
@@ -102,7 +118,9 @@ private struct ServiceRow: View {
             let code = model.serviceStatus(for: package)?.exitCode
             caption(code.map { "Failed (exit \($0))" } ?? "Failed", color: .red)
         default:
-            EmptyView()
+            if let quietLabel {
+                caption(quietLabel, color: .secondary)
+            }
         }
     }
 
@@ -112,7 +130,6 @@ private struct ServiceRow: View {
                 .fill(color)
                 .frame(width: 6, height: 6)
             Text(text)
-                .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)

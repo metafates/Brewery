@@ -464,12 +464,19 @@ struct PackageDetailView: View {
     /// the same two-column grid Contents uses. What it runs, when, where it listens, where it logs.
     private func serviceSection(_ service: ServiceDefinition) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                sectionTitle("Service")
-                Spacer()
-                if model.installed[displayed.id] != nil {
+            sectionTitle("Service")
+
+            // A switch must terminate a labeled row (System Settings' grammar) — floating beside
+            // the section title it reads as decoration. The label is the live state, so the row
+            // says exactly what the switch flips.
+            if model.installed[displayed.id] != nil {
+                HStack(spacing: 8) {
+                    ServiceStatusLabel(package: displayed, quietLabel: "Not running")
+                        .font(.callout)
+                    Spacer()
                     ServiceToggle(package: displayed)
                 }
+                .padding(.bottom, 4)
             }
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 5) {
