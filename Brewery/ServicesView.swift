@@ -1,0 +1,166 @@
+//
+//  ServicesView.swift
+//  Brewery
+//
+
+import SwiftUI
+
+/// The Services section — System Settings › Login Items, not the card grid: services are state
+/// rows. Icon + name + the command it runs, a status word only when it says something, and a
+/// trailing switch. Rows open the detail sheet like cards do.
+struct ServicesView: View {
+    let hits: [SearchHit]
+    let isSearching: Bool
+    let onSelect: (Package) -> Void
+    let onRefresh: () -> Void
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if hits.isEmpty {
+            emptyState
+        } else {
+            List(hits) { hit in
+                ServiceRow(package: hit.package, onSelect: { onSelect(hit.package) })
+            }
+            .listStyle(.inset)
+        }
+    }
+
+    @ViewBuilder private var emptyState: some View {
+        if isSearching {
+            ContentUnavailableView.search
+        } else {
+            ContentUnavailableView {
+                Label("No Services", systemImage: "server.rack")
+            } description: {
+                Text("Installed formulae that provide background services appear here.")
+            } actions: {
+                Button("Check Again", action: onRefresh)
+            }
+        }
+    }
+}
+
+/// One service. The leading part is a plain button that opens the sheet; the switch stays its
+/// own control so a row tap never toggles a daemon by accident.
+private struct ServiceRow: View {
+    let package: Package
+    let onSelect: () -> Void
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onSelect) {
+                HStack(spacing: 12) {
+                    PackageIconView(package: package, size: 32)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(package.title)
+                        if let command = commandLine {
+                            Text(command)
+                                .font(.caption)
+                                .monospaced()
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows package details")
+
+            statusCaption
+
+            ServiceToggle(package: package)
+        }
+        .padding(.vertical, 3)
+    }
+
+    /// "redis-server /opt/homebrew/etc/redis.conf" — argv0's basename plus the arguments, with
+    /// the real prefix substituted. nil when the scan/synthesis gave us no service block.
+    private var commandLine: String? {
+        guard let run = package.service?.run, let first = run.first else { return nil }
+        let name = first.split(separator: "/").last.map(String.init) ?? first
+        let rest = run.dropFirst().map { Package.substitutingPrefix($0, prefix: model.client.prefix) }
+        return ([name] + rest).joined(separator: " ")
+    }
+
+    /// Speaks only when it has something to say — running, scheduled, or failed. The quiet
+    /// states are what the switch position already shows.
+    @ViewBuilder private var statusCaption: some View {
+        switch model.serviceStatus(for: package)?.health {
+        case .started:
+            caption("Running", color: .green)
+        case .scheduled:
+            caption("Scheduled", color: .orange)
+        case .error:
+            let code = model.serviceStatus(for: package)?.exitCode
+            caption(code.map { "Failed (exit \($0))" } ?? "Failed", color: .red)
+        default:
+            EmptyView()
+        }
+    }
+
+    private func caption(_ text: String, color: Color) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The one switch for a service, shared by the row and the detail sheet so both read and write
+/// the same truth. Flips enqueue `brew services start`/`stop`; while that operation is queued or
+/// running the switch yields to the spinner the rest of the app uses for busy.
+struct ServiceToggle: View {
+    let package: Package
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if model.status(for: package) == .busy {
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel("Working on \(package.title)")
+        } else if package.service?.requireRoot == true {
+            // Started as a user, a root service warns, proceeds and fails later — a disabled
+            // switch is honest; offering the start would not be.
+            Toggle("", isOn: .constant(false))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .labelsHidden()
+                .disabled(true)
+                .help("\(package.title) requires root — manage it in Terminal with sudo brew services.")
+        } else {
+            Toggle("", isOn: isLoaded)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .labelsHidden()
+                .help(isLoaded.wrappedValue ? "Stop \(package.title)" : "Start \(package.title)")
+                .accessibilityLabel(isLoaded.wrappedValue ? "Stop \(package.title) service"
+                                                          : "Start \(package.title) service")
+        }
+    }
+
+    private var isLoaded: Binding<Bool> {
+        Binding(
+            get: { model.serviceStatus(for: package)?.health.isLoaded ?? false },
+            set: { load in
+                if load {
+                    model.startService(package)
+                } else {
+                    model.stopService(package)
+                }
+            })
+    }
+}

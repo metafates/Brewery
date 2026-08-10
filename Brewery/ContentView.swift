@@ -9,7 +9,7 @@ import SwiftUI
 
 /// The three fixed destinations of the sidebar.
 nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
-    case discover, installed, outdated
+    case discover, installed, outdated, services
 
     var id: Self { self }
 
@@ -18,6 +18,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .discover: "Discover"
         case .installed: "Installed"
         case .outdated: "Outdated"
+        case .services: "Services"
         }
     }
 
@@ -26,6 +27,8 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .discover: "sparkle.magnifyingglass"
         case .installed: "checkmark.circle"
         case .outdated: "arrow.triangle.2.circlepath"
+        // Most brew services are servers — redis, postgres, nginx.
+        case .services: "server.rack"
         }
     }
 
@@ -34,6 +37,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .discover: "Search Homebrew"
         case .installed: "Search Installed"
         case .outdated: "Search Outdated"
+        case .services: "Search Services"
         }
     }
 
@@ -43,6 +47,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .discover: nil
         case .installed: "No packages installed"
         case .outdated: "Everything is up to date"
+        case .services: "No services"
         }
     }
 }
@@ -141,7 +146,7 @@ struct ContentView: View {
             List(selection: $selection) {
                 ForEach(SidebarSection.allCases) { item in
                     Label(item.title, systemImage: item.symbol)
-                        .badge(item == .outdated ? model.outdatedCount : 0)
+                        .badge(badgeCount(for: item))
                 }
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
@@ -202,6 +207,13 @@ struct ContentView: View {
         } else if section == .discover, model.catalog.isEmpty {
             ProgressView("Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if section == .services {
+            // State rows, not catalog cards — a handful of items, no windowing needed.
+            ServicesView(hits: displayedHits,
+                         isSearching: isSearching,
+                         onSelect: { selectedPackage = $0 },
+                         onRefresh: { refresh() })
+                .refreshVeil(model.isRefreshing)
         } else {
             PackageGridView(hits: Array(displayedHits.prefix(window)),
                             totalCount: displayedCount,
@@ -231,11 +243,20 @@ struct ContentView: View {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private func badgeCount(for item: SidebarSection) -> Int {
+        switch item {
+        case .outdated: model.outdatedCount
+        case .services: model.runningServicesCount
+        default: 0
+        }
+    }
+
     private var sourcePackages: [Package] {
         switch section {
         case .discover: filtered(model.catalog)
         case .installed: model.installedPackages(scope: installedScope)
         case .outdated: model.outdatedPackages
+        case .services: model.servicePackages
         }
     }
 
@@ -262,7 +283,7 @@ struct ContentView: View {
             installedScope == .onRequest && !model.installed.isEmpty
                 ? "No packages installed on request"
                 : section.emptyMessage
-        case .outdated:
+        case .outdated, .services:
             section.emptyMessage
         }
     }
@@ -295,6 +316,7 @@ struct ContentView: View {
         let catalogGeneration: Int
         let installedCount: Int
         let outdatedCount: Int
+        let servicesCount: Int
     }
 
     private var browseKey: BrowseKey {
@@ -304,7 +326,8 @@ struct ContentView: View {
                   installedScope: installedScope,
                   catalogGeneration: model.catalogGeneration,
                   installedCount: model.installed.count,
-                  outdatedCount: model.outdated.count)
+                  outdatedCount: model.outdated.count,
+                  servicesCount: model.serviceStatuses.count)
     }
 
     private var searchKey: SearchKey {
@@ -316,7 +339,8 @@ struct ContentView: View {
                   catalogGeneration: model.catalogGeneration,
                   commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
-                  outdatedCount: model.outdated.count)
+                  outdatedCount: model.outdated.count,
+                  servicesCount: model.serviceStatuses.count)
     }
 
     /// Re-ranks on a new query, a section switch, a filter change, or any change to the arrays
@@ -331,6 +355,7 @@ struct ContentView: View {
         let commandCount: Int
         let installedCount: Int
         let outdatedCount: Int
+        let servicesCount: Int
     }
 
     /// The part of the key that changes *which* packages are listed — the grid restarts its render
@@ -359,6 +384,7 @@ struct ContentView: View {
         case .discover: return count == 1 ? "1 package" : "\(formatted) packages"
         case .installed: return "\(formatted) installed"
         case .outdated: return "\(formatted) outdated"
+        case .services: return count == 1 ? "1 service" : "\(formatted) services"
         }
     }
 
@@ -367,7 +393,7 @@ struct ContentView: View {
         switch section {
         case .discover: filtersActive
         case .installed: installedScope != .onRequest
-        case .outdated: false
+        case .outdated, .services: false
         }
     }
 

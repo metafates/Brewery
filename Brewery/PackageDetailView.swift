@@ -85,6 +85,11 @@ struct PackageDetailView: View {
                         contents
                     }
 
+                    if let service = displayed.service {
+                        Divider()
+                        serviceSection(service)
+                    }
+
                     if !displayed.conflicts.isEmpty {
                         Divider()
                         conflicts
@@ -142,6 +147,7 @@ struct PackageDetailView: View {
     private var hasDetails: Bool {
         displayed.caveats?.isEmpty == false || !displayed.commands.isEmpty
             || !displayed.artifacts.isEmpty || !displayed.conflicts.isEmpty
+            || displayed.service != nil
     }
 
     private func height(hasSections: Bool) -> CGFloat {
@@ -452,6 +458,62 @@ struct PackageDetailView: View {
         default:
             return artifact.names.joined(separator: " · ")
         }
+    }
+
+    /// The formula's background service: the toggle when it is installed, then the definition in
+    /// the same two-column grid Contents uses. What it runs, when, where it listens, where it logs.
+    private func serviceSection(_ service: ServiceDefinition) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                sectionTitle("Service")
+                Spacer()
+                if model.installed[displayed.id] != nil {
+                    ServiceToggle(package: displayed)
+                }
+            }
+
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 5) {
+                if !service.run.isEmpty {
+                    serviceRow("Command", symbol: "terminal") {
+                        Text(service.run
+                            .map { Package.substitutingPrefix($0, prefix: model.client.prefix) }
+                            .joined(separator: " "))
+                            .fontDesign(.monospaced)
+                    }
+                }
+                serviceRow("Schedule", symbol: "clock.arrow.circlepath") {
+                    Text(service.scheduleLabel)
+                }
+                if !service.ports.isEmpty {
+                    serviceRow("Ports", symbol: "network") {
+                        Text(service.ports.joined(separator: " · "))
+                            .fontDesign(.monospaced)
+                    }
+                }
+                if let logPath = service.logPath {
+                    serviceRow("Logs", symbol: "text.alignleft") {
+                        Text(Package.substitutingPrefix(logPath, prefix: model.client.prefix))
+                            .fontDesign(.monospaced)
+                    }
+                }
+            }
+            .font(.callout)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func serviceRow(_ label: String, symbol: String,
+                            @ViewBuilder content: () -> some View) -> some View {
+        GridRow {
+            Label(label, systemImage: symbol)
+                .foregroundStyle(.secondary)
+                .gridColumnAlignment(.leading)
+            content()
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// Formulae that cannot be installed alongside this one. Each name is a row like a dependency,

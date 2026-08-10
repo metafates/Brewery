@@ -153,6 +153,8 @@ final class BrewClient {
         environment["HOMEBREW_NO_ASK"] = "1"
         environment["HOMEBREW_NO_AUTO_UPDATE"] = "1"
         environment["HOMEBREW_NO_INSTALL_CLEANUP"] = "1"
+        // Services-only: silences a stderr domain warning that fires whenever uid ≠ euid.
+        environment["HOMEBREW_SERVICES_NO_DOMAIN_WARNING"] = "1"
         if command.isMutating, let askpass = askpassPath() {
             environment["SUDO_ASKPASS"] = askpass
         }
@@ -177,6 +179,10 @@ final class BrewClient {
         try Self.parseOutdated(Data(await capture(.outdated).utf8))
     }
 
+    func servicesList() async throws -> [String: ServiceStatus] {
+        try Self.parseServicesList(Data(await capture(.servicesList).utf8))
+    }
+
     // MARK: - Parsers
 
     /// `brew list --versions` prints `name v1 [v2 ...]` per line.
@@ -189,6 +195,29 @@ final class BrewClient {
             result[id] = InstalledInfo(versions: fields.dropFirst().map(String.init))
         }
         return result
+    }
+
+    /// `brew services list --json` → `[{name, status, user, file, exit_code}]`. Keyed by short
+    /// name (services report keg names). A status string this build has never heard of becomes
+    /// `.other` rather than a decode failure — brew has grown statuses before.
+    static func parseServicesList(_ data: Data) throws -> [String: ServiceStatus] {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let entries = try decoder.decode([ServiceEntry].self, from: jsonArray(in: data))
+
+        var result: [String: ServiceStatus] = [:]
+        for entry in entries {
+            result[shortName(entry.name)] = ServiceStatus(
+                health: entry.status.flatMap(ServiceHealth.init(rawValue:)) ?? .other,
+                exitCode: entry.exitCode)
+        }
+        return result
+    }
+
+    private struct ServiceEntry: Decodable {
+        let name: String
+        let status: String?
+        let exitCode: Int?
     }
 
     /// `brew outdated --json=v2` → `{"formulae": [...], "casks": [...]}`.
@@ -217,6 +246,14 @@ final class BrewClient {
     private static func jsonObject(in data: Data) -> Data {
         guard let start = data.firstIndex(of: UInt8(ascii: "{")),
               let end = data.lastIndex(of: UInt8(ascii: "}")),
+              start < end else { return data }
+        return data[start...end]
+    }
+
+    /// Same trim for payloads whose top level is an array (`brew services list --json`).
+    private static func jsonArray(in data: Data) -> Data {
+        guard let start = data.firstIndex(of: UInt8(ascii: "[")),
+              let end = data.lastIndex(of: UInt8(ascii: "]")),
               start < end else { return data }
         return data[start...end]
     }

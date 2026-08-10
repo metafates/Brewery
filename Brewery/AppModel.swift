@@ -41,6 +41,10 @@ final class AppModel {
     /// in the same step as the installed overlay it is derived from.
     var dependents: [Package.ID: [Package.ID]] = [:]
 
+    /// v5 — what `brew services list` reports, keyed by short formula name. Every installed
+    /// formula that defines a service has an entry, whatever its state.
+    var serviceStatuses: [String: ServiceStatus] = [:]
+
     var operations: [BrewOperation] = []
     var brewMissing = false
 
@@ -186,14 +190,17 @@ final class AppModel {
             installed = [:]
             outdated = [:]
             dependents = [:]
+            serviceStatuses = [:]
             return
         }
 
         let installedTask = Task { try await self.client.listInstalled() }
         let outdatedTask = Task { try await self.client.outdated() }
+        let servicesTask = Task { try await self.client.servicesList() }
 
         let installedResult = try? await installedTask.value
         let outdatedResult = try? await outdatedTask.value
+        let servicesResult = try? await servicesTask.value
 
         let folded: [Package.ID: InstalledInfo]?
         if let installedResult {
@@ -222,6 +229,7 @@ final class AppModel {
             dependents = Receipts.invertDependents(folded)
         }
         if let outdatedResult { outdated = outdatedResult }
+        if let servicesResult { serviceStatuses = servicesResult }
         // Recompose only on a real change — scans are usually identical, and an unchanged catalog
         // must not invalidate the view layer's keys.
         if let scan, scan != tapScan {
@@ -341,15 +349,17 @@ final class AppModel {
         guard command.isMutating else { return }
         // A catalog entry can never start with a dash, but brew would read one as a flag if it did.
         switch command {
-        case let .install(name, _), let .upgrade(name, _):
+        case let .install(name, _), let .upgrade(name, _),
+             let .serviceStart(name), let .serviceStop(name):
             guard !name.isEmpty, !name.hasPrefix("-") else { return }
         default:
             break
         }
 
         // Auto-update is disabled on every invocation, so brew's metadata can drift; one explicit
-        // `brew update` per session, ahead of the first mutation, brings it back in line.
-        if !didEnqueueSessionUpdate {
+        // `brew update` per session, ahead of the first package mutation, brings it back in line.
+        // Service toggles skip it — they change launchd state, not packages.
+        if !didEnqueueSessionUpdate, command.touchesPackages {
             didEnqueueSessionUpdate = true
             operations.append(BrewOperation(command: .update, title: "Updating Homebrew", targetID: nil))
         }
@@ -390,6 +400,36 @@ final class AppModel {
 
     func upgradeAll() {
         enqueue(.upgradeAll, title: "Upgrading all packages", targetID: nil)
+    }
+
+    // MARK: - Services (v5)
+
+    /// The Services section's rows: exactly what brew reports as available, as packages —
+    /// catalog entries where covered, synthesized otherwise. Alphabetical, like an inventory.
+    var servicePackages: [Package] {
+        serviceStatuses.keys
+            .compactMap { package(for: Package.packageID(kind: .formula, name: $0)) }
+            .sorted { $0.name < $1.name }
+    }
+
+    var runningServicesCount: Int {
+        serviceStatuses.values.count { $0.health == .started }
+    }
+
+    func serviceStatus(for package: Package) -> ServiceStatus? {
+        serviceStatuses[package.name]
+    }
+
+    func startService(_ package: Package) {
+        enqueue(.serviceStart(name: qualifiedName(for: package)),
+                title: "Starting \(package.title)",
+                targetID: package.id)
+    }
+
+    func stopService(_ package: Package) {
+        enqueue(.serviceStop(name: qualifiedName(for: package)),
+                title: "Stopping \(package.title)",
+                targetID: package.id)
     }
 
     private func pump() {

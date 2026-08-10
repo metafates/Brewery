@@ -31,6 +31,19 @@ struct BrewCommandTests {
         #expect(BrewCommand.upgrade(name: "iterm2", cask: true).arguments == ["upgrade", "--cask", "iterm2"])
     }
 
+    @Test("service commands: canonical verbs, one named target, no flags")
+    func serviceArguments() {
+        #expect(BrewCommand.servicesList.arguments == ["services", "list", "--json"])
+        #expect(BrewCommand.serviceStart(name: "redis").arguments == ["services", "start", "redis"])
+        #expect(BrewCommand.serviceStop(name: "redis").arguments == ["services", "stop", "redis"])
+        #expect(BrewCommand.servicesList.isMutating == false)
+        #expect(BrewCommand.serviceStart(name: "redis").isMutating)
+        #expect(BrewCommand.serviceStop(name: "redis").isMutating)
+        // Toggles change launchd state, not packages — no session brew update for them.
+        #expect(BrewCommand.serviceStart(name: "redis").touchesPackages == false)
+        #expect(BrewCommand.install(name: "wget", cask: false).touchesPackages)
+    }
+
     @Test("only update/install/upgrade mutate")
     func isMutating() {
         #expect(BrewCommand.listFormulae.isMutating == false)
@@ -72,6 +85,9 @@ struct BrewCommandTests {
         .upgrade(name: "wget", cask: false),
         .upgrade(name: "iterm2", cask: true),
         .upgradeAll,
+        .servicesList,
+        .serviceStart(name: "redis"),
+        .serviceStop(name: "redis"),
     ] }
 
     /// One tag per `BrewCommand` case. The switch is exhaustive on purpose: adding a case to
@@ -79,6 +95,7 @@ struct BrewCommandTests {
     /// `everyCommand`, so the tripwire below can never silently miss a new command.
     enum CommandKind: CaseIterable {
         case listFormulae, listCasks, outdated, update, install, upgrade, upgradeAll
+        case servicesList, serviceStart, serviceStop
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -90,6 +107,9 @@ struct BrewCommandTests {
         case .install: .install
         case .upgrade: .upgrade
         case .upgradeAll: .upgradeAll
+        case .servicesList: .servicesList
+        case .serviceStart: .serviceStart
+        case .serviceStop: .serviceStop
         }
     }
 
@@ -100,7 +120,7 @@ struct BrewCommandTests {
 
     @Test("first argv token is on the whitelist")
     func firstTokenIsWhitelisted() {
-        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade"]
+        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services"]
         for command in Self.everyCommand {
             let first = command.arguments.first ?? ""
             #expect(allowed.contains(first), "unexpected subcommand \"\(first)\" in \(command.arguments)")
@@ -109,7 +129,8 @@ struct BrewCommandTests {
 
     @Test("no argv element carries a destructive token")
     func noDestructiveTokens() {
-        let forbidden = ["uninstall", "remove", "rm", "cleanup", "pin", "unpin", "zap", "--force"]
+        let forbidden = ["uninstall", "remove", "rm", "cleanup", "pin", "unpin", "zap", "--force",
+                         "kill", "restart", "--all", "--file", "--sudo-service-user"]
         for command in Self.everyCommand {
             for argument in command.arguments {
                 // Whole tokens and their flag variants ("--force-bottle"); a plain substring test
@@ -139,6 +160,12 @@ struct BrewCommandTests {
                 #expect(arguments == ["list", "--formula", "--versions"])
             case .listCasks, .outdated, .update:
                 #expect(!arguments.contains("--formula"))
+            case .servicesList:
+                #expect(arguments == ["services", "list", "--json"])
+            case .serviceStart, .serviceStop:
+                // Exactly one named service, no flags — `--all` would be a different blast radius.
+                #expect(arguments.count == 3, "\(arguments)")
+                #expect(!arguments.contains { $0.hasPrefix("-") })
             }
         }
     }

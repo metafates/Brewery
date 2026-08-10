@@ -47,7 +47,7 @@ nonisolated struct CatalogStore {
     static let maxCacheAge: TimeInterval = 24 * 60 * 60
 
     /// Bumped whenever `Package`'s shape changes; a mismatch discards the cache and re-downloads.
-    static let cacheVersion = 6
+    static let cacheVersion = 7
 
     /// Application Support/Brewery, created on demand.
     static var supportDirectory: URL {
@@ -226,12 +226,67 @@ nonisolated struct CatalogStore {
         /// *inside* the array (live on `watch`, `parrot`, `rakudo*`), not as a shorter array.
         let conflictsWithReasons: [String?]?
         let rubySourcePath: String?
+        let service: Lenient<ServiceEntry>?
 
         enum CodingKeys: String, CodingKey {
-            case name, desc, homepage, versions, license, deprecated, disabled, caveats
+            case name, desc, homepage, versions, license, deprecated, disabled, caveats, service
             case conflictsWith = "conflicts_with"
             case conflictsWithReasons = "conflicts_with_reasons"
             case rubySourcePath = "ruby_source_path"
+        }
+    }
+
+    /// The formula `service` block, decoded leniently field by field: `run` is a string *or* an
+    /// array, `keep_alive` an object of booleans, `sockets` a string or an array — and brew's
+    /// `compact_blank` means any key can be absent. One surprising formula must never cost the
+    /// catalog (the `conflicts_with_reasons` lesson).
+    struct ServiceEntry: Decodable {
+        let run: [String]
+        let runType: String?
+        let interval: Int?
+        let cron: String?
+        let keepAlive: Bool
+        let requireRoot: Bool
+        let logPath: String?
+        let sockets: [String]
+
+        private struct StringOrArray: Decodable {
+            let values: [String]
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.singleValueContainer()
+                if let one = try? container.decode(String.self) {
+                    values = [one]
+                } else {
+                    values = (try? container.decode([Lenient<String>].self))?.compactMap(\.value) ?? []
+                }
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case run, interval, cron, sockets
+            case runType = "run_type"
+            case keepAlive = "keep_alive"
+            case requireRoot = "require_root"
+            case logPath = "log_path"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            run = (try? container.decodeIfPresent(StringOrArray.self, forKey: .run))??.values ?? []
+            runType = try? container.decodeIfPresent(String.self, forKey: .runType)
+            interval = try? container.decodeIfPresent(Int.self, forKey: .interval)
+            cron = try? container.decodeIfPresent(String.self, forKey: .cron)
+            keepAlive = ((try? container.decodeIfPresent([String: Lenient<Bool>].self, forKey: .keepAlive))?
+                .contains { $0.value.value == true }) ?? false
+            requireRoot = ((try? container.decodeIfPresent(Bool.self, forKey: .requireRoot)) ?? nil) ?? false
+            logPath = try? container.decodeIfPresent(String.self, forKey: .logPath)
+            sockets = (try? container.decodeIfPresent(StringOrArray.self, forKey: .sockets))??.values ?? []
+        }
+
+        var definition: ServiceDefinition {
+            ServiceDefinition(run: run, runType: runType, interval: interval, cron: cron,
+                              keepAlive: keepAlive, requireRoot: requireRoot,
+                              logPath: logPath, sockets: sockets)
         }
     }
 
@@ -331,7 +386,8 @@ nonisolated struct CatalogStore {
                     commands: commands[entry.name] ?? [],
                     installs90d: installs[entry.name],
                     license: entry.license?.value,
-                    rubySourcePath: entry.rubySourcePath)
+                    rubySourcePath: entry.rubySourcePath,
+                    service: entry.service?.value?.definition)
         }
     }
 

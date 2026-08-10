@@ -12,11 +12,12 @@ A native macOS GUI for Homebrew. SwiftUI, macOS 26, zero third-party dependencie
 6. **(v2)** Filters and dependency visibility: search scoped to formulae/casks with an option to hide deprecated entries; Installed scoped to directly-installed items (with an "all" escape hatch); per-package installed dependencies; and, for items pulled in as dependencies, who requires them.
 7. **(v3)** Richer package pages and a faster shell: provided commands per formula (command-not-found data) and search-by-command; caveats, conflicts, and 90-day install analytics in the detail sheet; a Fonts filter with a native glyph instead of favicons; per-tab search state; item counts in the window subtitle; windowed grid rendering; and a real icon cache.
 8. **(v4)** Taps overhaul: packages from installed third-party taps join the catalog (local scan, zero subprocesses) and are searchable in Discover; every item answers "which tap is this from"; install/upgrade pass tap-qualified names, which is also what brew 6.x's tap-trust gate requires; all with **zero performance regression** — taps ride in as metadata, the join rule, safety whitelist and every hot path stay untouched.
+9. **(v5)** Services: a Services section (System Settings › Login Items composition — icon, name, info line, trailing toggle) listing every installed formula's background service with live status; start/stop through the operation queue; the catalog's `service` block rendered as human-readable description (command, schedule, ports, logs) in the detail sheet. The whitelist grows by exactly three cases; brew's destructive service verbs stay unrepresentable.
 
 ## Non-goals (v1)
 
 - **No destructive brew commands.** No `uninstall`, `zap`, `cleanup`, `pin`/`unpin`, `--force`. Hard safety requirement — structurally enforced, see [Safety](#safety).
-- No taps management *commands* — no `tap`, `untap`, `trust`. **(v4)** reads installed taps from disk and surfaces their packages; adding, removing and trusting taps stays in the terminal. (The one trust write that happens is brew's own: installing by qualified name auto-trusts the item — disclosed in the UI, see v4.) No services, no doctor. No dependency *graph visualization* — v2 shows flat dependency/dependent lists from install receipts, nothing more.
+- No taps management *commands* — no `tap`, `untap`, `trust`. **(v4)** reads installed taps from disk and surfaces their packages; adding, removing and trusting taps stays in the terminal. (The one trust write that happens is brew's own: installing by qualified name auto-trusts the item — disclosed in the UI, see v4.) **(v5)** Services are managed — but only `start`/`stop`: no `kill`, no `cleanup` (deletes plists), no `restart`/`run`, no root services, no `--file`. No doctor. No dependency *graph visualization* — v2 shows flat dependency/dependent lists from install receipts, nothing more.
 - No analytics-based popularity *ranking* — v3 displays install counts in the detail sheet, but they still don't feed the search scorer (revisit only if search feels bad in practice).
 - No Settings pane, no multiple windows, no log persistence across launches.
 - No App Store distribution (the app cannot be sandboxed — it execs `brew`).
@@ -48,6 +49,21 @@ Verified against brew 6.x source and live probes on a machine with five third-pa
 - **Analytics cover taps**: `install/90d.json` keys tap formulae by qualified name (`oven-sh/bun/bun`) among its ~32k entries — real install counts are available for tap packages via a dictionary lookup.
 - A core tap kept as a **git clone** (`homebrew/homebrew-cask` here, 7.7k files with sharded `Casks/<letter>/`) must be excluded from scanning — the API catalog already covers it, and scanning it would double every cask.
 - Rejected: `brew tap-info --json` on any hot path (per-tap GitHub API calls + git shell-outs, 1.2 s for 7 taps); the descriptions cache (`~/Library/Caches/Homebrew/descriptions.json` — trusted-taps-only, desc-only, best-effort); batch `brew info --json=v2` enrichment (~0.3 s per invocation — revisit only if regex fallback quality feels bad in practice).
+
+### Services (v5)
+
+Verified against brew 6.x source and live probes (six service formulae installed here):
+
+- `brew services` is merged into brew core (`Library/Homebrew/services/`, dispatcher `cmd/services.rb`). Eight subcommands **with aliases accepted verbatim** (`stop` = `unload`/`terminate`/`term`/`t`/`u`, `cleanup` = `clean`/`cl`/`rm`, …) — the whitelist emits canonical tokens only and never grows the dangerous verbs.
+- **`start` vs `run`** (`services/cli.rb:95-162`): `start` copies the plist into `~/Library/LaunchAgents` + `launchctl enable` + bootstrap — a login item; `run` bootstraps the keg's plist only — dies at logout. v5 exposes `start`/`stop` only; a toggle is a persistence statement, and that is `start`.
+- **`stop` deletes the registered plist** (`cli.rb:242`) — that is brew's own inverse of `start`, fully reversible; `--keep` exists but is not needed.
+- **Sharp edges, all unrepresentable here**: `cleanup` (kills orphans + deletes plists), `kill`, `--file=` (loads an arbitrary plist), `--sudo-service-user` (root-only), and running services commands as root at all (`take_root_ownership?`, `cli.rb:288-352`, chowns the keg to root).
+- **`brew services` never invokes sudo** (verified: no `sudo: true` caller in the tree) — it cannot hang on a password prompt with piped stdio. A `require_root: true` formula started as a user *warns on stderr and proceeds* (`cli.rb:378-383`), then typically fails at runtime → `status: "error"`. So the GUI disables the toggle for `require_root` services instead of offering a start that lies.
+- **`brew services list --json`** → array of exactly `{name, status, user, file, exit_code}` (`subcommand/list.rb:42`); `status` ∈ `started · stopped · none · scheduled · error · unknown · other` (`formula_wrapper.rb:322-340`). ~0.5 s measured (Ruby boot + `Formula.installed`) — the `brew outdated` cost class, run concurrently in `refreshState`, never on a render path. `file` can point at the keg's template plist, not the registered one — status is the source of truth.
+- **Exit codes lie**: "Service `x` is not started." warns and exits 0 (`cli.rb:190`). Statuses are re-read after every mutation — the post-operation `refreshState` already does exactly that.
+- The formula API's **`service` block** (`service.rb:715-767`, `.compact_blank` — absent key = default): `run` (string *or* array), `run_type` ∈ `immediate`/`interval`/`cron`, `interval`, `cron`, `keep_alive` (object of booleans), `require_root`, `working_dir`, `log_path`, `error_log_path`, `sockets` (`tcp://host:port` strings), `environment_variables`, more. Paths embed `$HOMEBREW_PREFIX` — the caveats substitution already handles that.
+- Services never trigger brew auto-update (`utils/auto-update.sh:144-155` — `services` absent from the trigger list). `HOMEBREW_SERVICES_NO_DOMAIN_WARNING=1` silences a stderr domain warning that fires when uid≠euid — set on every invocation.
+- **Trust gate**: `services list` uses `Formula.installed`, whose bare `rescue` silently drops untrusted-tap formulae (`formula.rb:2648-2655`) — their services vanish from the list with exit 0. Accepted: Brewery-installed tap items are auto-trusted; the residual gap is documented in Risks.
 
 ### Installed state
 
@@ -100,6 +116,7 @@ Every keg carries an install-time receipt, and it answers all of v2's dependency
 | `TapStore.swift` *(v4)* | `@concurrent` local scan of `Library/Taps` → `[Package]` for third-party taps; pure regex parsers; zero subprocesses |
 | `IconStore.swift` *(v3)* | actor: favicon fetch with in-flight dedup and a concurrency cap → memory dictionary + disk LRU (byte-capped); negative-result markers |
 | `FuzzySearch.swift` | Pure scorer + `@concurrent` ranking |
+| `ServicesView.swift` *(v5)* | The Services section: a `List` of icon/name/command rows with status + toggle; shared `ServiceToggle` |
 | `ContentView.swift` | `NavigationSplitView` shell: sidebar, `.searchable`, operations popover, brew-missing state |
 | `PackageGridView.swift` | `ScrollView` + `LazyVGrid` of cards, empty states |
 | `PackageCardView.swift` | One card: icon, name, status line, description, action button |
@@ -157,6 +174,22 @@ struct InstalledInfo {
 }
 
 struct OutdatedInfo  { var installed: [String]; var current: String; var pinned: Bool }
+
+// v5 — the catalog service block, slimmed to what the UI says, decoded leniently:
+struct ServiceDefinition: Codable, Hashable {
+    var run: [String]        // string-or-array in the API; the humanized command line
+    var runType: String?     // "immediate" | "interval" | "cron"
+    var interval: Int?       // seconds, when runType == interval
+    var cron: String?        // when runType == cron
+    var keepAlive: Bool      // any true value inside the keep_alive object
+    var requireRoot: Bool    // toggle disabled — a user-level start of these lies, then errors
+    var logPath: String?
+    var sockets: [String]    // "tcp://127.0.0.1:6379" strings → the Ports row
+}
+
+// v5 — the per-name status overlay from `brew services list --json`; unknown strings → .other:
+enum ServiceHealth: String { case started, stopped, none, scheduled, error, unknown, other }
+struct ServiceStatus { var health: ServiceHealth; var exitCode: Int? }
 
 enum PackageStatus {
     case notInstalled
@@ -218,18 +251,21 @@ enum BrewCommand: Equatable {
     case install(name: String, cask: Bool)   // ["install", "--formula"|"--cask", name]
     case upgrade(name: String, cask: Bool)   // ["upgrade", "--formula"|"--cask", name]
     case upgradeAll           // ["upgrade"]
+    case servicesList         // v5: ["services", "list", "--json"] — read
+    case serviceStart(name: String)  // v5: ["services", "start", name] — mutating, reversible
+    case serviceStop(name: String)   // v5: ["services", "stop", name] — mutating, reversible
 
     var arguments: [String] { ... }
-    var isMutating: Bool { ... }   // update / install / upgrade / upgradeAll
+    var isMutating: Bool { ... }   // update / install / upgrade / upgradeAll / serviceStart / serviceStop
 }
 ```
 
-- No `uninstall`, `remove`, `rm`, `cleanup`, `pin`, `unpin`, `zap`, or `--force` case exists anywhere.
+- No `uninstall`, `remove`, `rm`, `cleanup`, `pin`, `unpin`, `zap`, or `--force` case exists anywhere. **(v5)** Likewise no services `kill`/`cleanup`/`restart`/`run`, none of their aliases, no `--all`, no `--file=`, no `--sudo-service-user` — canonical `start`/`stop` on one named service is all that is representable, and both are launchd operations brew itself reverses.
 - `BrewClient.run` accepts only a `BrewCommand`. There is no `run(arguments: [String])`.
 - Explicit `--formula`/`--cask` on install/upgrade: the app already knows the kind from the catalog, so brew never has to disambiguate a name that exists as both (which it would resolve with a warning).
 - `Process` execs the brew binary directly — no `/bin/sh -c`, so package names are single argv elements with no *shell* injection surface. Names only ever come from decoded catalog/outdated entries, never from a free text field; `enqueue` additionally rejects names starting with `-` so a hostile catalog entry can't be parsed by brew as a flag.
 - Brew's *implicit* destruction — the periodic auto-cleanup that install/upgrade trigger by default — is switched off via `HOMEBREW_NO_INSTALL_CLEANUP=1` (see the environment list above). The whitelist covers what we ask brew to do; the env var covers what brew does unasked.
-- `BrewCommandTests` asserts every case's argv: first token ∈ `{list, outdated, update, install, upgrade}`, no argv element matches `uninstall|remove|rm|cleanup|pin|zap|--force`, and install/upgrade carry the explicit kind token. A cheap tripwire against future regressions.
+- `BrewCommandTests` asserts every case's argv: first token ∈ `{list, outdated, update, install, upgrade}`, no argv element matches `uninstall|remove|rm|cleanup|pin|zap|--force|kill|--file|--sudo-service-user`, and install/upgrade carry the explicit kind token. A cheap tripwire against future regressions.
 
 ## BrewClient
 
@@ -243,7 +279,7 @@ func run(_ command: BrewCommand,
 ```
 
 - `Process` with `executableURL` = brew path, `arguments` = `command.arguments`.
-- Environment: inherited + `HOMEBREW_NO_ENV_HINTS=1`, `HOMEBREW_NO_ASK=1`, `HOMEBREW_NO_AUTO_UPDATE=1`, `HOMEBREW_NO_INSTALL_CLEANUP=1`; `SUDO_ASKPASS` when `command.isMutating`.
+- Environment: inherited + `HOMEBREW_NO_ENV_HINTS=1`, `HOMEBREW_NO_ASK=1`, `HOMEBREW_NO_AUTO_UPDATE=1`, `HOMEBREW_NO_INSTALL_CLEANUP=1`, **(v5)** `HOMEBREW_SERVICES_NO_DOMAIN_WARNING=1`; `SUDO_ASKPASS` when `command.isMutating`.
 - stdout and stderr each get a `Pipe`; two child tasks iterate `fileHandleForReading.bytes.lines`, forwarding each line to `onLine`. (brew already prefixes `Error:` / `Warning:` — the log view tints those lines.)
 - Exit is awaited via `terminationHandler` bridged into a `CheckedContinuation` — **never `waitUntilExit`**, which would block the main actor: the `@MainActor onLine` callbacks could then never run, the 64 KB pipe buffer fills, brew blocks on write, and nothing ever exits.
 - Cancellation via `withTaskCancellationHandler`, `onCancel: { process.interrupt() }` — SIGINT, the Ctrl-C path brew actually traps and cleans up after (`brew.rb:22` maps it to exit 130). `terminate()` would send SIGTERM, which brew doesn't map and which skips its Interrupt cleanup. Exit 130, or an uncaught-signal exit while `Task.isCancelled`, → `.cancelled`.
@@ -355,7 +391,7 @@ Alternatives considered: keeping `URLCache` + retry-on-appear (doesn't fix cance
 
 ## UI structure
 
-- **Window**: single `WindowGroup`, `NavigationSplitView`. Sidebar: Discover (`sparkle.magnifyingglass`), Installed (`checkmark.circle`), Outdated (`arrow.triangle.2.circlepath`) with `.badge(outdatedCount)`. Stock components get Liquid Glass chrome for free.
+- **Window**: single `WindowGroup`, `NavigationSplitView`. Sidebar: Discover (`sparkle.magnifyingglass`), Installed (`checkmark.circle`), Outdated (`arrow.triangle.2.circlepath`) with `.badge(outdatedCount)`; **(v5)** Services (`server.rack` — most brew services are servers) with `.badge(running count)`. Stock components get Liquid Glass chrome for free.
 - **Search**: `.searchable` on the detail column; Discover = full-catalog fuzzy, Installed/Outdated = fuzzy over that section's array. **(v3)** Each section binds to its own query in `AppModel.queries` — queries do not leak across tabs, and each tab's query survives switching away and back.
 - **(v3) Counts**: `.navigationSubtitle` — the native macOS spot for this (Mail's message counts live there): browsing shows "16,223 packages" (Discover) / "309 installed" / "12 outdated"; an active search or filter shows "142 results" instead. Counts reflect what the current query + filters actually yield, not raw totals.
 - **(v2) Filter controls**: Discover's toolbar gets a filter `Menu` (`line.3.horizontal.decrease.circle`, filled variant when any filter is active) holding the kind `Picker` and the "Hide deprecated" `Toggle`; Installed's toolbar gets the `On Request | All` scope `Picker` inline (two options don't need a menu); Outdated's toolbar gets an **Update All** button whenever anything is outdated (disabled while an Upgrade All is already queued or running) — the menu bar's ⇧⌘U is invisible from the one tab whose whole job is updating.
@@ -376,7 +412,8 @@ Alternatives considered: keeping `URLCache` + retry-on-appear (doesn't fix cance
 - **Refresh, visibly**: on a warm cache ⌘R finishes fast enough to look like nothing happened, so `AppModel.isRefreshing` (guarded — a second refresh cannot start on top of the first) drives a toolbar button whose glyph spins for the duration, and a *refresh veil* over the grid itself: the listing blurs and dims — never hidden, since the data on screen stays valid while it is re-checked — behind a glass "Checking for updates…" capsule that blur-replaces in and out (`refreshVeil` in `ContentView.swift`); on a warm cache it reads as a soft half-second pulse acknowledging the ⌘R. An open detail sheet wears the same veil on its content — the sheet is frontmost, so without it a ⌘R would look ignored; its footer (Open/Done) stays crisp because a refresh never blocks dismissal, and the sheet's live rows update in place when the refresh lands. (Hiding the sheet was considered and rejected: dismissing user context on a background refresh is not a thing any Apple surface does.) Outdated's empty state also offers a centered **Check Again**, since "Everything is up to date" invites exactly that question; Discover's does not, because an empty grid there means a filter is hiding things and re-checking will not bring them back.
 - **Animation** is deliberately sparse, and only where it hides a rough edge: icons crossfade in when they arrive, the card's action control blur-replaces between Install / spinner / checkmark, and the operations count rolls with `.numericText`. The grid does **not** animate rearranging — a reshuffle on every keystroke is noise, not feedback. The `.navigationSubtitle` count cannot animate: it is AppKit-rendered in the titlebar, so a `contentTransition` does not survive the trip.
 - **Quit while a mutation runs**: `NSApplicationDelegateAdaptor` + `applicationShouldTerminate` shows a confirm dialog when an install/upgrade is running. On confirmed quit, the running brew gets `interrupt()` (the same SIGINT path as Cancel) and up to 5 s to exit; if it still hasn't (rare — brew traps INT), quit anyway and accept the orphan as the lesser evil versus a hung quit. Queued-but-unstarted operations are simply discarded.
-- **Empty states**: `ContentUnavailableView.search` for no results; "Everything is up to date" in Outdated; full-window "Homebrew not found" with a brew.sh link; "Couldn't load catalog" + Retry when no cache and download failed.
+- **(v5) Services section** — System Settings › Login Items, not the card grid (services are state rows): `PackageIconView` (32 pt) + title, subtitle = the humanized run command (monospaced, middle-truncated, `$HOMEBREW_PREFIX` substituted by the caveats helper), trailing status caption + `Toggle`. Toggle on = loaded (`started`/`scheduled`/`error`/`stopped`), off = `none`/`unknown`; on-flip enqueues `serviceStart`, off-flip `serviceStop` (qualified by effective tap; **no session `brew update`** — nothing package-related changes). Status caption speaks only when it has something to say: green "Running", orange "Scheduled", red "Failed (exit N)". Busy swaps the toggle for the small `ProgressView` via the existing `status(for:)`. `require_root` services: toggle disabled, "Requires root — manage in Terminal". Row click opens the detail sheet. The detail sheet gains a **Service** section for any formula with a `service` block — the Contents-style two-column grid (Command mono, Type humanized incl. keep-alive, Ports from sockets, Logs path) topped by the same shared `ServiceToggle` when installed; one component in both places, one source of truth.
+- **Empty states**: `ContentUnavailableView.search` for no results; "Everything is up to date" in Outdated; full-window "Homebrew not found" with a brew.sh link; "Couldn't load catalog" + Retry when no cache and download failed; **(v5)** "No services" when nothing installed defines one.
 - **(v4) Taps in the UI** — identity everywhere, chrome nowhere:
   - **Card**: the status line gains `TagLabel(owner)` for third-party items — the **owner segment only** (`charmbracelet`, not `charmbracelet/tap`): it is the identity people recognize, and the full string does not fit a caption row that already holds kind + version in a 230 pt column (`.truncationMode(.middle)` + low layout priority as backstop). Core items show no tap tag — 16k cards saying "homebrew/core" is noise, and the kind tag already implies core.
   - **Detail sheet**: a `statRow` with the `spigot` SF Symbol (outline, matching the `chart.bar`/`doc.text` weight) shows the **full effective tap for every package** — core items show the derived `homebrew/core`/`homebrew/cask`, so "which tap is this from" is always answerable. For not-yet-installed tap items, the install button's `.help` and a one-line caption disclose the trust side effect: "Installing trusts charmbracelet/tap/gum in Homebrew".
@@ -410,6 +447,7 @@ Swift Testing for units; no BrewClient integration tests (they'd depend on machi
 - **(v4) Parsing additions**: outdated fixture pairing a tap-qualified formula `full_name` with a short cask token — pins that the join rule holds with taps in play.
 - **(v4) FuzzySearch additions**: "charmbracelet" surfaces that tap's packages; a qualified-candidate hit never outranks an exact short-name match; qualified scoring never fires for `tap == nil` packages.
 - **(v4) BrewCommand additions**: `install(name: "user/repo/foo")` argv is still exactly 3 elements and trips no destructive-token regex.
+- **(v5) Services**: BrewCommand argv per case + the widened tripwire (`kill|--file|--sudo-service-user` join the forbidden tokens; "services" joins the first-token whitelist); `parseServicesList` fixtures — all seven statuses, an unknown status string (→ `.other`), null user/exit_code, empty array; `ServiceDefinition` decode — string-vs-array `run`, `keep_alive` object shapes, `require_root`, absent block → nil; run-type humanizer ("Runs continuously" / "Every 5 min" / cron), `$HOMEBREW_PREFIX` substitution in the command line.
 
 ## Build order
 
@@ -434,6 +472,12 @@ Each step builds and is independently verifiable (`xcodebuild ... | xcbeautify` 
    c. *Commands*: effective-tap qualification with the scan-membership guard. *Verify: BrewCommand tests; a tap item's Update enqueues `upgrade --formula charmbracelet/tap/<name>`.*
    d. *UI*: card owner tag, detail spigot row + trust caption, tap-aware source link, Taps filter. *Verify: screenshot loop — tap card, tap detail, Taps filter view, mixed-row card heights.*
    e. *Perf gate*: the existing UI-test thresholds on the tap-augmented catalog. *Verify: search focus < 1 s, keystroke < 0.5 s, scroll < 1 s still pass.*
+11. **v5: Services** — in sub-steps, each buildable:
+   a. *Data*: `ServiceDefinition` + lenient catalog decode, cache v7, decode tests. *Verify: redis decodes run/keep_alive/log_path; a formula without a service block stays nil.*
+   b. *Commands*: the three `BrewCommand` cases, client env var, `parseServicesList` + tests. *Verify: argv exact; tripwire green.*
+   c. *Model*: `serviceStatuses` overlay in `refreshState`, `startService`/`stopService` (no session update). *Verify: overlay matches `brew services list` in Terminal.*
+   d. *UI*: sidebar section + badge, `ServicesView`, detail Service section, shared toggle. *Verify: screenshots — mixed states incl. atuin's error, toggle mid-flight spinner, redis detail.*
+   e. *Live + perf*: toggle redis on/off through the queue; UI thresholds unchanged.
 
 ## Risks & mitigations
 
@@ -449,3 +493,6 @@ Each step builds and is independently verifiable (`xcodebuild ... | xcbeautify` 
 | *(v4)* untrusted-tap installed formulae vanish silently from `brew outdated` (`formula.rb:2649-2655`) | accepted: such items look up to date and Upgrade All skips them; installing anything from the tap via Brewery trusts it and restores visibility |
 | *(v4)* a stale receipt naming a since-untapped tap would make brew re-clone it on a qualified upgrade | qualification requires the tap to be present in the current scan; otherwise the short name is passed |
 | *(v4)* same short name in two sources (core vs tap, tap vs tap) | deterministic winner (core, then alphabetically-first tap); loser invisible in Discover but its installed state joins the winner's card — the v1 accepted-collision rule, extended |
+| *(v5)* services exit codes lie (warnings exit 0) | never trust the code: the post-operation `refreshState` re-reads `services list --json` after every toggle |
+| *(v5)* untrusted-tap services vanish silently from `services list` (brew-side bare `rescue`) | accepted; Brewery-installed tap items are auto-trusted, and the section is defined as "what brew reports" |
+| *(v5)* `require_root` services started as user warn-and-fail later | toggle disabled with a "requires root" caption instead of offering a start that lies |

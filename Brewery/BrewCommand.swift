@@ -20,6 +20,12 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     case install(name: String, cask: Bool)
     case upgrade(name: String, cask: Bool)
     case upgradeAll
+    // v5 — canonical service verbs only. `kill`, `cleanup` (deletes plists), `restart`, `run`,
+    // their aliases, `--all`, `--file=` and `--sudo-service-user` stay unrepresentable; start
+    // and stop are the reversible pair brew itself defines as each other's inverse.
+    case servicesList
+    case serviceStart(name: String)
+    case serviceStop(name: String)
 
     var arguments: [String] {
         switch self {
@@ -39,16 +45,31 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["upgrade", BrewCommand.kindFlag(cask: cask), name]
         case .upgradeAll:
             ["upgrade"]
+        case .servicesList:
+            ["services", "list", "--json"]
+        case let .serviceStart(name):
+            ["services", "start", name]
+        case let .serviceStop(name):
+            ["services", "stop", name]
         }
     }
 
     /// Mutating commands are serialized through the operation queue and get `SUDO_ASKPASS`.
     var isMutating: Bool {
         switch self {
-        case .listFormulae, .listCasks, .outdated:
+        case .listFormulae, .listCasks, .outdated, .servicesList:
             false
-        case .update, .install, .upgrade, .upgradeAll:
+        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop:
             true
+        }
+    }
+
+    /// Service toggles change launchd state, not packages — they skip the session `brew update`
+    /// the queue otherwise front-loads before the first mutation.
+    var touchesPackages: Bool {
+        switch self {
+        case .serviceStart, .serviceStop: false
+        default: isMutating
         }
     }
 

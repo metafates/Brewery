@@ -96,6 +96,47 @@ nonisolated struct CaskArtifact: Codable, Hashable {
     }
 }
 
+/// A formula's background service, slimmed from the API's `service` block to what the UI says.
+/// Absent keys mean default (`compact_blank` on brew's side), hence the defaults here.
+nonisolated struct ServiceDefinition: Codable, Hashable {
+    var run: [String] = []      // the service's argv; string-or-array in the API
+    var runType: String?        // "immediate" | "interval" | "cron"
+    var interval: Int?          // seconds, when runType == "interval"
+    var cron: String?           // when runType == "cron"
+    var keepAlive = false       // any true value inside the keep_alive object
+    var requireRoot = false     // started as a user it warns, proceeds and fails later
+    var logPath: String?
+    var sockets: [String] = []  // "tcp://127.0.0.1:6379" — the Ports row
+
+    /// "Runs continuously", "Every 5 minutes", "Scheduled: 0 * * * *" — plus the keep-alive
+    /// promise, which is the part a user actually cares about.
+    var scheduleLabel: String {
+        var label: String
+        switch runType {
+        case "interval":
+            if let interval, interval > 0 {
+                let measurement = Duration.seconds(interval)
+                label = "Every \(measurement.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide)))"
+            } else {
+                label = "Runs at intervals"
+            }
+        case "cron":
+            label = cron.map { "Scheduled: \($0)" } ?? "Scheduled"
+        default:
+            label = "Runs continuously"
+        }
+        if keepAlive { label += " · restarts if it stops" }
+        return label
+    }
+
+    /// "tcp://127.0.0.1:6379" → "127.0.0.1:6379" — the scheme is launchd plumbing.
+    var ports: [String] {
+        sockets.map { socket in
+            socket.range(of: "://").map { String(socket[$0.upperBound...]) } ?? socket
+        }
+    }
+}
+
 /// One catalog entry — a formula or a cask. Purely descriptive: install state lives in `AppModel`.
 nonisolated struct Package: Codable, Identifiable, Hashable {
     let kind: PackageKind
@@ -115,6 +156,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let tap: String?          // "user/repo" for third-party taps; nil = core (implied by kind)
     let tapRemote: String?    // the tap clone's git remote, for source links; nil for core
     let artifacts: [CaskArtifact] // casks only; payload artifacts aggregated by kind
+    let service: ServiceDefinition? // formulae only; nil = defines no background service
 
     /// Written out rather than synthesized: a `let` with an inline default drops out of the
     /// implicit memberwise init, which would break every existing `Package(kind:…)` call site.
@@ -134,7 +176,8 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
          rubySourcePath: String? = nil,
          tap: String? = nil,
          tapRemote: String? = nil,
-         artifacts: [CaskArtifact] = []) {
+         artifacts: [CaskArtifact] = [],
+         service: ServiceDefinition? = nil) {
         self.kind = kind
         self.name = name
         self.displayName = displayName
@@ -152,6 +195,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         self.tap = tap
         self.tapRemote = tapRemote
         self.artifacts = artifacts
+        self.service = service
     }
 
     var id: String { Package.packageID(kind: kind, name: name) }
@@ -178,11 +222,15 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
 
     /// Caveats embed a literal "$HOMEBREW_PREFIX"; swap in the real prefix for display.
     func resolvedCaveats(prefix: URL?) -> String? {
-        guard let caveats else { return nil }
-        guard let prefix else { return caveats }
+        caveats.map { Package.substitutingPrefix($0, prefix: prefix) }
+    }
+
+    /// The API writes a literal `$HOMEBREW_PREFIX` into caveats and service paths alike.
+    static func substitutingPrefix(_ text: String, prefix: URL?) -> String {
+        guard let prefix else { return text }
         var root = prefix.path(percentEncoded: false)
         if root.count > 1, root.hasSuffix("/") { root.removeLast() }
-        return caveats.replacingOccurrences(of: "$HOMEBREW_PREFIX", with: root)
+        return text.replacingOccurrences(of: "$HOMEBREW_PREFIX", with: root)
     }
 
     var homepageURL: URL? { homepage.flatMap(URL.init(string:)) }
@@ -244,6 +292,26 @@ nonisolated struct OutdatedInfo: Equatable, Hashable {
     var installed: [String]
     var current: String
     var pinned: Bool
+}
+
+/// v5 — brew's seven service states, verbatim; a string brew invents later lands in `.other`
+/// rather than failing the parse.
+nonisolated enum ServiceHealth: String, Equatable {
+    case started, stopped, none, scheduled, error, unknown, other
+
+    /// Loaded in launchd — what the toggle means by "on". `stopped` is loaded-with-exit-0
+    /// (transient; brew deletes the plist on an explicit stop, which then reads `none`).
+    var isLoaded: Bool {
+        switch self {
+        case .started, .scheduled, .error, .stopped: true
+        case .none, .unknown, .other: false
+        }
+    }
+}
+
+nonisolated struct ServiceStatus: Equatable {
+    var health: ServiceHealth
+    var exitCode: Int?
 }
 
 nonisolated enum PackageStatus: Equatable, Hashable {
