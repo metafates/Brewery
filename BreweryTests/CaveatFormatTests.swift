@@ -3,6 +3,7 @@
 //  BreweryTests
 //
 
+import AppKit
 import Testing
 @testable import Brewery
 
@@ -41,6 +42,25 @@ struct CaveatFormatTests {
             .text("To restart `foo` run:"),
             .code("brew services stop foo\nbrew services start foo"),
         ])
+    }
+
+    @Test("attributed prose: code spans get the mono chip, bare URLs become links")
+    func attributed() {
+        let result = CaveatFormat.attributed("Run `tlmgr` first, see https://example.com/docs for details")
+        let text = result.string
+
+        let codeRange = (text as NSString).range(of: "tlmgr")
+        let codeFont = result.attribute(.font, at: codeRange.location, effectiveRange: nil) as? NSFont
+        #expect(codeFont?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true)
+        #expect(result.attribute(.backgroundColor, at: codeRange.location, effectiveRange: nil) != nil)
+
+        let urlRange = (text as NSString).range(of: "https://example.com/docs")
+        let link = result.attribute(.link, at: urlRange.location, effectiveRange: nil) as? URL
+        #expect(link?.host() == "example.com")
+
+        // Prose stays un-chipped.
+        let proseFont = result.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+        #expect(proseFont?.fontDescriptor.symbolicTraits.contains(.monoSpace) == false)
     }
 
     @Test("all-prose, all-code, tabs, and trailing blank lines")

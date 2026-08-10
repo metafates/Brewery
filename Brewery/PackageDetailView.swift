@@ -423,10 +423,9 @@ struct PackageDetailView: View {
                 ForEach(Array(CaveatFormat.blocks(of: text).enumerated()), id: \.offset) { _, block in
                     switch block {
                     case .text(let paragraph):
-                        Text(Self.inlineMarkdown(paragraph))
-                            .font(.callout)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // AppKit-backed on purpose: links get the pointing hand over exactly
+                        // the link (and open on click) — per-run cursors are beyond SwiftUI Text.
+                        RichText(text: CaveatFormat.attributed(paragraph))
                     case .code(let code):
                         codeBlock(code)
                     }
@@ -440,14 +439,6 @@ struct PackageDetailView: View {
         }
     }
 
-    /// Inline-only on purpose: full Markdown would collapse the newlines the text depends on.
-    /// A parse failure falls back to the raw string — a caveat is never lost to formatting.
-    private static func inlineMarkdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text,
-                               options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
-    }
-
     /// One indented run — commands meant to be executed, so they come with a copy button.
     private func codeBlock(_ code: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
@@ -457,16 +448,7 @@ struct PackageDetailView: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(code, forType: .string)
-            } label: {
-                Image(systemName: "doc.on.doc")
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .help("Copy")
-            .accessibilityLabel("Copy command")
+            CopyButton(text: code)
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -747,6 +729,104 @@ nonisolated enum CaveatFormat {
         flushText()
         flushCode()
         return blocks
+    }
+
+    /// A prose paragraph, dressed: inline Markdown (inline-only — full parsing would collapse the
+    /// newlines the text depends on; failure falls back to the raw string), code spans tinted so
+    /// mono-heavy prose stops reading as noise, and bare URLs linkified — caveats cite docs pages
+    /// as plain text.
+    static func attributed(_ paragraph: String) -> NSAttributedString {
+        let markdown = (try? AttributedString(
+            markdown: paragraph,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(paragraph)
+
+        let result = NSMutableAttributedString(attributedString: NSAttributedString(markdown))
+        let whole = NSRange(location: 0, length: result.length)
+        let baseFont = NSFont.preferredFont(forTextStyle: .callout)
+        result.addAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor], range: whole)
+
+        // Code spans: the mono face plus a quiet chip, matching the code blocks' language.
+        var offset = 0
+        for run in markdown.runs {
+            let length = markdown[run.range].characters.count
+            if run.inlinePresentationIntent?.contains(.code) == true {
+                let range = NSRange(location: offset, length: length)
+                result.addAttributes([
+                    .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize - 1, weight: .regular),
+                    .backgroundColor: NSColor.quaternarySystemFill,
+                ], range: range)
+            }
+            offset += length
+        }
+
+        // Bare URLs become real links (where Markdown didn't already make one).
+        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+            for match in detector.matches(in: result.string, range: whole) {
+                guard let url = match.url,
+                      result.attribute(.link, at: match.range.location, effectiveRange: nil) == nil
+                else { continue }
+                result.addAttribute(.link, value: url, range: match.range)
+            }
+        }
+        return result
+    }
+}
+
+/// An AppKit-backed rich label: a selectable `NSTextField` gives links the pointing hand over
+/// exactly the link and opens them on click — the Mail/Notes behavior SwiftUI `Text` cannot
+/// reproduce, because pointer styles there are per-view, never per-run.
+private struct RichText: NSViewRepresentable {
+    let text: NSAttributedString
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(labelWithAttributedString: text)
+        field.isSelectable = true
+        // Without this a selectable label flattens its attributes on selection and links go dead.
+        field.allowsEditingTextAttributes = true
+        field.lineBreakMode = .byWordWrapping
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        field.attributedStringValue = text
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextField, context: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
+        nsView.preferredMaxLayoutWidth = width
+        let bounds = NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)
+        let size = nsView.cell?.cellSize(forBounds: bounds) ?? .zero
+        return CGSize(width: width, height: ceil(size.height))
+    }
+}
+
+/// Copies and says so: the glyph swaps to a checkmark for a beat — a silent copy button leaves
+/// the user wondering whether anything happened.
+private struct CopyButton: View {
+    let text: String
+
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            copied = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.2))
+                copied = false
+            }
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .contentTransition(.symbolEffect(.replace))
+                .foregroundStyle(copied ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+        }
+        .buttonStyle(.borderless)
+        .animation(.smooth(duration: 0.25), value: copied)
+        .help("Copy")
+        .accessibilityLabel(copied ? "Copied" : "Copy command")
     }
 }
 
