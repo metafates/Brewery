@@ -147,6 +147,7 @@ struct ContentView: View {
                 .navigationSubtitle(subtitle)
                 .toolbar {
                     filterToolbar
+                    refreshToolbar
                     operationsToolbar
                 }
                 .searchable(text: searchQuery, prompt: section.searchPrompt)
@@ -193,7 +194,8 @@ struct ContentView: View {
                             isSearching: isSearching,
                             onSelect: { selectedPackage = $0 },
                             emptyMessage: emptyMessage,
-                            onNeedMore: { window += Self.windowStep })
+                            onNeedMore: { window += Self.windowStep },
+                            onRefresh: emptyStateRefresh)
         }
     }
 
@@ -389,6 +391,33 @@ struct ContentView: View {
                 .accessibilityLabel("Installed Scope")
             }
         }
+    }
+
+    // MARK: - Refresh
+
+    /// The same work ⌘R does, with somewhere to look while it happens: the glyph turns for as long
+    /// as the refresh runs.
+    @ToolbarContentBuilder private var refreshToolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button { refresh() } label: {
+                Image(systemName: "arrow.clockwise")
+                    .symbolEffect(.rotate, options: .repeating, isActive: model.isRefreshing)
+            }
+            .disabled(model.isRefreshing)
+            .help("Refresh installed packages and check for updates")
+            .accessibilityLabel("Refresh")
+        }
+    }
+
+    private func refresh() {
+        Task { await model.refresh() }
+    }
+
+    /// Not offered on Discover: an empty grid there means a filter is hiding things, and
+    /// re-checking will not bring them back.
+    private var emptyStateRefresh: (() -> Void)? {
+        guard section != .discover else { return nil }
+        return { refresh() }
     }
 
     // MARK: - Operations

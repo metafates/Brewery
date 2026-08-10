@@ -24,6 +24,10 @@ struct PackageGridView: View {
     var emptyMessage: String?
     /// Called when the end of the rendered window scrolls into view.
     let onNeedMore: () -> Void
+    /// Offered in the empty state where re-checking is the useful next move — "Everything is up to
+    /// date" invites exactly that question. Omitted where it is not, such as a filter hiding
+    /// everything on Discover.
+    var onRefresh: (() -> Void)?
 
     private let columns = [GridItem(.adaptive(minimum: 230), spacing: 12)]
 
@@ -55,7 +59,15 @@ struct PackageGridView: View {
         if isSearching {
             ContentUnavailableView.search
         } else if let emptyMessage {
-            ContentUnavailableView(emptyMessage, systemImage: "shippingbox")
+            ContentUnavailableView {
+                Label(emptyMessage, systemImage: "shippingbox")
+            } description: {
+                EmptyView()
+            } actions: {
+                if let onRefresh {
+                    Button("Check Again", action: onRefresh)
+                }
+            }
         }
     }
 }

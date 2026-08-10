@@ -34,6 +34,10 @@ final class AppModel {
     var operations: [BrewOperation] = []
     var brewMissing = false
 
+    /// ⌘R does its work in the background and used to say nothing while it did. Drives the spinning
+    /// toolbar glyph, so a refresh is visibly happening rather than apparently ignored.
+    private(set) var isRefreshing = false
+
     /// Set once when an operation fails so the operations popover can auto-present; the view
     /// clears it after showing.
     var failureToPresent: BrewOperation?
@@ -82,6 +86,11 @@ final class AppModel {
 
     /// ⌘R: re-probe brew, re-read installed/outdated, and re-run the 24 h catalog staleness check.
     func refresh() async {
+        // Re-entrant refreshes would flicker the indicator and duplicate the work behind it.
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         client.discover()
 
         let state = Task { await self.refreshState() }
