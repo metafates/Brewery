@@ -78,6 +78,9 @@ struct PackageCardView: View {
 
     // MARK: - Status line
 
+    /// Pills for identity, one ·-joined text run for everything else — the App Store metadata
+    /// pattern. Mixing capsules and bare values in alternation read as clutter, and a value
+    /// sandwiched between two pills read worst of all.
     private var statusLine: some View {
         HStack(spacing: 6) {
             TagLabel(package.kindLabel)
@@ -89,21 +92,45 @@ struct PackageCardView: View {
                     .truncationMode(.middle)
                     .layoutPriority(-1)
             }
-            versionLabel
-            if package.disabled {
-                Text("disabled").foregroundStyle(.red)
-            } else if package.deprecated {
-                Text("deprecated").foregroundStyle(.red)
-            }
-            if model.outdated[package.id]?.pinned == true {
-                Text("pinned").foregroundStyle(.secondary)
-            }
-            if isDependency {
-                TagLabel("dependency")
+            if let status = statusText {
+                status
             }
         }
         .font(.caption)
         .lineLimit(1)
+    }
+
+    /// Version and state words as one concatenated `Text`, so per-segment colors survive and
+    /// `lineLimit(1)` truncates the run as a unit.
+    private var statusText: Text? {
+        var segments: [Text] = []
+
+        if let info = model.outdated[package.id] {
+            segments.append(Text("\(info.installed.last?.shortVersion ?? "") → \(info.current.shortVersion)")
+                .foregroundStyle(.orange))
+        } else if let version = model.installed[package.id]?.versions.last, !version.isEmpty {
+            segments.append(Text(version.shortVersion).foregroundStyle(.secondary))
+        } else if !package.version.isEmpty {
+            // Casks report versions like "2.1.50,56f0a83" — only the part a human reads is shown.
+            segments.append(Text(package.version.shortVersion).foregroundStyle(.secondary))
+        }
+
+        if package.disabled {
+            segments.append(Text("disabled").foregroundStyle(.red))
+        } else if package.deprecated {
+            segments.append(Text("deprecated").foregroundStyle(.red))
+        }
+        if model.outdated[package.id]?.pinned == true {
+            segments.append(Text("pinned").foregroundStyle(.secondary))
+        }
+        if isDependency {
+            segments.append(Text("dependency").foregroundStyle(.secondary))
+        }
+
+        guard let first = segments.first else { return nil }
+        return segments.dropFirst().reduce(first) { run, segment in
+            Text("\(run)\(Text(" · ").foregroundStyle(.tertiary))\(segment)")
+        }
     }
 
     /// Installed, but nobody asked for it directly — the detail sheet's "Required by" says who did.
@@ -117,19 +144,6 @@ struct PackageCardView: View {
         model.effectiveTap(for: package).flatMap { $0.split(separator: "/").first.map(String.init) }
     }
 
-
-    /// Casks report versions like "2.1.50,56f0a83" — only the part a human reads is shown.
-    @ViewBuilder
-    private var versionLabel: some View {
-        if let info = model.outdated[package.id] {
-            Text("\(info.installed.last?.shortVersion ?? "") → \(info.current.shortVersion)")
-                .foregroundStyle(.orange)
-        } else if let version = model.installed[package.id]?.versions.last, !version.isEmpty {
-            Text(version.shortVersion).foregroundStyle(.secondary)
-        } else if !package.version.isEmpty {
-            Text(package.version.shortVersion).foregroundStyle(.secondary)
-        }
-    }
 
     // MARK: - Action
 
