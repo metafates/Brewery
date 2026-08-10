@@ -192,6 +192,7 @@ final class AppModel {
         for (id, receipt) in receipts {
             result[id]?.onRequest = receipt.onRequest
             result[id]?.dependencies = receipt.dependencies
+            result[id]?.apps = receipt.apps
         }
         return result
     }

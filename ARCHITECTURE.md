@@ -47,6 +47,7 @@ Every keg carries an install-time receipt, and it answers all of v2's dependency
 - `Caskroom/<token>/.metadata/INSTALL_RECEIPT.json` (casks): has `installed_on_request` too, **but `runtime_dependencies` is an object, not an array** (observed live: `{}`) — a different shape than formulae. v2 reads only `installed_on_request` from cask receipts; cask dependency lists are deferred (cask deps are rare, and the non-empty object shape is unverified).
 - Receipts are snapshots: a formula upgraded later rewrites its receipt, but the list can drift from what `brew deps` would compute today. Accepted — intersecting with the live installed set (below) prunes stale entries.
 - `brew deps --installed` / `brew uses --installed` were considered and rejected: Ruby startup per call, and the receipts already hold the same answer as plain local file reads.
+- The cask receipt's `uninstall_artifacts` also names the `.app` bundles the cask put on disk (`[{"app": ["Firefox.app"]}, {"binary": […]}, {"zap": […]}]` — heterogeneous, so only the `app` entries are read). That is the source for the detail sheet's **Open**: local, already being read, correct for third-party taps, and describing what was actually installed rather than what the catalog claims. Verified live: 22 of 44 installed casks name an app; fonts and CLI-only casks name none.
 - Cross-check for free: `brew list --installed-on-request` exists (`cmd/list.rb:43`, Ruby path) — used only as a build-step verify, not at runtime.
 
 ### Driving brew from a GUI
@@ -130,6 +131,7 @@ struct InstalledInfo {
     var versions: [String]
     var onRequest: Bool         // v2, from receipt; missing receipt → true (never hide the unknown)
     var dependencies: [String]  // v2, formulae only: installed runtime deps, short names
+    var apps: [String]          // casks only: `.app` bundle names, from the receipt
 }
 
 struct OutdatedInfo  { var installed: [String]; var current: String; var pinned: Bool }
@@ -322,6 +324,7 @@ Alternatives considered: keeping `URLCache` + retry-on-appear (doesn't fix cance
   - **Commands** — the formula's executables as selectable monospaced text, `·`-separated ("a2ps · card · fixps …"). A chip-flow layout was considered and rejected: a custom `Layout` for what is fundamentally a copyable word list.
   - **Conflicts with** — one row per `Conflict`: tappable name (swaps the sheet like dependency rows) + the reason as secondary text, e.g. "vim and macvim both install vi* binaries".
   - **License** — "License: MIT", alongside the installs stat. All three header stats share one row helper that puts the glyph in a fixed-width column, because `chart.bar` and `doc.text` are not the same width and `Label` alone leaves the values ragged.
+  - **Open** — in the sheet's button bar, left of Done and deliberately not prominent (Done is the default action; two filled buttons would leave neither reading as the one Return triggers). Shown for an installed cask whose receipt names a `.app` that is still on disk (`/Applications`, then the user's own folder), resolved on each pass so a bundle dragged to the Trash stops being offered; a `Menu` when a cask ships several. Launched through `NSWorkspace.openApplication`, i.e. LaunchServices, so the app is its own process — verified: parent is launchd, not Brewery, and quitting Brewery leaves it running. No brew involvement, so the safety model is untouched.
   - Escape closes the sheet. Clicking outside does not and cannot: a sheet is window-modal on macOS, so the area outside it is not a dismiss target — that is popover behaviour. The sheet content is also `.focusable()` + `.focusEffectDisabled()`, so it absorbs the initial focus the sheet would otherwise hand to the homepage link (which then opens ringed, looking chosen). Neither `defaultFocus` at either priority nor assigning `@FocusState` outranks that.
 - **Operations popover** (Safari-downloads pattern): toolbar item shows a spinner + count while the queue is active; popover lists session operations with state icons — a Cancel button on the running one, a remove (✕) button on queued ones — each expandable into `OperationLogView` (monospaced, `defaultScrollAnchor(.bottom)`, `Error:`/`Warning:` tinted). Auto-presents once on failure.
 - **Menu bar**: Refresh ⌘R (brew re-probe + installed + outdated + catalog staleness check), Upgrade All ⇧⌘U; Find (⌘F) focuses the search field via `.searchFocused` — wired explicitly rather than trusting the automatic ⌘F binding, which has historically been inconsistent on macOS.

@@ -3,6 +3,7 @@
 //  Brewery
 //
 
+import AppKit
 import SwiftUI
 
 /// The sheet behind a card: everything the grid had no room for — the full description, why an
@@ -88,8 +89,11 @@ struct PackageDetailView: View {
 
             Divider()
 
-            HStack {
+            HStack(spacing: 12) {
                 Spacer()
+                // Left of Done, and not prominent: Done is the default action, and two filled
+                // buttons side by side would leave neither reading as the one Return triggers.
+                openAction
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
             }
@@ -213,6 +217,35 @@ struct PackageDetailView: View {
     }
 
     // MARK: - Action
+
+    /// The `.app` bundles this cask put on disk and that are still there. Resolved on each pass
+    /// rather than cached: an app dragged to the Trash should stop being offered.
+    private var launchable: [URL] {
+        (model.installed[displayed.id]?.apps ?? []).compactMap(Receipts.appURL(named:))
+    }
+
+    /// Handed to LaunchServices, which starts the app as its own process — nothing is spawned as a
+    /// child of Brewery, so quitting Brewery leaves it running.
+    private func open(_ app: URL) {
+        Task { _ = try? await NSWorkspace.shared.openApplication(at: app, configuration: .init()) }
+    }
+
+    @ViewBuilder
+    private var openAction: some View {
+        if launchable.count == 1, let app = launchable.first {
+            Button("Open") { open(app) }
+                .help("Open \(app.deletingPathExtension().lastPathComponent)")
+        } else if launchable.count > 1 {
+            // A handful of casks ship more than one bundle; let the user say which.
+            Menu("Open") {
+                ForEach(launchable, id: \.self) { app in
+                    Button(app.deletingPathExtension().lastPathComponent) { open(app) }
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
 
     @ViewBuilder
     private var action: some View {

@@ -9,6 +9,7 @@ import Foundation
 nonisolated struct Receipt: Equatable, Hashable {
     var onRequest: Bool
     var dependencies: [String]   // short names, `declared_directly` entries first
+    var apps: [String] = []      // cask `.app` bundle names, e.g. "Firefox.app"
 }
 
 /// Reads Homebrew's per-keg install receipts. They answer both of v2's questions — "did the user
@@ -36,7 +37,8 @@ nonisolated enum Receipts {
         // brew's own rule: an absent `installed_on_request` in an existing receipt means false
         // (`tab.rb`) — the keg came in as somebody else's dependency.
         return Receipt(onRequest: payload.installedOnRequest ?? false,
-                       dependencies: order(payload.runtimeDependencies?.entries ?? []))
+                       dependencies: order(payload.runtimeDependencies?.entries ?? []),
+                       apps: payload.uninstallArtifacts?.flatMap { $0.app ?? [] } ?? [])
     }
 
     /// `declared_directly` first, receipt order preserved within each group, deduplicated.
@@ -74,8 +76,23 @@ nonisolated enum Receipts {
             }
         }
 
+        /// A cask receipt records what it would have to undo, and the `app` entries in it name the
+        /// bundles the cask actually put on disk. Every other artifact kind decodes to nil `app`.
+        struct Artifact: Decodable {
+            let app: [String]?
+
+            init(from decoder: any Decoder) throws {
+                // Entries are heterogeneous — `{"app": [...]}`, `{"binary": [...]}`, `{"zap": [...]}`
+                // — and some hold arrays mixing strings with objects. Only the string form is wanted.
+                app = try? decoder.container(keyedBy: CodingKeys.self).decodeIfPresent([String].self, forKey: .app)
+            }
+
+            private enum CodingKeys: String, CodingKey { case app }
+        }
+
         let installedOnRequest: Bool?
         let runtimeDependencies: Dependencies?
+        let uninstallArtifacts: [Artifact]?
     }
 
     // MARK: - Sweep
@@ -136,6 +153,24 @@ nonisolated enum Receipts {
         else { return nil }
         let name = String(id[id.index(after: separator)...])
         return name.isEmpty ? nil : (kind, name)
+    }
+
+    // MARK: - Launching
+
+    /// Where a cask's app ended up. brew's `app` artifact targets `/Applications` unless the cask
+    /// says otherwise, and a few target the user's own folder. Resolved at the point of use rather
+    /// than cached, so a bundle deleted by hand stops being offered.
+    static func appURL(named name: String) -> URL? {
+        let candidates = [
+            URL(filePath: "/Applications", directoryHint: .isDirectory),
+            URL.applicationDirectory,
+            FileManager.default.homeDirectoryForCurrentUser.appending(path: "Applications", directoryHint: .isDirectory)
+        ]
+        for directory in candidates {
+            let url = directory.appending(path: name, directoryHint: .isDirectory)
+            if FileManager.default.fileExists(atPath: url.path) { return url }
+        }
+        return nil
     }
 
     // MARK: - Inversion

@@ -110,6 +110,8 @@ nonisolated struct InstalledInfo: Equatable, Hashable {
     var onRequest: Bool = true
     /// Formulae only: installed runtime dependencies as short names, `declared_directly` first.
     var dependencies: [String] = []
+    /// Casks only: `.app` bundle names this cask installed, taken from its receipt.
+    var apps: [String] = []
 }
 
 nonisolated struct OutdatedInfo: Equatable, Hashable {

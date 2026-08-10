@@ -230,3 +230,60 @@ struct DependentsInversionTests {
         #expect(Receipts.invertDependents(["formula:jq": InstalledInfo(versions: ["1.8.1"])]).isEmpty)
     }
 }
+
+@Suite("Cask app artifacts")
+struct CaskAppTests {
+
+    /// The real shape: a heterogeneous array where only some entries are `app`, and some sibling
+    /// entries mix strings with objects.
+    private static let caskReceipt = """
+    {
+      "installed_on_request": true,
+      "runtime_dependencies": {},
+      "uninstall_artifacts": [
+        {"quit": "org.mozilla.firefox"},
+        {"app": ["Firefox.app"]},
+        {"binary": ["/opt/homebrew/Caskroom/firefox/1/firefox.wrapper.sh", {"target": "firefox"}]},
+        {"zap": [{"trash": ["~/Library/Caches/Firefox"]}]}
+      ]
+    }
+    """
+
+    @Test("app bundles are picked out of the artifact list")
+    func extractsApps() {
+        let receipt = Receipts.parse(Data(Self.caskReceipt.utf8))
+        #expect(receipt.apps == ["Firefox.app"])
+        #expect(receipt.onRequest)
+        #expect(receipt.dependencies.isEmpty)
+    }
+
+    @Test("a cask installing several bundles reports all of them")
+    func extractsSeveralApps() {
+        let json = """
+        {"uninstall_artifacts": [{"app": ["Xcode.app", "Instruments.app"]}, {"app": ["Extra.app"]}]}
+        """
+        #expect(Receipts.parse(Data(json.utf8)).apps == ["Xcode.app", "Instruments.app", "Extra.app"])
+    }
+
+    @Test("a formula receipt names no apps")
+    func formulaHasNoApps() {
+        let json = """
+        {"installed_on_request": true, "runtime_dependencies": [{"full_name": "gettext"}]}
+        """
+        let receipt = Receipts.parse(Data(json.utf8))
+        #expect(receipt.apps.isEmpty)
+        #expect(receipt.dependencies == ["gettext"])
+    }
+
+    /// An artifact list in an unexpected shape must not cost us the rest of the receipt — losing
+    /// `installed_on_request` would move the package between Installed's scopes.
+    @Test("an unexpected artifact shape yields no apps and keeps the rest")
+    func toleratesUnexpectedShape() {
+        let json = """
+        {"installed_on_request": false, "uninstall_artifacts": [{"app": "NotAnArray.app"}]}
+        """
+        let receipt = Receipts.parse(Data(json.utf8))
+        #expect(receipt.apps.isEmpty)
+        #expect(!receipt.onRequest)
+    }
+}
