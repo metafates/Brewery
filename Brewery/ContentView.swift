@@ -110,6 +110,12 @@ struct ContentView: View {
     @State private var showOperations = false
     @FocusState private var searchFocused: Bool
 
+    /// How many cards are handed to the grid. It grows as the end of the list is reached and resets
+    /// whenever the listing changes. It lives here, not in the grid, because the slicing has to
+    /// happen on *this* side of the view boundary — see the note on `PackageGridView`.
+    private static let windowStep = 60
+    @State private var window = ContentView.windowStep
+
     var body: some View {
         Group {
             if model.brewMissing {
@@ -153,7 +159,9 @@ struct ContentView: View {
             }
             // Debounce. The sleep throws when the next keystroke replaces this task — a bare
             // `try? await` would swallow that and let the stale ranking assign anyway.
-            guard (try? await Task.sleep(for: .milliseconds(120))) != nil else { return }
+            // Short on purpose: ranking is a few milliseconds and runs off the main actor, so the
+            // debounce only has to coalesce a fast typist's burst, not hide a slow search.
+            guard (try? await Task.sleep(for: .milliseconds(50))) != nil else { return }
             results = await FuzzySearch.rank(query: searchText,
                                              in: sourcePackages,
                                              commands: model.commandIndex)
@@ -162,6 +170,7 @@ struct ContentView: View {
         .task(id: browseKey) {
             browseHits = sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
         }
+        .onChange(of: searchKey.window) { window = Self.windowStep }
         .onChange(of: model.findRequests) { searchFocused = true }
         .onChange(of: model.failureToPresent?.id) { _, failure in
             guard failure != nil else { return }
@@ -179,11 +188,12 @@ struct ContentView: View {
             ProgressView("Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            PackageGridView(hits: displayedHits,
+            PackageGridView(hits: Array(displayedHits.prefix(window)),
+                            totalCount: displayedCount,
                             isSearching: isSearching,
                             onSelect: { selectedPackage = $0 },
                             emptyMessage: emptyMessage,
-                            resetToken: searchKey.window)
+                            onNeedMore: { window += Self.windowStep })
         }
     }
 

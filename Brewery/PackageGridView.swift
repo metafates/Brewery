@@ -7,47 +7,42 @@ import SwiftUI
 
 /// A dumb renderer: whatever hits it is handed, laid out as cards. Filtering, searching and
 /// sectioning all happen in `ContentView`.
+///
+/// It is handed **only the cards it will render**, never the whole listing. That is not a
+/// micro-optimisation: a view's stored properties live in SwiftUI's attribute graph, which copies
+/// and compares them on every update, so a `[SearchHit]` of the full catalog cost ~6 s per
+/// interaction even though `.prefix` meant just 60 of them were ever drawn. Windowing the
+/// *rendering* is not enough — the array must not cross the view boundary at all.
 struct PackageGridView: View {
+    /// Exactly the cards to draw.
     let hits: [SearchHit]
+    /// How many exist in total, so the grid knows whether to ask for more.
+    let totalCount: Int
     let isSearching: Bool
     let onSelect: (Package) -> Void
     /// Shown when the section is empty for a reason other than the search, e.g. "Everything is up to date".
     var emptyMessage: String?
-    /// Changing this resets the render window — the grid is listing something else now.
-    var resetToken: AnyHashable
-
-    /// `LazyVGrid` is lazy about *rendering*, not about identity diffing: handing it ~16k cards at
-    /// once (clearing a search does exactly that) costs a visible hitch. Cards come 300 at a time,
-    /// extended by a sentinel at the end of the list — continuous scroll, no page controls.
-    private static let windowStep = 300
-
-    @State private var window = PackageGridView.windowStep
+    /// Called when the end of the rendered window scrolls into view.
+    let onNeedMore: () -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 230), spacing: 12)]
 
     var body: some View {
-        // The reset sits above the branch on purpose: mounted inside the grid it would miss every
-        // token change made while the empty state was showing, and the window would come back stale.
-        content
-            .onChange(of: resetToken) { window = PackageGridView.windowStep }
-    }
-
-    @ViewBuilder private var content: some View {
-        if hits.isEmpty {
+        if totalCount == 0 {
             emptyState
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(hits.prefix(window)) { hit in
+                    ForEach(hits) { hit in
                         PackageCardView(hit: hit) { onSelect(hit.package) }
                     }
-                    if window < hits.count {
+                    if hits.count < totalCount {
                         // Inside the grid so the lazy container withholds it until it is scrolled
                         // to; below the grid it would appear at once and unwind the whole list.
                         Color.clear
                             .frame(height: 1)
-                            .onAppear { window += PackageGridView.windowStep }
+                            .onAppear(perform: onNeedMore)
                     }
                 }
                 .padding(16)
@@ -77,7 +72,7 @@ struct PackageGridView: View {
                                    homepage: "https://iterm2.com/", version: "3.5.11",
                                    deprecated: false, disabled: false),
                   matchedCommand: nil)
-    ], isSearching: false, onSelect: { _ in }, resetToken: 0)
+    ], totalCount: 2, isSearching: false, onSelect: { _ in }, onNeedMore: {})
     .environment(AppModel())
     .frame(width: 600, height: 400)
 }
