@@ -67,7 +67,13 @@ actor IconStore {
     /// cap has to come from somewhere: at most this many downloads run at once and the rest queue.
     private static let maxConcurrentFetches = 6
 
-    private let memory = NSCache<NSString, NSImage>()
+    /// A plain dictionary, not `NSCache`: the system purges an `NSCache` on memory pressure with no
+    /// warning, and this app holds a 16k catalog, so icons were being evicted and re-read from disk
+    /// every time a card was opened. Icons are ~4 KB, so a few hundred of them cost about a megabyte.
+    /// ponytail: flushes wholesale at the cap instead of evicting LRU — the disk cache is right
+    /// behind it, so the ceiling is one re-read, not a re-fetch. Swap in an LRU if that ever shows up.
+    private static let memoryLimit = 1500
+    private var memory: [String: NSImage] = [:]
     private var inFlight: [String: Task<NSImage?, Never>] = [:]
     private var activeFetches = 0
     private var waiting: [CheckedContinuation<Void, Never>] = []
@@ -81,10 +87,10 @@ actor IconStore {
         let key = Self.fileName(for: host)
         guard !key.isEmpty else { return nil }
 
-        if let cached = memory.object(forKey: key as NSString) { return cached }
+        if let cached = memory[key] { return cached }
 
         if let entry = read(key) {
-            if let image = entry.image { memory.setObject(image, forKey: key as NSString) }
+            if let image = entry.image { remember(image, key: key) }
             // Stale-while-revalidate: hand back what we have, refresh out of band.
             if !entry.fresh, !isCoolingDown(key) { _ = fetch(host: host, key: key) }
             return entry.image
@@ -96,6 +102,11 @@ actor IconStore {
         guard !isCoolingDown(key) else { return nil }
 
         return await fetch(host: host, key: key).value
+    }
+
+    private func remember(_ image: NSImage, key: String) {
+        if memory.count >= Self.memoryLimit { memory.removeAll(keepingCapacity: true) }
+        memory[key] = image
     }
 
     private func isCoolingDown(_ key: String) -> Bool {
@@ -267,7 +278,7 @@ actor IconStore {
 
         let image = bytes.isEmpty ? nil : NSImage(data: bytes)
         write(image == nil ? Data() : bytes, key: key)
-        if let image { memory.setObject(image, forKey: key as NSString) }
+        if let image { remember(image, key: key) }
         return image
     }
 

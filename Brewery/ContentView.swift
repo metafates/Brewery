@@ -99,6 +99,11 @@ struct ContentView: View {
 
     @State private var selection: SidebarSection? = .discover
     @State private var results: [SearchHit] = []
+    /// The browse listing, built once per change of the underlying array rather than per body pass.
+    /// Rebuilding it inline cost two full walks of the 16k catalog every time the body ran — and,
+    /// worse, handed SwiftUI a fresh array each time, so its cheap CoW identity check for "did this
+    /// change?" degraded into a 16k element-by-element comparison.
+    @State private var browseHits: [SearchHit] = []
     /// The section `results` were ranked over; a switch invalidates them until the task re-ranks.
     @State private var resultsSection: SidebarSection?
     @State private var selectedPackage: Package?
@@ -153,6 +158,9 @@ struct ContentView: View {
                                              in: sourcePackages,
                                              commands: model.commandIndex)
             resultsSection = section
+        }
+        .task(id: browseKey) {
+            browseHits = sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
         }
         .onChange(of: model.findRequests) { searchFocused = true }
         .onChange(of: model.failureToPresent?.id) { _, failure in
@@ -237,16 +245,36 @@ struct ContentView: View {
     /// another section are equally unusable: during the debounce after a section switch the new
     /// section's own array stands in, never the old section's cards.
     private var displayedHits: [SearchHit] {
-        guard isSearching, resultsSection == section else {
-            return sourcePackages.map { SearchHit(package: $0, matchedCommand: nil) }
-        }
+        guard isSearching, resultsSection == section else { return browseHits }
         return results
     }
 
-    /// What the grid will render, without building the hits to count them.
+    /// What the grid will render. Reads the cached array rather than rebuilding it to count it.
     private var displayedCount: Int {
-        guard isSearching, resultsSection == section else { return sourcePackages.count }
+        guard isSearching, resultsSection == section else { return browseHits.count }
         return results.count
+    }
+
+    /// What the browse listing is made of. Deliberately excludes the query: while a search is being
+    /// typed the grid still shows this listing, so rebuilding it per keystroke would be pure waste.
+    private struct BrowseKey: Equatable {
+        let section: SidebarSection
+        let kindFilter: KindFilter
+        let hideDeprecated: Bool
+        let installedScope: InstalledScope
+        let catalogCount: Int
+        let installedCount: Int
+        let outdatedCount: Int
+    }
+
+    private var browseKey: BrowseKey {
+        BrowseKey(section: section,
+                  kindFilter: kindFilter,
+                  hideDeprecated: hideDeprecated,
+                  installedScope: installedScope,
+                  catalogCount: model.catalog.count,
+                  installedCount: model.installed.count,
+                  outdatedCount: model.outdated.count)
     }
 
     private var searchKey: SearchKey {
