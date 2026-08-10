@@ -196,6 +196,7 @@ struct ContentView: View {
                             emptyMessage: emptyMessage,
                             onNeedMore: { window += Self.windowStep },
                             onRefresh: emptyStateRefresh)
+                .refreshVeil(model.isRefreshing)
         }
     }
 
@@ -479,6 +480,29 @@ struct ContentView: View {
             }
             .buttonStyle(.borderedProminent)
         }
+    }
+}
+
+private extension View {
+    /// ⌘R feedback in the content itself, not just the toolbar glyph: the listing stays put but
+    /// recedes — blurred and dimmed, never hidden, because the data on screen is still valid while
+    /// it is re-checked — behind a glass capsule naming the work. On a warm cache the whole thing
+    /// is a soft half-second pulse, which is exactly the acknowledgment a fast refresh needs.
+    func refreshVeil(_ active: Bool) -> some View {
+        blur(radius: active ? 6 : 0)
+            .opacity(active ? 0.5 : 1)
+            .overlay {
+                if active {
+                    Label("Checking for updates…", systemImage: "arrow.triangle.2.circlepath")
+                        .symbolEffect(.rotate, options: .repeating)
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .glassEffect()
+                        .transition(.blurReplace)
+                }
+            }
+            .animation(.smooth(duration: 0.3), value: active)
     }
 }
 

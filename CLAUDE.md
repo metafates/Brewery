@@ -24,3 +24,7 @@ open "$(xcodebuild -project Brewery.xcodeproj -scheme Brewery -configuration Deb
 - Unit tests use the Swift Testing framework (`import Testing`, `@Test`, `#expect`), not XCTest.
 - `buildServer.json` (gitignored, machine-specific) bridges sourcekit-lsp to the Xcode project. Regenerate if the scheme changes:
   `xcode-build-server config -project Brewery.xcodeproj -scheme Brewery`
+
+## Commits
+
+Feel free to commit sparingly when needed.
