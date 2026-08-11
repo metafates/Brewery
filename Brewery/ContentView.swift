@@ -133,7 +133,9 @@ struct ContentView: View {
 
     @State private var selection: SidebarSection? = .discover
     /// The Taps section's in-column drill-down: nil shows the tap list, a name shows that tap's
-    /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs.
+    /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs. Manual rather
+    /// than `NavigationStack` — macOS does not animate stack pushes in a split view's detail
+    /// column, and the drill-down deserves the slide the detail sheet's dependency pages have.
     @State private var selectedTap: String?
     /// The tap page's kind filter. Deliberately transient (@State, reset per page): a persisted
     /// filter that silently empties the next tap's page would read as data loss.
@@ -183,16 +185,7 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
-            detail
-                .navigationTitle(title)
-                .navigationSubtitle(subtitle)
-                .toolbar {
-                    filterToolbar
-                    refreshToolbar
-                    operationsToolbar
-                }
-                .searchable(text: searchQuery, prompt: searchPrompt)
-                .searchFocused($searchFocused)
+            chrome(detail)
         }
         .task(id: searchKey) {
             let ranked = section
@@ -215,10 +208,7 @@ struct ContentView: View {
             // opens on "0 A.D." and never reaches anything anyone installs. Installed and Outdated
             // are inventories, where alphabetical is the order you scan.
             if section == .discover || (section == .taps && TapStore.coreTaps.contains(selectedTap ?? "")) {
-                packages.sort {
-                    let (a, b) = ($0.installs90d ?? 0, $1.installs90d ?? 0)
-                    return a == b ? $0.name < $1.name : a > b
-                }
+                packages.sort(by: Self.byPopularity)
             }
             browseHits = packages.map { SearchHit(package: $0, matchedCommand: nil) }
         }
@@ -241,24 +231,26 @@ struct ContentView: View {
         } else if section == .discover, model.catalog.isEmpty {
             ProgressView("Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if section == .taps, selectedTap == nil {
-            // The drill-down pair animates as a push: the list recedes left while the page slides
-            // in from the trailing edge — the detail sheet's dependency navigation, same grammar.
-            TapsView(searchText: searchText,
-                     onSelect: { tap in withAnimation(.smooth(duration: 0.3)) { selectedTap = tap } })
-                .refreshVeil(model.isRefreshing)
-                .transition(.move(edge: .leading).combined(with: .opacity))
-        } else if section == .taps, let tap = selectedTap {
-            PackageGridView(hits: Array(displayedHits.prefix(window)),
-                            totalCount: displayedCount,
-                            isSearching: isSearching,
-                            onSelect: { selectedPackage = $0 },
-                            emptyMessage: emptyMessage,
-                            onNeedMore: { window += Self.windowStep },
-                            onRefresh: emptyStateRefresh,
-                            header: { TapPageHeader(tap: tap) })
-                .refreshVeil(model.isRefreshing)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if section == .taps {
+            // The detail sheet's drill-down grammar: the list stays mounted underneath — scroll
+            // position survives the round trip — receding as the page slides in over it.
+            ZStack {
+                TapsView(searchText: searchText, onSelect: { openTap($0) })
+                    .opacity(selectedTap == nil ? 1 : 0)
+                    .offset(x: selectedTap == nil ? 0 : -60)
+                    // Disabled, not just covered: a hidden list's rows must not sit in the
+                    // Tab order underneath the grid.
+                    .disabled(selectedTap != nil)
+                    .accessibilityHidden(selectedTap != nil)
+                if let tap = selectedTap {
+                    tapPage(tap)
+                        // Opaque, so the receding list never shows through between the cards.
+                        .background(.background)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .zIndex(1)
+                }
+            }
+            .refreshVeil(model.isRefreshing)
         } else if section == .services {
             // State rows, not catalog cards — a handful of items, no windowing needed.
             ServicesView(hits: displayedHits,
@@ -279,6 +271,41 @@ struct ContentView: View {
         }
     }
 
+    /// The column's chrome: title, toolbar, search field.
+    private func chrome(_ content: some View) -> some View {
+        content
+            .navigationTitle(title)
+            .navigationSubtitle(subtitle)
+            .toolbar {
+                filterToolbar
+                refreshToolbar
+                operationsToolbar
+            }
+            .searchable(text: searchQuery, prompt: searchPrompt)
+            .searchFocused($searchFocused)
+    }
+
+    /// A tap's package grid, slid above the tap list.
+    private func tapPage(_ tap: String) -> some View {
+        PackageGridView(hits: Array(displayedHits.prefix(window)),
+                        totalCount: displayedCount,
+                        isSearching: isSearching,
+                        onSelect: { selectedPackage = $0 },
+                        emptyMessage: emptyMessage,
+                        onNeedMore: { window += Self.windowStep },
+                        onRefresh: emptyStateRefresh,
+                        header: { TapPageHeader(tap: tap) })
+    }
+
+    /// The push. The listing is built *before* the slide starts: the browse task rebuilds it
+    /// asynchronously, and a grid that slides in empty and fills mid-flight reads as no
+    /// animation at all.
+    private func openTap(_ tap: String) {
+        tapKindFilter = .all
+        browseHits = browseListing(for: tap)
+        withAnimation(.smooth(duration: 0.3)) { selectedTap = tap }
+    }
+
     /// Discover only, and only while browsing: the tip is a newcomer's explainer, not search
     /// feedback — and a TipView sharing the tree with `ContentUnavailableView.search` blanks
     /// the split view's sidebar (framework interaction, reproduced and pinned by UI test).
@@ -293,6 +320,19 @@ struct ContentView: View {
     // MARK: - Search
 
     private var section: SidebarSection { selection ?? .discover }
+
+    nonisolated private static func byPopularity(_ a: Package, _ b: Package) -> Bool {
+        let (x, y) = (a.installs90d ?? 0, b.installs90d ?? 0)
+        return x == y ? a.name < b.name : x > y
+    }
+
+    /// What the browse task will (re)build for this tap, computed synchronously — cheap even for
+    /// core: one filter of the catalog and one sort of ~8k entries, a few milliseconds on a click.
+    private func browseListing(for tap: String) -> [SearchHit] {
+        var packages = tapPagePackages(for: tap)
+        if TapStore.coreTaps.contains(tap) { packages.sort(by: Self.byPopularity) }
+        return packages.map { SearchHit(package: $0, matchedCommand: nil) }
+    }
 
     /// The tap page titles itself with the tap's name — otherwise nothing on screen says which
     /// tap's packages the grid is showing.
@@ -340,8 +380,10 @@ struct ContentView: View {
 
     /// A tap page's contents. Core rows are the API catalog sliced by kind; third-party rows are
     /// the scan's packages for that tap. The list view (selectedTap == nil) needs no packages.
-    private var tapPagePackages: [Package] {
-        let packages: [Package] = switch selectedTap {
+    private var tapPagePackages: [Package] { tapPagePackages(for: selectedTap) }
+
+    private func tapPagePackages(for tap: String?) -> [Package] {
+        let packages: [Package] = switch tap {
         case nil: []
         case "homebrew/core": model.catalog.filter { $0.kind == .formula && $0.tap == nil }
         case "homebrew/cask": model.catalog.filter { $0.kind == .cask && $0.tap == nil }
