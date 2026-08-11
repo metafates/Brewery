@@ -188,3 +188,25 @@ extension BreweryUITests {
                        "Grid shifted by \(one.y - many.y)pt when narrowing to one result.")
     }
 }
+
+/// Regression: a TipView sharing the view tree with `ContentUnavailableView.search` blanks the
+/// split view's sidebar (framework interaction, macOS 26). The tip is gated to browsing; this
+/// pins that an empty search keeps the sidebar rendered.
+extension BreweryUITests {
+    func testEmptySearchKeepsSidebar() throws {
+        let app = launched()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
+        sleep(15)
+
+        focusSearch(app, typing: "zzzznotapackage")
+        sleep(2)
+
+        XCTAssertTrue(app.staticTexts["No Results for “zzzznotapackage”"].exists
+                      || app.staticTexts["Check the spelling or try a new search."].exists,
+                      "Empty state never appeared.")
+        for section in ["Discover", "Installed", "Outdated", "Services", "Taps"] {
+            XCTAssertTrue(app.outlines["Sidebar"].staticTexts[section].isHittable,
+                          "Sidebar lost \(section) during an empty search.")
+        }
+    }
+}

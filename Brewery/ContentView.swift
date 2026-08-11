@@ -275,9 +275,11 @@ struct ContentView: View {
         }
     }
 
-    /// Discover only: the one place a newcomer first meets "formula" and "cask".
+    /// Discover only, and only while browsing: the tip is a newcomer's explainer, not search
+    /// feedback — and a TipView sharing the tree with `ContentUnavailableView.search` blanks
+    /// the split view's sidebar (framework interaction, reproduced and pinned by UI test).
     @ViewBuilder private var discoverTip: some View {
-        if section == .discover {
+        if section == .discover, !isSearching {
             TipView(PackageKindsTip())
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
