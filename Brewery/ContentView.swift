@@ -6,6 +6,23 @@
 //
 
 import SwiftUI
+import TipKit
+
+/// What a first-time, non-technical user needs told once: the two words this whole store runs
+/// on. TipKit renders it as the native dismissible tip card, and remembers the dismissal.
+struct PackageKindsTip: Tip {
+    var title: Text {
+        Text("Tools and apps, together")
+    }
+
+    var message: Text? {
+        Text("Formulae are command-line tools for the Terminal. Casks are regular Mac apps. Everything installs with one click — use the filter to browse one kind.")
+    }
+
+    var image: Image? {
+        Image(systemName: "shippingbox")
+    }
+}
 
 /// The fixed destinations of the sidebar.
 nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
@@ -252,8 +269,18 @@ struct ContentView: View {
                             onSelect: { selectedPackage = $0 },
                             emptyMessage: emptyMessage,
                             onNeedMore: { window += Self.windowStep },
-                            onRefresh: emptyStateRefresh)
+                            onRefresh: emptyStateRefresh,
+                            header: { discoverTip })
                 .refreshVeil(model.isRefreshing)
+        }
+    }
+
+    /// Discover only: the one place a newcomer first meets "formula" and "cask".
+    @ViewBuilder private var discoverTip: some View {
+        if section == .discover {
+            TipView(PackageKindsTip())
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
         }
     }
 

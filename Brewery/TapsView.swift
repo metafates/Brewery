@@ -16,13 +16,19 @@ struct TapsView: View {
 
     var body: some View {
         List {
-            Section("Built in") {
+            Section {
                 ForEach(builtInRows, id: \.name) { row in
                     BuiltInTapRow(row: row, onSelect: { onSelect(row.name) })
                 }
+            } header: {
+                Text("Built in")
+            } footer: {
+                Text("The two main catalogs: formulae are command-line tools, casks are Mac apps.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
-            Section("Your taps") {
+            Section {
                 if filteredInfos.isEmpty {
                     Text(searchText.isEmpty ? "No taps added yet — use + to add one."
                                             : "No taps match the search.")
@@ -37,6 +43,12 @@ struct TapsView: View {
                                onUntrust: { model.untrustTap(info.name) })
                     }
                 }
+            } header: {
+                Text("Your taps")
+            } footer: {
+                Text("Taps are extra catalogs that developers publish to distribute their software. Add one and its packages install like any other.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .listStyle(.inset)

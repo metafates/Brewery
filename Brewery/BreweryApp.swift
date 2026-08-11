@@ -7,11 +7,17 @@
 
 import AppKit
 import SwiftUI
+import TipKit
 
 @main
 struct BreweryApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
+
+    init() {
+        // One-time coaching tips (Discover's kinds explainer); dismissal persists.
+        try? Tips.configure()
+    }
 
     var body: some Scene {
         WindowGroup {

@@ -83,12 +83,12 @@ struct PackageCardView: View {
     /// sandwiched between two pills read worst of all.
     private var statusLine: some View {
         HStack(spacing: 6) {
-            TagLabel(package.kindLabel)
+            TagLabel(package.kindLabel, help: package.kindExplanation)
             // The owner half only ("charmbracelet") — the identity people recognize, and all
             // that fits beside kind + version; the full tap lives in the detail sheet. Core
             // items show nothing: the kind tag already implies core.
             if let owner = tapOwner {
-                TagLabel(owner)
+                TagLabel(owner, help: "From the \(owner) tap — an extra catalog added to Homebrew")
                     .truncationMode(.middle)
                     .layoutPriority(-1)
             }
@@ -211,15 +211,26 @@ struct PackageCardView: View {
 /// it is a label, and must never read as something to click.
 struct TagLabel: View {
     let text: String
+    /// Plain-words explanation for the hover tooltip — the jargon tags are where a
+    /// non-technical user meets Homebrew's vocabulary.
+    var help: String?
 
-    init(_ text: String) { self.text = text }
+    init(_ text: String, help: String? = nil) {
+        self.text = text
+        self.help = help
+    }
 
     var body: some View {
-        Text(text)
+        let label = Text(text)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
             .background(.quaternary, in: .capsule)
+        if let help {
+            label.help(help)
+        } else {
+            label
+        }
     }
 }
 

@@ -266,6 +266,12 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     /// Font casks live in homebrew/cask under a `font-` prefix; they get a glyph, never a favicon.
     var isFont: Bool { kind == .cask && name.hasPrefix("font-") }
 
+    /// The kind, in words a non-technical user has: the tags are where the jargon first appears.
+    var kindExplanation: String {
+        if isFont { return "A font" }
+        return kind == .formula ? "A command-line tool that runs in Terminal" : "A Mac app"
+    }
+
     /// Caveats embed a literal "$HOMEBREW_PREFIX"; swap in the real prefix for display.
     func resolvedCaveats(prefix: URL?) -> String? {
         caveats.map { Package.substitutingPrefix($0, prefix: prefix) }

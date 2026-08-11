@@ -20,8 +20,16 @@ struct ServicesView: View {
         if hits.isEmpty {
             emptyState
         } else {
-            List(hits) { hit in
-                ServiceRow(package: hit.package, onSelect: { onSelect(hit.package) })
+            List {
+                Section {
+                    ForEach(hits) { hit in
+                        ServiceRow(package: hit.package, onSelect: { onSelect(hit.package) })
+                    }
+                } footer: {
+                    Text("Some tools run in the background — databases, media servers and the like. Switching one on starts it now and at every login; off stops it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .listStyle(.inset)
         }

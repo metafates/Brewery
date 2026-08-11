@@ -313,6 +313,7 @@ private struct DetailPage: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
+                .help("The catalog this package comes from")
                 .accessibilityLabel("From the \(tapLabel) tap")
             }
             .font(.subheadline)
@@ -324,7 +325,7 @@ private struct DetailPage: View {
     }
 
     private var kindTag: some View {
-        TagLabel(pkg.kindLabel).font(.caption)
+        TagLabel(pkg.kindLabel, help: pkg.kindExplanation).font(.caption)
     }
 
     /// bun's expression is nine licenses long — five wrapped lines that dwarf the header. Past
