@@ -19,6 +19,9 @@ struct PackageGridView<Header: View>: View {
     /// How many exist in total, so the grid knows whether to ask for more.
     let totalCount: Int
     let isSearching: Bool
+    /// The card the inspector is describing, so it can read as selected. A single id, never a set:
+    /// see the note above about what crossing this boundary costs.
+    var selectedID: Package.ID?
     let onSelect: (Package) -> Void
     /// Shown when the section is empty for a reason other than the search, e.g. "Everything is up to date".
     var emptyMessage: String?
@@ -33,12 +36,14 @@ struct PackageGridView<Header: View>: View {
     let header: () -> Header
 
     init(hits: [SearchHit], totalCount: Int, isSearching: Bool,
+         selectedID: Package.ID? = nil,
          onSelect: @escaping (Package) -> Void, emptyMessage: String? = nil,
          onNeedMore: @escaping () -> Void, onRefresh: (() -> Void)? = nil,
          @ViewBuilder header: @escaping () -> Header = { EmptyView() }) {
         self.hits = hits
         self.totalCount = totalCount
         self.isSearching = isSearching
+        self.selectedID = selectedID
         self.onSelect = onSelect
         self.emptyMessage = emptyMessage
         self.onNeedMore = onNeedMore
@@ -60,7 +65,13 @@ struct PackageGridView<Header: View>: View {
                 header()
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(hits) { hit in
-                        PackageCardView(hit: hit) { onSelect(hit.package) }
+                        // The nil check first on purpose: `Package.id` interpolates a fresh string,
+                        // and with the pane closed — which is most of the time, including every
+                        // keystroke of a search — no card needs to build one to know it is not it.
+                        PackageCardView(hit: hit,
+                                        isSelected: selectedID != nil && hit.package.id == selectedID) {
+                            onSelect(hit.package)
+                        }
                     }
                     if hits.count < totalCount {
                         // Inside the grid so the lazy container withholds it until it is scrolled

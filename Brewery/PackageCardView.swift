@@ -10,6 +10,8 @@ import SwiftUI
 /// is overlaid rather than nested so both stay individually clickable and focusable.
 struct PackageCardView: View {
     let hit: SearchHit
+    /// Whether the inspector is currently describing this package.
+    var isSelected = false
     let onSelect: () -> Void
 
     @Environment(AppModel.self) private var model
@@ -57,7 +59,7 @@ struct PackageCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
         }
-        .buttonStyle(CardButtonStyle())
+        .buttonStyle(CardButtonStyle(isSelected: isSelected))
         .accessibilityHint("Shows package details")
         .overlay(alignment: .bottomTrailing) {
             actionButton
@@ -236,26 +238,37 @@ struct TagLabel: View {
     }
 }
 
-/// Card chrome plus the hover and pressed feedback macOS expects from a clickable surface.
+/// Card chrome plus the hover, pressed and selected feedback macOS expects from a clickable
+/// surface. Selected matters now that the inspector persists beside the grid: the card being
+/// described has to be identifiable without reading the pane.
 private struct CardButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
     func makeBody(configuration: Configuration) -> some View {
-        Surface(configuration: configuration)
+        Surface(configuration: configuration, isSelected: isSelected)
     }
 
     // A nested view, because a ButtonStyle cannot hold @State of its own.
     private struct Surface: View {
         let configuration: Configuration
+        let isSelected: Bool
         @State private var isHovering = false
 
         var body: some View {
             let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            // Pressed and selected wear the same accent border — a press is a selection about to
+            // happen, so the card does not change costume between the two.
+            let bordered = configuration.isPressed || isSelected
 
             configuration.label
                 .background(shape.fill(.background.secondary))
+                // Conditional, unlike the hover layer: selection changes are discrete, and 60 cards
+                // are rebuilt on every keystroke — an always-present layer per card is rent.
+                .overlay { if isSelected { shape.fill(.tint.quaternary) } }
                 .overlay { shape.fill(.quaternary).opacity(isHovering ? 1 : 0) }
                 .overlay {
-                    shape.strokeBorder(configuration.isPressed ? AnyShapeStyle(.tint)
-                                                              : AnyShapeStyle(.separator),
+                    shape.strokeBorder(bordered ? AnyShapeStyle(.tint)
+                                               : AnyShapeStyle(.separator),
                                        lineWidth: 1)
                 }
                 .contentShape(shape)

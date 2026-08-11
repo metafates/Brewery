@@ -189,6 +189,42 @@ extension BreweryUITests {
     }
 }
 
+/// The whole point of the detail pane over the old sheet: it is not modal. If the grid stops being
+/// usable while the pane is open, the change bought nothing.
+extension BreweryUITests {
+    private func cards(_ app: XCUIApplication) -> [XCUIElement] {
+        app.buttons.allElementsBoundByIndex.filter {
+            $0.frame.height > 100 && $0.frame.width > 150
+        }
+    }
+
+    func testGridStaysUsableWithThePaneOpen() throws {
+        let app = launched()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
+        sleep(20)
+
+        focusSearch(app, typing: "openssl")
+        sleep(2)
+        let before = cards(app)
+        XCTAssertFalse(before.isEmpty, "No cards to open.")
+        before[0].click()
+        sleep(2)
+
+        // The pane is showing: the grid must still be there, clickable, and scrollable.
+        let withPane = cards(app)
+        XCTAssertFalse(withPane.isEmpty, "The grid vanished when the pane opened.")
+        XCTAssertTrue(withPane[0].isHittable, "A modal would make this false.")
+        app.windows.firstMatch.scroll(byDeltaX: 0, deltaY: -200)
+        sleep(1)
+        XCTAssertFalse(cards(app).isEmpty, "The grid stopped rendering after scrolling.")
+
+        // ⌘I closes it again.
+        app.typeKey("i", modifierFlags: .command)
+        sleep(1)
+        XCTAssertFalse(cards(app).isEmpty, "Closing the pane broke the grid.")
+    }
+}
+
 /// The menu bar is the macOS command surface: every destination has to be reachable from it, and
 /// from the keyboard alone. Asserted through the window title, which names the section.
 extension BreweryUITests {

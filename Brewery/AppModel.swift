@@ -66,6 +66,7 @@ final class AppModel {
     /// sections, View ▸ Show Operations — and a `Commands` builder can only reach app-level state.
     var selection: SidebarSection? = .discover
     var showOperations = false
+    var showInspector = false
 
     /// Bumped by the ⌘F menu command. `ContentView` observes it and moves focus to the search
     /// field — the automatic ⌘F binding has historically been unreliable on macOS.

@@ -1,6 +1,6 @@
 # Brewery
 
-macOS app: SwiftUI, Xcode 26 project, single scheme `Brewery`. No third-party dependencies. See `ARCHITECTURE.md` — it is the spec, not an afterthought: features are designed there first (versioned sections v1…v5), each grounded in facts verified against the Homebrew source, then implemented. A local brew checkout for verifying such facts lives at `/Users/vzbarashchenko/Code/github/brew` — cite `file:line` from it rather than trusting memory; brew 6.x changed a lot (tap trust gate, services in core).
+macOS app: SwiftUI, Xcode 26 project, single scheme `Brewery`. No third-party dependencies. See `ARCHITECTURE.md` — it is the spec, not an afterthought: features are designed there first (versioned inline as v1…v7), each grounded in facts verified against the Homebrew source, then implemented. A local brew checkout for verifying such facts lives at `/Users/vzbarashchenko/Code/github/brew` — cite `file:line` from it rather than trusting memory; brew 6.x changed a lot (tap trust gate, services in core).
 
 ## Build & test (all headless, no Xcode GUI needed)
 
@@ -37,7 +37,11 @@ open "$(xcodebuild -project Brewery.xcodeproj -scheme Brewery -configuration Deb
 
 ## Design
 
-Top-class UI/UX is a hard requirement, not a nice-to-have. Follow Apple HIG and native macOS patterns (System Settings grammar for controls — a switch always terminates a labeled row; App Store composition for catalog metadata — pills for identity, `·`-joined text for state; Login Items for service rows); prefer stock components with Liquid Glass chrome over custom drawing. A source is not a kind: keep filter dimensions orthogonal. Verify every visible change with the screenshot loop before committing.
+Top-class UI/UX is a hard requirement, not a nice-to-have. Follow Apple HIG and native macOS patterns (System Settings grammar for controls — a switch always terminates a labeled row; App Store composition for catalog metadata — pills for identity, `·`-joined text for state; Login Items for service rows); prefer stock components with Liquid Glass chrome over custom drawing. A source is not a kind: keep filter dimensions orthogonal. Verify every visible change with the screenshot loop before committing. Three rules the HIG pass (v7) made non-negotiable:
+
+- **Nothing modal for reading.** Detail is a non-modal `.inspector` pane; the listing stays live beside it. A surface that grows its own footer, back button and navigation is an app inside the app.
+- **Every toolbar action has a menu bar command and a key equivalent.** Destinations are ⌘1…⌘5; show/hide items name the state they will produce.
+- **Every animation has a Reduce Motion branch.** x-axis slides become crossfades, blurs are dropped, repeating symbol effects hold still.
 
 ## The screenshot loop (visual verification)
 

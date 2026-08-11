@@ -25,7 +25,9 @@ struct BreweryApp: App {
         // closing any window quits the app was a promise the scene never kept.
         Window("Brewery", id: "main") {
             ContentView()
-                .frame(minWidth: 900, minHeight: 600)
+                // Wide enough that the sidebar, two columns of cards and the info pane all fit at
+                // the minimum: a pane that squeezes the grid to one card is not a pane worth having.
+                .frame(minWidth: 1000, minHeight: 600)
                 .environment(model)
                 .task { await model.bootstrap() }
                 .onAppear { appDelegate.model = model }
@@ -58,6 +60,11 @@ struct BreweryApp: App {
                 Divider()
                 // Show/Hide rather than a checkmark: HIG asks a view's menu item to name the state
                 // it will produce.
+                Button(model.showInspector ? "Hide Info" : "Show Info") {
+                    model.showInspector.toggle()
+                }
+                .keyboardShortcut("i")
+
                 Button(model.showOperations ? "Hide Operations" : "Show Operations") {
                     model.showOperations.toggle()
                 }

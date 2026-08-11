@@ -11,6 +11,9 @@ import SwiftUI
 struct ServicesView: View {
     let hits: [SearchHit]
     let isSearching: Bool
+    /// The row the inspector is describing — a list that leads to a detail pane has to keep saying
+    /// which item the pane is about.
+    var selectedID: Package.ID?
     let onSelect: (Package) -> Void
     let onRefresh: () -> Void
 
@@ -23,7 +26,9 @@ struct ServicesView: View {
             List {
                 Section {
                     ForEach(hits) { hit in
-                        ServiceRow(package: hit.package, onSelect: { onSelect(hit.package) })
+                        ServiceRow(package: hit.package,
+                                   isSelected: hit.package.id == selectedID,
+                                   onSelect: { onSelect(hit.package) })
                     }
                 } header: {
                     // No title — the window title is "Services"; just the orientation line,
@@ -58,6 +63,7 @@ struct ServicesView: View {
 /// own control so a row tap never toggles a daemon by accident.
 private struct ServiceRow: View {
     let package: Package
+    let isSelected: Bool
     let onSelect: () -> Void
 
     @Environment(AppModel.self) private var model
@@ -94,6 +100,9 @@ private struct ServiceRow: View {
             ServiceToggle(package: package)
         }
         .padding(.vertical, 3)
+        // The same accent wash the selected card wears, so one selection reads one way.
+        .listRowBackground(Rectangle().fill(isSelected ? AnyShapeStyle(.tint.quaternary)
+                                                       : AnyShapeStyle(.clear)))
     }
 
     /// "redis-server /opt/homebrew/etc/redis.conf" — argv0's basename plus the arguments, with

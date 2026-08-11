@@ -6,44 +6,46 @@
 import AppKit
 import SwiftUI
 
-/// The sheet behind a card: everything the grid had no room for — the full description, why an
-/// action may be unavailable, where the package comes from, what it pulled in (and what pulled it
-/// in), and the log of the last operation that touched it.
+/// The inspector beside the grid: everything the cards had no room for — the full description, why
+/// an action may be unavailable, where the package comes from, what it pulled in (and what pulled
+/// it in), and the log of the last operation that touched it.
+///
+/// A pane rather than a sheet, because reading about a package is not a task to be completed or
+/// abandoned: the grid stays live and clickable underneath, the pane resizes with the window, and
+/// clicking the next card just moves the pane on. As a modal it had grown its own footer, its own
+/// back button, its own swipe-back gesture and three hardcoded heights — an app inside the app.
 struct PackageDetailView: View {
     let package: Package
 
     /// The pages pushed above `package` by dependency/conflict rows. Following the graph is a
     /// drill-down, so it gets real navigation: back returns exactly the way you came, and each
-    /// page opens at the top. Manual rather than `NavigationStack` — this sheet is a custom
-    /// fixed-size surface (own footer, content-derived height, focus hacks) that framework
-    /// navigation chrome would fight.
+    /// page opens at the top. Manual rather than `NavigationStack`: pages stay mounted so back
+    /// restores the parent's scroll offset, and a stack inside a pane has no toolbar for the
+    /// framework to hang a back button from anyway.
     @State private var stack: [Package] = []
-    @State private var swipeBack = SwipeBackMonitor()
-    /// Parked here around navigation: when the back button vanishes with its bar, focus would
-    /// otherwise jump into the revealed page and AppKit would auto-scroll to the focused control
-    /// — silently destroying the very scroll position the stack preserves.
-    @FocusState private var rootFocused: Bool
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var displayed: Package { stack.last ?? package }
     private var pages: [Package] { [package] + stack }
 
-    @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-
     private func push(_ item: Package) {
         guard item.id != displayed.id else { return }
-        rootFocused = true
         withAnimation(.smooth(duration: 0.3)) { stack.append(item) }
     }
 
     private func pop() {
         guard !stack.isEmpty else { return }
-        rootFocused = true
         withAnimation(.smooth(duration: 0.3)) { _ = stack.removeLast() }
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            if !stack.isEmpty {
+                backBar
+                Divider()
+            }
             // Every page in the drill-down stays mounted: the top page covers its parent, and
             // going back reveals the parent exactly as it was left — scroll position included.
             // Identity is the stack slot, so revisiting a package deeper down never collides.
@@ -51,111 +53,46 @@ struct PackageDetailView: View {
                 ForEach(Array(pages.enumerated()), id: \.offset) { index, item in
                     DetailPage(pkg: item, onPush: { push($0) })
                         .opacity(index == pages.count - 1 ? 1 : 0)
-                        .offset(x: index == pages.count - 1 ? 0 : -60)
+                        .offset(x: offset(for: index))
                         // Disabled, not just hit-test-blocked: a hidden page's controls must not
                         // sit in the Tab order, and focus wandering into one auto-scrolls it.
                         .disabled(index != pages.count - 1)
                         .accessibilityHidden(index != pages.count - 1)
                         .zIndex(Double(index))
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .transition(pushTransition)
                 }
             }
-            // The content only — the footer stays crisp and usable: a refresh never blocks Done.
             .refreshVeil(model.isRefreshing)
-
-            Divider()
-
-            HStack(spacing: 12) {
-                // Back lives in the footer, bottom-left — the dialog grammar — because the
-                // footer's height never changes: a bar above the content skewed the layout
-                // every time the first push or the last pop toggled it. ⌘[ is the platform's
-                // Go Back; Escape keeps closing the sheet.
-                if !stack.isEmpty {
-                    Button {
-                        pop()
-                    } label: {
-                        Label(pages[pages.count - 2].title, systemImage: "chevron.backward")
-                    }
-                    .buttonStyle(.borderless)
-                    .keyboardShortcut("[", modifiers: .command)
-                    .help("Back")
-                    .transition(.opacity)
-                }
-                Spacer()
-                // Left of Done, and not prominent: Done is the default action, and two filled
-                // buttons side by side would leave neither reading as the one Return triggers.
-                openAction
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding(16)
         }
-        // The sheet gives initial focus to the first focusable thing it finds, and neither
-        // `defaultFocus` nor assigning `@FocusState` outranks it. So the content itself takes that
-        // focus and draws nothing for it: the sheet opens with no ring anywhere, and Tab from there
-        // walks the real controls, which keep theirs.
-        .focusable()
-        .focusEffectDisabled()
-        .focused($rootFocused)
-        // The App Store gesture: a two-finger swipe right goes back. Installed as an event
-        // monitor because SwiftUI has no swipe-navigation and the vertical ScrollView ignores
-        // horizontal deltas anyway.
-        .onAppear { swipeBack.install { pop() } }
-        .onDisappear { swipeBack.remove() }
-        .frame(width: 520, height: height)
-        // Escape closes it. A sheet is window-modal on macOS, so clicking outside is not a
-        // dismissal the platform offers — Escape and Done are.
-        .onExitCommand { dismiss() }
     }
 
-    /// Caveats, commands, contents, conflicts and services fill the sheet the same way the
-    /// related lists do, so they earn the taller frame too — everything past it scrolls.
-    private var hasDetails: Bool {
-        displayed.caveats?.isEmpty == false || !displayed.commands.isEmpty
-            || !displayed.artifacts.isEmpty || !displayed.conflicts.isEmpty
-            || displayed.service != nil
-    }
-
-    /// Whether the top page will show Dependencies/Required-by. Approximate on purpose: the
-    /// receipt can name deps that resolve to nothing, and that near-miss only costs a slightly
-    /// taller sheet.
-    private var hasRelated: Bool {
-        !(model.installed[displayed.id]?.dependencies.isEmpty ?? true)
-            || !(model.dependents[displayed.id] ?? []).isEmpty
-    }
-
-    private var height: CGFloat {
-        if model.latestOperation(for: displayed) != nil { return 580 }
-        return hasRelated || hasDetails ? 520 : 380
-    }
-
-    /// The `.app` bundles this cask put on disk and that are still there. Resolved on each pass
-    /// rather than cached: an app dragged to the Trash should stop being offered.
-    private var launchable: [URL] {
-        (model.installed[displayed.id]?.apps ?? []).compactMap(Receipts.appURL(named:))
-    }
-
-    /// Handed to LaunchServices, which starts the app as its own process — nothing is spawned as a
-    /// child of Brewery, so quitting Brewery leaves it running.
-    private func open(_ app: URL) {
-        Task { _ = try? await NSWorkspace.shared.openApplication(at: app, configuration: .init()) }
-    }
-
-    @ViewBuilder
-    private var openAction: some View {
-        if launchable.count == 1, let app = launchable.first {
-            Button("Open") { open(app) }
-                .help("Open \(app.deletingPathExtension().lastPathComponent)")
-        } else if launchable.count > 1 {
-            // A handful of casks ship more than one bundle; let the user say which.
-            Menu("Open") {
-                ForEach(launchable, id: \.self) { app in
-                    Button(app.deletingPathExtension().lastPathComponent) { open(app) }
-                }
+    /// Navigation at the leading top edge, which is where macOS puts a way back. It sat in a footer
+    /// while this was a fixed-size sheet, because a bar that came and went skewed a layout whose
+    /// height was derived from its content — a pane that fills its column has no such height.
+    private var backBar: some View {
+        HStack {
+            Button {
+                pop()
+            } label: {
+                Label(pages[pages.count - 2].title, systemImage: "chevron.backward")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            .buttonStyle(.borderless)
+            .keyboardShortcut("[", modifiers: .command)
+            .help("Back")
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .transition(.opacity)
+    }
+
+    private func offset(for index: Int) -> CGFloat {
+        guard !reduceMotion, index != pages.count - 1 else { return 0 }
+        return -60
+    }
+
+    private var pushTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity)
     }
 }
 
@@ -260,31 +197,50 @@ private struct DetailPage: View {
 
     // MARK: - Header
 
+    /// Stacked, not one wide row: a pane is about 300 pt across, and the sheet's icon-name-stats
+    /// row beside an action column broke words in half at that width ("openssl@ 3", "Installe d").
+    /// Identity, then the action, then the attributes — each with the full width to itself, which
+    /// is also the order the App Store's product page uses.
     private var header: some View {
-        // Centered, not top-aligned: the v4 tap row made the info column taller than the icon,
-        // and a top-pinned icon reads off-center against the stat rows. Centering is also right
-        // when the column is the *shorter* one (a minimal package's three lines).
-        HStack(alignment: .center, spacing: 16) {
-            PackageIconView(package: pkg, size: 96)
-                .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                PackageIconView(package: pkg, size: 64)
+                    .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(pkg.title)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .lineLimit(2)
-                    .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(pkg.title)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
 
-                HStack(spacing: 8) {
-                    kindTag
-                    // For casks the title is the display name, so the token is still worth showing.
-                    if pkg.displayName != nil {
-                        Text(pkg.name)
-                            .monospaced()
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        kindTag
+                        // For casks the title is the display name, so the token is still worth
+                        // showing.
+                        if pkg.displayName != nil {
+                            Text(pkg.name)
+                                .monospaced()
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
                     }
+                    .font(.subheadline)
                 }
 
+                Spacer(minLength: 0)
+            }
+
+            HStack(alignment: .top, spacing: 8) {
+                action
+                // Beside the package it opens, not in a dialog footer — there is no dialog. Kept
+                // bordered so the one filled button in the pane is always the state-changing one.
+                openAction
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
                 statRow("tag") { versionLine }
 
                 if let installs = pkg.installs90d {
@@ -302,7 +258,7 @@ private struct DetailPage: View {
                 }
 
                 // Every package answers "which tap is this from" — core items included, so the
-                // row is a constant of the sheet, not a third-party oddity.
+                // row is a constant of the pane, not a third-party oddity.
                 statRow("spigot") {
                     Text(tapLabel)
                         .foregroundStyle(.secondary)
@@ -312,10 +268,35 @@ private struct DetailPage: View {
                 .accessibilityLabel("From the \(tapLabel) tap")
             }
             .font(.subheadline)
+        }
+    }
 
-            Spacer(minLength: 8)
+    /// The `.app` bundles this cask put on disk and that are still there. Resolved on each pass
+    /// rather than cached: an app dragged to the Trash should stop being offered.
+    private var launchable: [URL] {
+        (model.installed[pkg.id]?.apps ?? []).compactMap(Receipts.appURL(named:))
+    }
 
-            action
+    /// Handed to LaunchServices, which starts the app as its own process — nothing is spawned as a
+    /// child of Brewery, so quitting Brewery leaves it running.
+    private func open(_ app: URL) {
+        Task { _ = try? await NSWorkspace.shared.openApplication(at: app, configuration: .init()) }
+    }
+
+    @ViewBuilder
+    private var openAction: some View {
+        if launchable.count == 1, let app = launchable.first {
+            Button("Open") { open(app) }
+                .help("Open \(app.deletingPathExtension().lastPathComponent)")
+        } else if launchable.count > 1 {
+            // A handful of casks ship more than one bundle; let the user say which.
+            Menu("Open") {
+                ForEach(launchable, id: \.self) { app in
+                    Button(app.deletingPathExtension().lastPathComponent) { open(app) }
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
         }
     }
 
@@ -425,7 +406,7 @@ private struct DetailPage: View {
         case .notInstalled:
             // The trust disclosure: installing a tap item makes brew trust it persistently, and
             // that should not happen silently on a click.
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
                 Button("Install") { model.install(pkg) }
                     .buttonStyle(.borderedProminent)
                     .disabled(pkg.disabled)
@@ -856,9 +837,13 @@ private struct RichText: NSViewRepresentable {
         field.attributedStringValue = text
     }
 
+    /// Measures without touching the field. Assigning `preferredMaxLayoutWidth` here — a mutation
+    /// inside a sizing query — dirties AppKit's constraints, which asks for another layout pass,
+    /// which sizes again: a fixed-width sheet converged on the first pass and hid the loop, but in
+    /// a resizable pane the proposals never settle and the window runs out of Update Constraints
+    /// passes and throws. `cellSize(forBounds:)` already takes the width it should wrap at.
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextField, context: Context) -> CGSize? {
         guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
-        nsView.preferredMaxLayoutWidth = width
         let bounds = NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)
         let size = nsView.cell?.cellSize(forBounds: bounds) ?? .zero
         return CGSize(width: width, height: ceil(size.height))
@@ -894,56 +879,6 @@ private struct CopyButton: View {
         .buttonStyle(.borderless)
         .help("Copy")
         .accessibilityLabel(copied ? "Copied" : "Copy command")
-    }
-}
-
-/// The App Store back gesture: a mostly-horizontal two-finger swipe to the right pops a page.
-/// A local scroll-event monitor because SwiftUI has no swipe navigation; the sheet's vertical
-/// ScrollView ignores horizontal deltas, so nothing is stolen from scrolling. Fires once per
-/// gesture (latched until the fingers lift) and respects the system's swipe-navigation setting.
-/// ponytail: threshold-triggered with the standard slide, not finger-tracked; the upgrade path
-/// is `NSEvent.trackSwipeEvent` driving interactive progress.
-@MainActor
-final class SwipeBackMonitor {
-    private var monitor: Any?
-    private var accumulated: CGFloat = 0
-    private var latched = false
-    private var lastEvent: TimeInterval = 0
-
-    func install(_ back: @escaping () -> Void) {
-        remove()
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            self?.handle(event, back: back)
-            return event
-        }
-    }
-
-    func remove() {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
-    }
-
-    private func handle(_ event: NSEvent, back: () -> Void) {
-        guard NSEvent.isSwipeTrackingFromScrollEventsEnabled else { return }
-
-        if event.phase == .began || event.timestamp - lastEvent > 0.3 {
-            // A new gesture — either launchd-real (phases) or synthetic (a stale-time reset).
-            accumulated = 0
-            latched = false
-        }
-        lastEvent = event.timestamp
-        if event.phase == .ended || event.phase == .cancelled {
-            accumulated = 0
-            return
-        }
-
-        // Mostly-horizontal only: diagonal scrolling of the page must never navigate.
-        guard !latched, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
-        accumulated += event.scrollingDeltaX
-        if accumulated > 80 {
-            latched = true
-            back()
-        }
     }
 }
 

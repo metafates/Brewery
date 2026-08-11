@@ -171,16 +171,18 @@ struct ContentView: View {
     @State private var window = ContentView.windowStep
 
     var body: some View {
-        Group {
-            if model.brewMissing {
-                brewNotFound
-            } else {
-                splitView
-            }
+        if model.brewMissing {
+            brewNotFound
+        } else {
+            splitView
         }
-        .sheet(item: $selectedPackage) { package in
-            PackageDetailView(package: package)
-        }
+    }
+
+    /// Opening a package means selecting it, not interrupting: the pane follows the selection, so
+    /// clicking through card after card is one continuous act rather than open-read-dismiss.
+    private func select(_ package: Package) {
+        selectedPackage = package
+        model.showInspector = true
     }
 
     // MARK: - Shell
@@ -204,13 +206,20 @@ struct ContentView: View {
                     filterToolbar
                     refreshToolbar
                     operationsToolbar
+                    inspectorToolbar
                 }
                 .searchable(text: searchQuery, prompt: searchPrompt)
                 .searchFocused($searchFocused)
                 // Return opens the top hit — the keyboard path from typing a name to reading about
                 // it, without reaching for the pointer.
                 .onSubmit(of: .search) {
-                    if let hit = displayedHits.first { selectedPackage = hit.package }
+                    if let hit = displayedHits.first { select(hit.package) }
+                }
+                // A pane, not a sheet: the listing stays live beside it, it resizes with the
+                // window, and nothing has to be dismissed before the next card can be clicked.
+                .inspector(isPresented: $model.showInspector) {
+                    inspector
+                        .inspectorColumnWidth(min: 300, ideal: 340, max: 480)
                 }
         }
         .task(id: searchKey) {
@@ -293,7 +302,8 @@ struct ContentView: View {
             // State rows, not catalog cards — a handful of items, no windowing needed.
             ServicesView(hits: displayedHits,
                          isSearching: isSearching,
-                         onSelect: { selectedPackage = $0 },
+                         selectedID: inspectedID,
+                         onSelect: { select($0) },
                          onRefresh: { refresh() })
                 .refreshVeil(model.isRefreshing)
         } else {
@@ -302,11 +312,28 @@ struct ContentView: View {
         }
     }
 
+    /// `.id` on the package: the pane keeps a drill-down stack, and clicking a different card has
+    /// to start a fresh one rather than leave you inside the previous package's dependencies.
+    @ViewBuilder private var inspector: some View {
+        if let package = selectedPackage {
+            PackageDetailView(package: package)
+                .id(package.id)
+        } else {
+            // Reachable: ⌘I opens the pane whether or not anything is selected.
+            ContentUnavailableView {
+                Label("No Selection", systemImage: "shippingbox")
+            } description: {
+                Text("Select a package to see what it is, where it comes from, and what it needs.")
+            }
+        }
+    }
+
     private func packageGrid(tap: String? = nil) -> some View {
         PackageGridView(hits: Array(displayedHits.prefix(window)),
                         totalCount: displayedCount,
                         isSearching: isSearching,
-                        onSelect: { selectedPackage = $0 },
+                        selectedID: inspectedID,
+                        onSelect: { select($0) },
                         emptyMessage: emptyMessage,
                         onNeedMore: { window += Self.windowStep },
                         onRefresh: emptyStateRefresh,
@@ -467,6 +494,13 @@ struct ContentView: View {
 
     /// What the grid will render.
     private var displayedCount: Int { displayedHits.count }
+
+    /// Which row the pane is describing, so the listing can say so. A split view has to keep the
+    /// current selection visible in the pane that leads to the detail — and nil while the pane is
+    /// closed, because nothing is being described. One `String?` across the boundary, not an array.
+    private var inspectedID: Package.ID? {
+        model.showInspector ? selectedPackage?.id : nil
+    }
 
     /// What the browse listing is made of. Deliberately excludes the query: while a search is being
     /// typed the grid still shows this listing, so rebuilding it per keystroke would be pure waste.
@@ -724,6 +758,21 @@ struct ContentView: View {
     }
 
     // MARK: - Operations
+
+    /// The pane's toggle, on the trailing edge where macOS puts the buttons that open nearby
+    /// inspectors — and last, so it sits closest to the pane it opens.
+    @ToolbarContentBuilder private var inspectorToolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                model.showInspector.toggle()
+            } label: {
+                Image(systemName: "sidebar.right")
+            }
+            .keyboardShortcut("i")
+            .help(model.showInspector ? "Hide the info pane" : "Show the info pane")
+            .accessibilityLabel(model.showInspector ? "Hide Info" : "Show Info")
+        }
+    }
 
     @ToolbarContentBuilder private var operationsToolbar: some ToolbarContent {
         @Bindable var model = model
