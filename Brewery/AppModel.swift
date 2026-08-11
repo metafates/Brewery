@@ -556,6 +556,13 @@ final class AppModel {
 
     var isQueueActive: Bool { operations.contains { !$0.isFinished } }
 
+    /// Whether the most recent finished operation failed. The popover auto-presents once and can be
+    /// dismissed, after which nothing said a failure had happened — so the toolbar keeps a tell
+    /// until something else finishes successfully.
+    var lastOperationFailed: Bool {
+        operations.last { $0.isFinished }?.state == .failed
+    }
+
     var activeCount: Int { operations.filter { !$0.isFinished }.count }
 
     var isMutating: Bool {

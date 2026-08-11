@@ -5,6 +5,7 @@
 //  Created by vzbarashchenko on 09.08.2026.
 //
 
+import AppKit
 import SwiftUI
 import TipKit
 
@@ -251,6 +252,9 @@ struct ContentView: View {
             guard failure != nil else { return }
             model.showOperations = true
             model.failureToPresent = nil
+            // An install runs for minutes and people go elsewhere while it does. A popover opening
+            // behind another app is not feedback; one Dock bounce is.
+            if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
         }
     }
 
@@ -740,12 +744,18 @@ struct ContentView: View {
                                 .contentTransition(.numericText(value: Double(model.activeCount)))
                                 .animation(.smooth(duration: 0.25), value: model.activeCount)
                         }
+                    } else if model.lastOperationFailed {
+                        // A different glyph, not just a red one: the failure has to survive
+                        // dismissing the popover, and it has to survive colour-blindness too.
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
                     } else {
                         Image(systemName: "list.bullet.rectangle")
                     }
                 }
-                .help("Operations")
-                .accessibilityLabel("Operations")
+                .help(model.lastOperationFailed ? "Operations — the last one failed" : "Operations")
+                .accessibilityLabel(model.lastOperationFailed ? "Operations, last operation failed"
+                                                              : "Operations")
                 .popover(isPresented: $model.showOperations, arrowEdge: .bottom) {
                     OperationsPopover()
                 }

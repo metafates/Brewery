@@ -29,6 +29,11 @@ struct BreweryApp: App {
                 .environment(model)
                 .task { await model.bootstrap() }
                 .onAppear { appDelegate.model = model }
+                // The App Store and Software Update badge the Dock with how many updates wait;
+                // the sidebar already says it, and this says it while Brewery is not frontmost.
+                .onChange(of: model.outdated.count, initial: true) { _, count in
+                    NSApp.dockTile.badgeLabel = count > 0 ? count.formatted(.number) : nil
+                }
         }
         // Opens using the display instead of hugging the 900×600 floor: a grid of cards is exactly
         // the content macOS asks you to give more room, not less.
@@ -128,5 +133,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    /// Short and focused, per the Dock menu guidance: the two things worth asking of a package
+    /// manager without bringing its window forward.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        guard let model else { return nil }
+        let menu = NSMenu()
+        menu.addItem(item(title: "Refresh", action: #selector(refreshFromDock)))
+        let outdated = model.outdated.count
+        if outdated > 0 {
+            menu.addItem(item(title: "Update All (\(outdated))", action: #selector(updateAllFromDock)))
+        }
+        return menu
+    }
+
+    private func item(title: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func refreshFromDock() {
+        Task { await model?.refresh() }
+    }
+
+    @objc private func updateAllFromDock() {
+        model?.upgradeAll()
     }
 }
