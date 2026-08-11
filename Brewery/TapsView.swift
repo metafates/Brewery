@@ -33,7 +33,8 @@ struct TapsView: View {
                                installedCount: model.installedCount(fromTap: info.name),
                                trust: model.trustState,
                                onSelect: { onSelect(info.name) },
-                               onRemove: { removing = info })
+                               onRemove: { removing = info },
+                               onUntrust: { model.untrustTap(info.name) })
                     }
                 }
             }
@@ -126,6 +127,7 @@ private struct BuiltInTapRow: View {
                 .font(.caption)
         }
         .padding(.vertical, 3)
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
     }
 }
 
@@ -135,6 +137,7 @@ private struct TapRow: View {
     let trust: TrustState
     let onSelect: () -> Void
     let onRemove: () -> Void
+    let onUntrust: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -154,16 +157,17 @@ private struct TapRow: View {
             .buttonStyle(.plain)
             .accessibilityHint("Shows the tap's packages")
 
-            if let checked = info.lastChecked {
-                Text("Checked \(checked.formatted(.relative(presentation: .named)))")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-
             trustBadge
         }
         .padding(.vertical, 3)
+        // Separators follow the first text otherwise, leaving stray fragments under the badges.
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
         .contextMenu {
+            if trust.taps.contains(info.name.lowercased()) {
+                // Only for *explicit* trust: official taps cannot be untrusted, and partial
+                // (per-item) trust is brew's own bookkeeping.
+                Button("Untrust") { onUntrust() }
+            }
             Button("Remove Tap…", role: .destructive, action: onRemove)
         }
     }

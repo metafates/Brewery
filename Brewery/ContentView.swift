@@ -118,6 +118,9 @@ struct ContentView: View {
     /// The Taps section's in-column drill-down: nil shows the tap list, a name shows that tap's
     /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs.
     @State private var selectedTap: String?
+    /// The tap page's kind filter. Deliberately transient (@State, reset per page): a persisted
+    /// filter that silently empties the next tap's page would read as data loss.
+    @State private var tapKindFilter: KindFilter = .all
     /// Ranked results per section, so leaving a tab and coming back shows that tab's results at
     /// once. A single array meant visiting a tab with an empty query cleared it, and the return
     /// trip flashed the unfiltered listing until the re-rank landed.
@@ -204,6 +207,7 @@ struct ContentView: View {
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
         .onChange(of: selection) { if selection != .taps { selectedTap = nil } }
+        .onChange(of: selectedTap) { tapKindFilter = .all }
         .onChange(of: model.findRequests) { searchFocused = true }
         .onChange(of: model.failureToPresent?.id) { _, failure in
             guard failure != nil else { return }
@@ -291,12 +295,14 @@ struct ContentView: View {
     /// A tap page's contents. Core rows are the API catalog sliced by kind; third-party rows are
     /// the scan's packages for that tap. The list view (selectedTap == nil) needs no packages.
     private var tapPagePackages: [Package] {
-        switch selectedTap {
+        let packages: [Package] = switch selectedTap {
         case nil: []
         case "homebrew/core": model.catalog.filter { $0.kind == .formula && $0.tap == nil }
         case "homebrew/cask": model.catalog.filter { $0.kind == .cask && $0.tap == nil }
         case let tap?: model.tapPackages(for: tap)
         }
+        guard tapKindFilter != .all else { return packages }
+        return packages.filter(tapKindFilter.matches)
     }
 
     /// Installed's kind pre-filter — same position in the pipeline as Discover's: before ranking,
@@ -340,8 +346,10 @@ struct ContentView: View {
             } else {
                 section.emptyMessage
             }
-        case .outdated, .services, .taps:
+        case .outdated, .services:
             section.emptyMessage
+        case .taps:
+            tapKindFilter != .all ? "No packages match the filter" : section.emptyMessage
         }
     }
 
@@ -373,6 +381,7 @@ struct ContentView: View {
         let tapsOnly: Bool
         let installedTapsOnly: Bool
         let selectedTap: String?
+        let tapKindFilter: KindFilter
         /// Not a count: a tap rescan can swap entries while netting zero, which a count cannot see.
         let catalogGeneration: Int
         let installedCount: Int
@@ -389,6 +398,7 @@ struct ContentView: View {
                   tapsOnly: tapsOnly,
                   installedTapsOnly: installedTapsOnly,
                   selectedTap: selectedTap,
+                  tapKindFilter: tapKindFilter,
                   catalogGeneration: model.catalogGeneration,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
@@ -404,7 +414,8 @@ struct ContentView: View {
                                       installedKindFilter: installedKindFilter,
                                       tapsOnly: tapsOnly,
                                       installedTapsOnly: installedTapsOnly,
-                                      selectedTap: selectedTap),
+                                      selectedTap: selectedTap,
+                                      tapKindFilter: tapKindFilter),
                   catalogGeneration: model.catalogGeneration,
                   commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
@@ -439,6 +450,7 @@ struct ContentView: View {
         let tapsOnly: Bool
         let installedTapsOnly: Bool
         let selectedTap: String?
+        let tapKindFilter: KindFilter
     }
 
     // MARK: - Counts
@@ -470,7 +482,8 @@ struct ContentView: View {
         switch section {
         case .discover: filtersActive
         case .installed: installedScope != .onRequest || installedKindFilter != .all || installedTapsOnly
-        case .outdated, .services, .taps: false
+        case .outdated, .services: false
+        case .taps: selectedTap != nil && tapKindFilter != .all
         }
     }
 
@@ -481,7 +494,7 @@ struct ContentView: View {
     /// make the user update one card at a time.
     @ToolbarContentBuilder private var filterToolbar: some ToolbarContent {
         if section == .taps {
-            if let tap = selectedTap {
+            if selectedTap != nil {
                 // In-column drill-down: back belongs in the navigation slot.
                 ToolbarItem(placement: .navigation) {
                     Button {
@@ -490,7 +503,23 @@ struct ContentView: View {
                         Label("Taps", systemImage: "chevron.backward")
                     }
                     .keyboardShortcut("[", modifiers: .command)
-                    .help("Back to \(tap == selectedTap ? "the tap list" : "Taps")")
+                    .help("Back to the tap list")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Picker("Kind", selection: $tapKindFilter) {
+                            ForEach(KindFilter.allCases) { kind in
+                                Text(kind.title).tag(kind)
+                            }
+                        }
+                        .pickerStyle(.inline)
+                    } label: {
+                        Label("Filter", systemImage: tapKindFilter != .all
+                              ? "line.3.horizontal.decrease.circle.fill"
+                              : "line.3.horizontal.decrease.circle")
+                    }
+                    .help("Filter by kind")
+                    .accessibilityLabel("Filter")
                 }
             } else {
                 ToolbarItem(placement: .primaryAction) {

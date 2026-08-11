@@ -351,7 +351,7 @@ final class AppModel {
         switch command {
         case let .install(name, _), let .upgrade(name, _),
              let .serviceStart(name), let .serviceStop(name),
-             let .tap(name), let .untap(name), let .trustTap(name):
+             let .tap(name), let .untap(name), let .trustTap(name), let .untrustTap(name):
             guard !name.isEmpty, !name.hasPrefix("-") else { return }
         default:
             break
@@ -475,6 +475,13 @@ final class AppModel {
     func trustTap(_ name: String) {
         guard Self.isValidTapName(name) else { return }
         enqueue(.trustTap(name: name), title: "Trusting \(name)", targetID: nil)
+    }
+
+    /// The privilege-reducing direction needs no dialog: it is reversible from the tap page's
+    /// banner, and brew strips the tap's per-item trust entries along with it.
+    func untrustTap(_ name: String) {
+        guard Self.isValidTapName(name) else { return }
+        enqueue(.untrustTap(name: name), title: "Untrusting \(name)", targetID: nil)
     }
 
     private func pump() {
