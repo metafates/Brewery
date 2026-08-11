@@ -13,7 +13,7 @@ import SwiftUI
 /// and compares them on every update, so a `[SearchHit]` of the full catalog cost ~6 s per
 /// interaction even though `.prefix` meant just 60 of them were ever drawn. Windowing the
 /// *rendering* is not enough — the array must not cross the view boundary at all.
-struct PackageGridView: View {
+struct PackageGridView<Header: View>: View {
     /// Exactly the cards to draw.
     let hits: [SearchHit]
     /// How many exist in total, so the grid knows whether to ask for more.
@@ -28,15 +28,36 @@ struct PackageGridView: View {
     /// date" invites exactly that question. Omitted where it is not, such as a filter hiding
     /// everything on Discover.
     var onRefresh: (() -> Void)?
+    /// v6: an optional page header that scrolls with the content — the App Store pattern. A fixed
+    /// header above the ScrollView fights macOS's scroll-under-chrome behavior and clips cards.
+    let header: () -> Header
+
+    init(hits: [SearchHit], totalCount: Int, isSearching: Bool,
+         onSelect: @escaping (Package) -> Void, emptyMessage: String? = nil,
+         onNeedMore: @escaping () -> Void, onRefresh: (() -> Void)? = nil,
+         @ViewBuilder header: @escaping () -> Header = { EmptyView() }) {
+        self.hits = hits
+        self.totalCount = totalCount
+        self.isSearching = isSearching
+        self.onSelect = onSelect
+        self.emptyMessage = emptyMessage
+        self.onNeedMore = onNeedMore
+        self.onRefresh = onRefresh
+        self.header = header
+    }
 
     private let columns = [GridItem(.adaptive(minimum: 230), spacing: 12)]
 
     var body: some View {
         if totalCount == 0 {
-            emptyState
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                header()
+                emptyState
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         } else {
             ScrollView {
+                header()
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(hits) { hit in
                         PackageCardView(hit: hit) { onSelect(hit.package) }

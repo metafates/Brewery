@@ -55,6 +55,14 @@ struct BrewCommandTests {
         #expect(BrewCommand.untap(name: "oven-sh/bun").touchesPackages == false)
     }
 
+    @Test("trust: whole-tap only, explicit type flag, mutating")
+    func trustArguments() {
+        let trust = BrewCommand.trustTap(name: "charmbracelet/tap")
+        #expect(trust.arguments == ["trust", "--tap", "charmbracelet/tap"])
+        #expect(trust.isMutating)
+        #expect(trust.touchesPackages == false)
+    }
+
     @Test("only update/install/upgrade mutate")
     func isMutating() {
         #expect(BrewCommand.listFormulae.isMutating == false)
@@ -101,6 +109,7 @@ struct BrewCommandTests {
         .serviceStop(name: "redis"),
         .tap(name: "oven-sh/bun"),
         .untap(name: "oven-sh/bun"),
+        .trustTap(name: "charmbracelet/tap"),
     ] }
 
     /// One tag per `BrewCommand` case. The switch is exhaustive on purpose: adding a case to
@@ -108,7 +117,7 @@ struct BrewCommandTests {
     /// `everyCommand`, so the tripwire below can never silently miss a new command.
     enum CommandKind: CaseIterable {
         case listFormulae, listCasks, outdated, update, install, upgrade, upgradeAll
-        case servicesList, serviceStart, serviceStop, tap, untap
+        case servicesList, serviceStart, serviceStop, tap, untap, trustTap
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -125,6 +134,7 @@ struct BrewCommandTests {
         case .serviceStop: .serviceStop
         case .tap: .tap
         case .untap: .untap
+        case .trustTap: .trustTap
         }
     }
 
@@ -135,7 +145,7 @@ struct BrewCommandTests {
 
     @Test("first argv token is on the whitelist")
     func firstTokenIsWhitelisted() {
-        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap"]
+        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust"]
         for command in Self.everyCommand {
             let first = command.arguments.first ?? ""
             #expect(allowed.contains(first), "unexpected subcommand \"\(first)\" in \(command.arguments)")
@@ -146,7 +156,7 @@ struct BrewCommandTests {
     func noDestructiveTokens() {
         let forbidden = ["uninstall", "remove", "rm", "cleanup", "pin", "unpin", "zap", "--force",
                          "kill", "restart", "--all", "--file", "--sudo-service-user",
-                         "--custom-remote", "--repair", "--eval-all"]
+                         "--custom-remote", "--repair", "--eval-all", "untrust"]
         for command in Self.everyCommand {
             for argument in command.arguments {
                 // Whole tokens and their flag variants ("--force-bottle"); a plain substring test
@@ -186,6 +196,9 @@ struct BrewCommandTests {
                 // One named tap, nothing else: no --force (uninstalls packages!), no remotes.
                 #expect(arguments.count == 2, "\(arguments)")
                 #expect(!arguments.contains { $0.hasPrefix("-") })
+            case .trustTap:
+                // The explicit --tap type flag is the whole point (brew infers otherwise).
+                #expect(arguments == ["trust", "--tap", "charmbracelet/tap"])
             }
         }
     }

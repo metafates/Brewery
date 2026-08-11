@@ -197,15 +197,18 @@ private struct TapRow: View {
     }
 }
 
-/// The slim header above a tap's package grid: where it comes from, how fresh it is, and — when
-/// brew distrusts it — why parts of it may be invisible elsewhere.
+/// The tap page's header. It scrolls with the grid (the App Store pattern — a fixed header above
+/// a macOS ScrollView fights the scroll-under-chrome behavior and clips cards). When brew
+/// distrusts the tap, the notice is a real banner with the remedy inside it: a confirmation-gated
+/// Trust action — a floating warning with no way to act on it is an accusation, not an interface.
 struct TapPageHeader: View {
     let tap: String
 
     @Environment(AppModel.self) private var model
+    @State private var confirmingTrust = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 16) {
                 if let remote = info?.remote, let url = URL(string: remote) {
                     Link(destination: url) {
@@ -222,14 +225,46 @@ struct TapPageHeader: View {
             .font(.callout)
 
             if let info, !model.trustState.isTrusted(info.name) {
-                Label("Homebrew doesn't trust this tap yet: its services and some listings stay hidden. Installing an item trusts that item.",
-                      systemImage: "shield.slash")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                trustBanner(info)
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
+    }
+
+    /// The detail sheet's deprecated/disabled banner language, with the action where the
+    /// problem is stated.
+    private func trustBanner(_ info: TapInfo) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Not trusted by Homebrew")
+                        .fontWeight(.semibold)
+                    Text("Its services and some listings stay hidden. Installing an item trusts that item; trusting the tap covers everything it ships.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } icon: {
+                Image(systemName: "shield.slash")
+                    .foregroundStyle(.orange)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("Trust This Tap…") { confirmingTrust = true }
+                .confirmationDialog("Trust \(info.name)?", isPresented: $confirmingTrust,
+                                    titleVisibility: .visible) {
+                    Button("Trust") { model.trustTap(info.name) }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Homebrew will run this tap's package definitions when listing and installing. Only trust taps whose authors you trust.")
+                }
+        }
+        .font(.callout)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.1), in: .rect(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
     }
 
     private var info: TapInfo? {

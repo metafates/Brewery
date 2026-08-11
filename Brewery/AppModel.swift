@@ -351,7 +351,7 @@ final class AppModel {
         switch command {
         case let .install(name, _), let .upgrade(name, _),
              let .serviceStart(name), let .serviceStop(name),
-             let .tap(name), let .untap(name):
+             let .tap(name), let .untap(name), let .trustTap(name):
             guard !name.isEmpty, !name.hasPrefix("-") else { return }
         default:
             break
@@ -468,6 +468,13 @@ final class AppModel {
     func removeTap(_ name: String) {
         guard Self.isValidTapName(name) else { return }
         enqueue(.untap(name: name), title: "Removing \(name)", targetID: nil)
+    }
+
+    /// The one guarded trust write: the caller has shown the confirmation dialog by the time
+    /// this runs. Post-op refresh re-reads the store, so badges and banners follow.
+    func trustTap(_ name: String) {
+        guard Self.isValidTapName(name) else { return }
+        enqueue(.trustTap(name: name), title: "Trusting \(name)", targetID: nil)
     }
 
     private func pump() {

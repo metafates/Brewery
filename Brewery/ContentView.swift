@@ -225,17 +225,15 @@ struct ContentView: View {
                      onSelect: { tap in withAnimation(.smooth(duration: 0.3)) { selectedTap = tap } })
                 .refreshVeil(model.isRefreshing)
         } else if section == .taps, let tap = selectedTap {
-            VStack(alignment: .leading, spacing: 0) {
-                TapPageHeader(tap: tap)
-                PackageGridView(hits: Array(displayedHits.prefix(window)),
-                                totalCount: displayedCount,
-                                isSearching: isSearching,
-                                onSelect: { selectedPackage = $0 },
-                                emptyMessage: emptyMessage,
-                                onNeedMore: { window += Self.windowStep },
-                                onRefresh: emptyStateRefresh)
-            }
-            .refreshVeil(model.isRefreshing)
+            PackageGridView(hits: Array(displayedHits.prefix(window)),
+                            totalCount: displayedCount,
+                            isSearching: isSearching,
+                            onSelect: { selectedPackage = $0 },
+                            emptyMessage: emptyMessage,
+                            onNeedMore: { window += Self.windowStep },
+                            onRefresh: emptyStateRefresh,
+                            header: { TapPageHeader(tap: tap) })
+                .refreshVeil(model.isRefreshing)
         } else if section == .services {
             // State rows, not catalog cards — a handful of items, no windowing needed.
             ServicesView(hits: displayedHits,

@@ -32,6 +32,9 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     // unrepresentable.
     case tap(name: String)
     case untap(name: String)
+    // v6 — the one trust write besides brew's own install-time auto-trust: whole-tap trust,
+    // granted only through an explicit confirmation in the UI. `untrust` stays in the terminal.
+    case trustTap(name: String)
 
     var arguments: [String] {
         switch self {
@@ -61,6 +64,10 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["tap", name]
         case let .untap(name):
             ["untap", name]
+        case let .trustTap(name):
+            // The explicit type flag is required: without it brew infers the target type by
+            // scanning tap files and can raise on ambiguity.
+            ["trust", "--tap", name]
         }
     }
 
@@ -69,7 +76,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         case .listFormulae, .listCasks, .outdated, .servicesList:
             false
-        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap:
+        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap:
             true
         }
     }
@@ -80,7 +87,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         // Service toggles change launchd state; tap/untap clone fresh checkouts — none of them
         // benefit from a `brew update` first.
-        case .serviceStart, .serviceStop, .tap, .untap: false
+        case .serviceStart, .serviceStop, .tap, .untap, .trustTap: false
         default: isMutating
         }
     }
