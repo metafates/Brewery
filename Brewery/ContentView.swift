@@ -133,9 +133,7 @@ struct ContentView: View {
 
     @State private var selection: SidebarSection? = .discover
     /// The Taps section's in-column drill-down: nil shows the tap list, a name shows that tap's
-    /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs. Manual rather
-    /// than `NavigationStack` — macOS does not animate stack pushes in a split view's detail
-    /// column, and the drill-down deserves the slide the detail sheet's dependency pages have.
+    /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs.
     @State private var selectedTap: String?
     /// The tap page's kind filter. Deliberately transient (@State, reset per page): a persisted
     /// filter that silently empties the next tap's page would read as data loss.
@@ -185,7 +183,16 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
-            chrome(detail)
+            detail
+                .navigationTitle(title)
+                .navigationSubtitle(subtitle)
+                .toolbar {
+                    filterToolbar
+                    refreshToolbar
+                    operationsToolbar
+                }
+                .searchable(text: searchQuery, prompt: searchPrompt)
+                .searchFocused($searchFocused)
         }
         .task(id: searchKey) {
             let ranked = section
@@ -232,18 +239,18 @@ struct ContentView: View {
             ProgressView("Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if section == .taps {
-            // The detail sheet's drill-down grammar: the list stays mounted underneath — scroll
-            // position survives the round trip — receding as the page slides in over it.
+            // The detail sheet's drill-down grammar (manual — macOS NavigationStack does not
+            // animate pushes in a split view's detail column): the list stays mounted, keeping
+            // its scroll position, and recedes while the tap's page slides in over it.
             ZStack {
-                TapsView(searchText: searchText, onSelect: { openTap($0) })
+                TapsView(searchText: searchText, onSelect: openTap)
                     .opacity(selectedTap == nil ? 1 : 0)
                     .offset(x: selectedTap == nil ? 0 : -60)
-                    // Disabled, not just covered: a hidden list's rows must not sit in the
-                    // Tab order underneath the grid.
+                    // Disabled, not just covered: the hidden rows must leave the Tab order.
                     .disabled(selectedTap != nil)
                     .accessibilityHidden(selectedTap != nil)
                 if let tap = selectedTap {
-                    tapPage(tap)
+                    packageGrid(tap: tap)
                         // Opaque, so the receding list never shows through between the cards.
                         .background(.background)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -259,34 +266,12 @@ struct ContentView: View {
                          onRefresh: { refresh() })
                 .refreshVeil(model.isRefreshing)
         } else {
-            PackageGridView(hits: Array(displayedHits.prefix(window)),
-                            totalCount: displayedCount,
-                            isSearching: isSearching,
-                            onSelect: { selectedPackage = $0 },
-                            emptyMessage: emptyMessage,
-                            onNeedMore: { window += Self.windowStep },
-                            onRefresh: emptyStateRefresh,
-                            header: { discoverTip })
+            packageGrid()
                 .refreshVeil(model.isRefreshing)
         }
     }
 
-    /// The column's chrome: title, toolbar, search field.
-    private func chrome(_ content: some View) -> some View {
-        content
-            .navigationTitle(title)
-            .navigationSubtitle(subtitle)
-            .toolbar {
-                filterToolbar
-                refreshToolbar
-                operationsToolbar
-            }
-            .searchable(text: searchQuery, prompt: searchPrompt)
-            .searchFocused($searchFocused)
-    }
-
-    /// A tap's package grid, slid above the tap list.
-    private func tapPage(_ tap: String) -> some View {
+    private func packageGrid(tap: String? = nil) -> some View {
         PackageGridView(hits: Array(displayedHits.prefix(window)),
                         totalCount: displayedCount,
                         isSearching: isSearching,
@@ -294,14 +279,14 @@ struct ContentView: View {
                         emptyMessage: emptyMessage,
                         onNeedMore: { window += Self.windowStep },
                         onRefresh: emptyStateRefresh,
-                        header: { TapPageHeader(tap: tap) })
+                        header: {
+                            if let tap { TapPageHeader(tap: tap) } else { discoverTip }
+                        })
     }
 
-    /// The push. The listing is built *before* the slide starts: the browse task rebuilds it
-    /// asynchronously, and a grid that slides in empty and fills mid-flight reads as no
-    /// animation at all.
+    /// The listing is built *before* the slide starts: the browse task rebuilds it
+    /// asynchronously, and a grid that slides in empty and fills mid-flight reads as a cut.
     private func openTap(_ tap: String) {
-        tapKindFilter = .all
         browseHits = browseListing(for: tap)
         withAnimation(.smooth(duration: 0.3)) { selectedTap = tap }
     }
@@ -326,22 +311,21 @@ struct ContentView: View {
         return x == y ? a.name < b.name : x > y
     }
 
-    /// What the browse task will (re)build for this tap, computed synchronously — cheap even for
-    /// core: one filter of the catalog and one sort of ~8k entries, a few milliseconds on a click.
+    /// The tap page's listing, same as the browse task would build it — cheap enough for a click
+    /// even on core (one filter, one ~8k sort).
     private func browseListing(for tap: String) -> [SearchHit] {
         var packages = tapPagePackages(for: tap)
         if TapStore.coreTaps.contains(tap) { packages.sort(by: Self.byPopularity) }
         return packages.map { SearchHit(package: $0, matchedCommand: nil) }
     }
 
-    /// The tap page titles itself with the tap's name — otherwise nothing on screen says which
-    /// tap's packages the grid is showing.
+    /// A tap page titles the window with its tap's name.
     private var title: String {
         if section == .taps, let tap = selectedTap { return tap }
         return section.title
     }
 
-    /// On a tap's page the search searches that tap's packages, not the tap list.
+    /// On a tap page the search field searches that tap's packages, not the tap list.
     private var searchPrompt: String {
         if section == .taps, selectedTap != nil { return "Search Packages" }
         return section.searchPrompt
@@ -374,14 +358,12 @@ struct ContentView: View {
         case .installed: installedFiltered(model.installedPackages(scope: installedScope))
         case .outdated: model.outdatedPackages
         case .services: model.servicePackages
-        case .taps: tapPagePackages
+        case .taps: tapPagePackages(for: selectedTap)
         }
     }
 
     /// A tap page's contents. Core rows are the API catalog sliced by kind; third-party rows are
-    /// the scan's packages for that tap. The list view (selectedTap == nil) needs no packages.
-    private var tapPagePackages: [Package] { tapPagePackages(for: selectedTap) }
-
+    /// the scan's packages for that tap. The list view (tap == nil) needs no packages.
     private func tapPagePackages(for tap: String?) -> [Package] {
         let packages: [Package] = switch tap {
         case nil: []
