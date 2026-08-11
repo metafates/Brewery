@@ -184,14 +184,14 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
             detail
-                .navigationTitle(section.title)
+                .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar {
                     filterToolbar
                     refreshToolbar
                     operationsToolbar
                 }
-                .searchable(text: searchQuery, prompt: section.searchPrompt)
+                .searchable(text: searchQuery, prompt: searchPrompt)
                 .searchFocused($searchFocused)
         }
         .task(id: searchKey) {
@@ -242,9 +242,12 @@ struct ContentView: View {
             ProgressView("Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if section == .taps, selectedTap == nil {
+            // The drill-down pair animates as a push: the list recedes left while the page slides
+            // in from the trailing edge — the detail sheet's dependency navigation, same grammar.
             TapsView(searchText: searchText,
                      onSelect: { tap in withAnimation(.smooth(duration: 0.3)) { selectedTap = tap } })
                 .refreshVeil(model.isRefreshing)
+                .transition(.move(edge: .leading).combined(with: .opacity))
         } else if section == .taps, let tap = selectedTap {
             PackageGridView(hits: Array(displayedHits.prefix(window)),
                             totalCount: displayedCount,
@@ -255,6 +258,7 @@ struct ContentView: View {
                             onRefresh: emptyStateRefresh,
                             header: { TapPageHeader(tap: tap) })
                 .refreshVeil(model.isRefreshing)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if section == .services {
             // State rows, not catalog cards — a handful of items, no windowing needed.
             ServicesView(hits: displayedHits,
@@ -289,6 +293,19 @@ struct ContentView: View {
     // MARK: - Search
 
     private var section: SidebarSection { selection ?? .discover }
+
+    /// The tap page titles itself with the tap's name — otherwise nothing on screen says which
+    /// tap's packages the grid is showing.
+    private var title: String {
+        if section == .taps, let tap = selectedTap { return tap }
+        return section.title
+    }
+
+    /// On a tap's page the search searches that tap's packages, not the tap list.
+    private var searchPrompt: String {
+        if section == .taps, selectedTap != nil { return "Search Packages" }
+        return section.searchPrompt
+    }
 
     /// Per-tab, and in the model rather than in `@State`: switching sections destroys the detail
     /// view along with anything it holds, so a query stored here would not survive the round trip.
