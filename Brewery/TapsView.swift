@@ -286,10 +286,7 @@ struct TapPageHeader: View {
                     Text("Homebrew will run this tap's package definitions when listing and installing. Only trust taps whose authors you trust.")
                 }
         }
-        .font(.callout)
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.1), in: .rect(cornerRadius: 8))
+        .warningWash(.orange)
         .accessibilityElement(children: .contain)
     }
 

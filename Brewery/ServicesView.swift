@@ -167,6 +167,10 @@ struct ServiceToggle: View {
                 .labelsHidden()
                 .disabled(true)
                 .help("\(package.title) requires root — manage it in Terminal with sudo brew services.")
+                // A tooltip is pointer-only, so the same explanation has to reach the
+                // accessibility tree — without it VoiceOver reads an unnamed disabled switch.
+                .accessibilityLabel("\(package.title) service")
+                .accessibilityHint("Requires root — manage it in Terminal with sudo brew services.")
         } else {
             Toggle("", isOn: isLoaded)
                 .toggleStyle(.switch)

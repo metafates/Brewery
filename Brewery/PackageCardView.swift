@@ -13,6 +13,7 @@ struct PackageCardView: View {
     let onSelect: () -> Void
 
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var package: Package { hit.package }
 
@@ -147,9 +148,11 @@ struct PackageCardView: View {
     // MARK: - Action
 
     /// The control swaps as the package's state does — Install, then a spinner, then a checkmark.
-    /// Replacing them in place keeps that legible as one thing changing.
+    /// Replacing them in place keeps that legible as one thing changing — as a crossfade when
+    /// Reduce Motion is on, since a blur replace animates into and out of a blur.
     private var actionButton: some View {
-        actionControl.transition(.blurReplace)
+        actionControl.transition(reduceMotion ? AnyTransition.opacity
+                                             : AnyTransition(.blurReplace))
     }
 
     @ViewBuilder

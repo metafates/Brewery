@@ -479,11 +479,7 @@ private struct DetailPage: View {
             Image(systemName: isDisabled ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(isDisabled ? .red : .orange)
         }
-        .font(.callout)
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isDisabled ? Color.red.opacity(0.1) : Color.orange.opacity(0.1),
-                    in: .rect(cornerRadius: 8))
+        .warningWash(isDisabled ? .red : .orange)
         .accessibilityElement(children: .combine)
     }
 

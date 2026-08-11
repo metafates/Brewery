@@ -130,6 +130,8 @@ nonisolated enum InstalledScope: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    /// Every x-axis slide and sustained rotation below has a crossfade or a still glyph behind this.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @AppStorage("discover.kindFilter") private var kindFilter: KindFilter = .all
     @AppStorage("discover.hideDeprecated") private var hideDeprecated = false
@@ -267,7 +269,7 @@ struct ContentView: View {
             ZStack {
                 TapsView(searchText: searchText, onSelect: openTap)
                     .opacity(selectedTap == nil ? 1 : 0)
-                    .offset(x: selectedTap == nil ? 0 : -60)
+                    .offset(x: selectedTap == nil || reduceMotion ? 0 : -60)
                     // Disabled, not just covered: the hidden rows must leave the Tab order.
                     .disabled(selectedTap != nil)
                     .accessibilityHidden(selectedTap != nil)
@@ -275,7 +277,10 @@ struct ContentView: View {
                     packageGrid(tap: tap)
                         // Opaque, so the receding list never shows through between the cards.
                         .background(.background)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        // Reduce Motion turns the push into the crossfade it asks x-axis
+                        // transitions to become.
+                        .transition(reduceMotion ? .opacity
+                                                 : .move(edge: .trailing).combined(with: .opacity))
                         .zIndex(1)
                 }
             }
@@ -687,7 +692,8 @@ struct ContentView: View {
         ToolbarItem(placement: .primaryAction) {
             Button { refresh() } label: {
                 Image(systemName: "arrow.clockwise")
-                    .symbolEffect(.rotate, options: .repeating, isActive: model.isRefreshing)
+                    .symbolEffect(.rotate, options: .repeating,
+                                  isActive: model.isRefreshing && !reduceMotion)
             }
             .disabled(model.isRefreshing)
             .help("Refresh installed packages and check for updates")
@@ -780,20 +786,59 @@ extension View {
     /// recedes — blurred and dimmed, never hidden, because the data on screen is still valid while
     /// it is re-checked — behind a glass capsule naming the work. On a warm cache the whole thing
     /// is a soft half-second pulse, which is exactly the acknowledgment a fast refresh needs.
-    /// Worn by the grid and by an open detail sheet's content alike — the sheet is frontmost, so
-    /// without its own veil a ⌘R would look ignored.
+    /// Worn by the grid and by an open detail pane's content alike.
     func refreshVeil(_ active: Bool) -> some View {
-        blur(radius: active ? 6 : 0)
+        modifier(RefreshVeil(active: active))
+    }
+
+    /// The wash behind an inline warning — a deprecated package, an untrusted tap. Shared so the
+    /// two banners cannot drift apart, and so the tint answers Increase Contrast in one place: a
+    /// fixed 10% wash ignores the setting, and the system's own answer is a stronger fill plus the
+    /// border it adds to controls.
+    func warningWash(_ tint: Color) -> some View {
+        modifier(WarningWash(tint: tint))
+    }
+}
+
+struct WarningWash: ViewModifier {
+    let tint: Color
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        let increased = contrast == .increased
+        return content
+            .font(.callout)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(tint.opacity(increased ? 0.22 : 0.1), in: shape)
+            .overlay { if increased { shape.strokeBorder(tint.opacity(0.5)) } }
+    }
+}
+
+/// A modifier rather than a plain extension so it can read Reduce Motion: animating into and out
+/// of a blur, and sustaining a rotation, are two of the effects that setting exists to remove. The
+/// dimming survives — it is the part that carries the meaning.
+struct RefreshVeil: ViewModifier {
+    let active: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: active && !reduceMotion ? 6 : 0)
             .opacity(active ? 0.5 : 1)
             .overlay {
                 if active {
                     Label("Checking for updates…", systemImage: "arrow.triangle.2.circlepath")
-                        .symbolEffect(.rotate, options: .repeating)
+                        .symbolEffect(.rotate, options: .repeating, isActive: !reduceMotion)
                         .font(.callout.weight(.medium))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
                         .glassEffect()
-                        .transition(.blurReplace)
+                        .transition(reduceMotion ? AnyTransition.opacity
+                                                : AnyTransition(.blurReplace))
                 }
             }
             .animation(.smooth(duration: 0.3), value: active)
@@ -804,6 +849,7 @@ extension View {
 /// into its live log.
 private struct OperationsPopover: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expanded: Set<BrewOperation.ID> = []
 
     var body: some View {
@@ -833,7 +879,9 @@ private struct OperationsPopover: View {
             HStack(spacing: 8) {
                 Image(systemName: operation.symbolName)
                     .foregroundStyle(tint(for: operation.state))
-                    .symbolEffect(.rotate, options: .repeating, isActive: operation.state == .running)
+                    // The "Running…" caption below already says this without moving.
+                    .symbolEffect(.rotate, options: .repeating,
+                                  isActive: operation.state == .running && !reduceMotion)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(operation.title)
