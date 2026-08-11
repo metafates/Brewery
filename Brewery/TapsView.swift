@@ -21,11 +21,16 @@ struct TapsView: View {
                     BuiltInTapRow(row: row, onSelect: { onSelect(row.name) })
                 }
             } header: {
-                Text("Built in")
-            } footer: {
-                Text("The two main catalogs: formulae are command-line tools, casks are Mac apps.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // Orientation copy reads best *before* the rows — a footer teaches you what a
+                // list was only after you've read it.
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Built in")
+                    Text("Formulae are command-line tools, casks are Mac apps.")
+                        .font(.caption)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+                }
             }
 
             Section {
@@ -44,11 +49,14 @@ struct TapsView: View {
                     }
                 }
             } header: {
-                Text("Your taps")
-            } footer: {
-                Text("Taps are extra catalogs that developers publish to distribute their software. Add one and its packages install like any other.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your taps")
+                    Text("Extra catalogs published by developers. Anything they list installs like any other package.")
+                        .font(.caption)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+                }
             }
         }
         .listStyle(.inset)

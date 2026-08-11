@@ -25,10 +25,14 @@ struct ServicesView: View {
                     ForEach(hits) { hit in
                         ServiceRow(package: hit.package, onSelect: { onSelect(hit.package) })
                     }
-                } footer: {
-                    Text("Some tools run in the background — databases, media servers and the like. Switching one on starts it now and at every login; off stops it.")
+                } header: {
+                    // No title — the window title is "Services"; just the orientation line,
+                    // read before the rows rather than dangling after them.
+                    Text("Background helpers like databases and media servers. Switching one on starts it now and at every login; off stops it.")
                         .font(.caption)
+                        .fontWeight(.regular)
                         .foregroundStyle(.secondary)
+                        .textCase(nil)
                 }
             }
             .listStyle(.inset)
