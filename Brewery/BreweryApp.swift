@@ -39,7 +39,7 @@ struct BreweryApp: App {
                     model.upgradeAll()
                 }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
-                .disabled(model.outdatedCount == 0)
+                .disabled(model.outdated.isEmpty)
             }
             CommandGroup(after: .pasteboard) {
                 Divider()

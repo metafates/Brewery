@@ -28,7 +28,7 @@ nonisolated struct CatalogCache: Codable {
     }
 }
 
-enum CatalogError: Error, Equatable {
+enum CatalogError: Error {
     case badStatus(code: Int)
 }
 
@@ -278,7 +278,7 @@ nonisolated struct CatalogStore {
             cron = try? container.decodeIfPresent(String.self, forKey: .cron)
             keepAlive = ((try? container.decodeIfPresent([String: Lenient<Bool>].self, forKey: .keepAlive))?
                 .contains { $0.value.value == true }) ?? false
-            requireRoot = ((try? container.decodeIfPresent(Bool.self, forKey: .requireRoot)) ?? nil) ?? false
+            requireRoot = (try? container.decodeIfPresent(Bool.self, forKey: .requireRoot)) ?? false
             logPath = try? container.decodeIfPresent(String.self, forKey: .logPath)
             sockets = (try? container.decodeIfPresent(StringOrArray.self, forKey: .sockets))??.values ?? []
         }

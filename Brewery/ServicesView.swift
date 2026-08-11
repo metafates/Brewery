@@ -86,7 +86,10 @@ private struct ServiceRow: View {
             .buttonStyle(.plain)
             .accessibilityHint("Shows package details")
 
-            statusCaption
+            // Speaks only when it has something to say — running, scheduled, or failed. The
+            // quiet states are what the switch position already shows.
+            ServiceStatusLabel(package: package)
+                .font(.caption)
 
             ServiceToggle(package: package)
         }
@@ -102,12 +105,6 @@ private struct ServiceRow: View {
         return ([name] + rest).joined(separator: " ")
     }
 
-    /// Speaks only when it has something to say — running, scheduled, or failed. The quiet
-    /// states are what the switch position already shows.
-    private var statusCaption: some View {
-        ServiceStatusLabel(package: package)
-            .font(.caption)
-    }
 }
 
 /// The colored-dot status line, shared by the Services rows and the detail sheet so both name a
@@ -121,14 +118,14 @@ struct ServiceStatusLabel: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        switch model.serviceStatus(for: package)?.health {
+        let status = model.serviceStatus(for: package)
+        switch status?.health {
         case .started:
             caption("Running", color: .green)
         case .scheduled:
             caption("Scheduled", color: .orange)
         case .error:
-            let code = model.serviceStatus(for: package)?.exitCode
-            caption(code.map { "Failed (exit \($0))" } ?? "Failed", color: .red)
+            caption(status?.exitCode.map { "Failed (exit \($0))" } ?? "Failed", color: .red)
         default:
             if let quietLabel {
                 caption(quietLabel, color: .secondary)

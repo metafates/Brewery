@@ -312,8 +312,6 @@ final class AppModel {
                with: outdated.mapValues(\.installed))
     }
 
-    var outdatedCount: Int { outdated.count }
-
     /// Third-party taps are absent from formulae.brew.sh, so all we can honestly show for them is
     /// the name, the kind and the version that is on disk.
     private func merged(_ known: [Package], with versions: [Package.ID: [String]]) -> [Package] {

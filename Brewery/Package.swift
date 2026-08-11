@@ -34,7 +34,7 @@ nonisolated struct CaskArtifact: Codable, Hashable {
         case installer
         case font
         case qlplugin
-        case prefpane = "prefpane"
+        case prefpane
         case screenSaver = "screen_saver"
         case dictionary
         case inputMethod = "input_method"
@@ -313,17 +313,6 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         tap ?? (kind == .formula ? "homebrew/core" : "homebrew/cask")
     }
 
-    /// The `user` half of a third-party tap — the identity people recognize, and all that fits
-    /// in a card's caption row. nil for core, which the kind tag already implies.
-    var tapOwner: String? {
-        tap.flatMap { $0.split(separator: "/").first.map(String.init) }
-    }
-
-    /// Favicon of the package homepage; nil when there is no homepage host to ask about.
-    var iconURL: URL? {
-        guard let host = homepageURL?.host(), !host.isEmpty else { return nil }
-        return URL(string: "https://icons.duckduckgo.com/ip3/\(host).ico")
-    }
 }
 
 nonisolated struct InstalledInfo: Equatable, Hashable {

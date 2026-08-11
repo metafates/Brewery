@@ -126,21 +126,16 @@ nonisolated enum TapStore {
         let remote = remoteURL(of: directory)
         var packages: [Package] = []
 
-        let formulaFiles = graveyarded(formulaFiles(at: directory), kind: .formula, installed: installed)
-        for file in formulaFiles {
-            guard let text = try? String(contentsOf: file, encoding: .utf8),
-                  let parsed = parseFormula(text) else { continue }
-            packages.append(package(kind: .formula, file: file, parsed: parsed, tap: tap,
-                                    remote: remote, tapRoot: directory, installs90d: installs90d))
+        func collect(_ kind: PackageKind, _ files: [URL], _ parse: (String) -> ParsedDefinition?) {
+            for file in graveyarded(files, kind: kind, installed: installed) {
+                guard let text = try? String(contentsOf: file, encoding: .utf8),
+                      let parsed = parse(text) else { continue }
+                packages.append(package(kind: kind, file: file, parsed: parsed, tap: tap,
+                                        remote: remote, tapRoot: directory, installs90d: installs90d))
+            }
         }
-
-        let caskFiles = graveyarded(caskFiles(at: directory), kind: .cask, installed: installed)
-        for file in caskFiles {
-            guard let text = try? String(contentsOf: file, encoding: .utf8),
-                  let parsed = parseCask(text) else { continue }
-            packages.append(package(kind: .cask, file: file, parsed: parsed, tap: tap,
-                                    remote: remote, tapRoot: directory, installs90d: installs90d))
-        }
+        collect(.formula, formulaFiles(at: directory), parseFormula)
+        collect(.cask, caskFiles(at: directory), parseCask)
 
         return packages
     }

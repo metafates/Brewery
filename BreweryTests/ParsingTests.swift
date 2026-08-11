@@ -267,7 +267,6 @@ struct CatalogDecodingTests {
         #expect(libfoo.desc == nil)
         #expect(libfoo.homepage == nil)
         #expect(libfoo.homepageURL == nil)
-        #expect(libfoo.iconURL == nil)
         #expect(libfoo.version == "0.9")
         #expect(libfoo.deprecated)
         #expect(libfoo.disabled)
@@ -294,7 +293,7 @@ struct CatalogDecodingTests {
         #expect(vscode.deprecated == false)
         #expect(vscode.disabled == false)
         #expect(vscode.id == "cask:visual-studio-code")
-        #expect(vscode.iconURL == URL(string: "https://icons.duckduckgo.com/ip3/code.visualstudio.com.ico"))
+        #expect(vscode.homepageURL?.host() == "code.visualstudio.com")
         #expect(vscode.rubySourceURL
                 == URL(string: "https://github.com/Homebrew/homebrew-cask/blob/HEAD/Casks/v/visual-studio-code.rb"))
         // Payload only, aggregated by kind: uninstall/zap plumbing drops out; the binary names

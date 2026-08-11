@@ -9,7 +9,7 @@ import Foundation
 /// Favicons for package homepages, keyed by **host** — many packages share one homepage host, so
 /// deduping there is a large win over keying by package.
 ///
-/// Three layers, checked in order: an in-memory `NSCache`, the disk directory, then the network.
+/// Three layers, checked in order: an in-memory dictionary, the disk directory, then the network.
 /// The network fetch runs in a *shared task per host*, which is the whole point of this type: a
 /// grid cell that scrolls away cancels its `await`, never the fetch, so the bytes still land in the
 /// cache and the next appearance is a hit. `AsyncImage` cancelled the load itself, which is why

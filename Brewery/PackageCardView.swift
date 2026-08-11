@@ -144,7 +144,6 @@ struct PackageCardView: View {
         model.effectiveTap(for: package).flatMap { $0.split(separator: "/").first.map(String.init) }
     }
 
-
     // MARK: - Action
 
     /// The control swaps as the package's state does — Install, then a spinner, then a checkmark.

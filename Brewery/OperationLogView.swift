@@ -43,7 +43,7 @@ struct OperationLogView: View {
     /// a pipe that has no terminal to interpret them.
     private static let ansiEscape = #/\x1B\[[0-9;?]*[\x20-\x2F]*[\x40-\x7E]/#
 
-    static func stripANSI(_ line: String) -> String {
+    private static func stripANSI(_ line: String) -> String {
         line.replacing(ansiEscape, with: "")
     }
 

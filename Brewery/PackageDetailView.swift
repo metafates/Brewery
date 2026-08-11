@@ -30,10 +30,6 @@ struct PackageDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
-    init(package: Package) {
-        self.package = package
-    }
-
     private func push(_ item: Package) {
         guard item.id != displayed.id else { return }
         rootFocused = true
@@ -78,8 +74,7 @@ struct PackageDetailView: View {
                     Button {
                         pop()
                     } label: {
-                        Label(stack.count >= 2 ? stack[stack.count - 2].title : package.title,
-                              systemImage: "chevron.backward")
+                        Label(pages[pages.count - 2].title, systemImage: "chevron.backward")
                     }
                     .buttonStyle(.borderless)
                     .keyboardShortcut("[", modifiers: .command)
@@ -107,14 +102,14 @@ struct PackageDetailView: View {
         // horizontal deltas anyway.
         .onAppear { swipeBack.install { pop() } }
         .onDisappear { swipeBack.remove() }
-        .frame(width: 520, height: height(hasSections: hasRelated || hasDetails))
+        .frame(width: 520, height: height)
         // Escape closes it. A sheet is window-modal on macOS, so clicking outside is not a
         // dismissal the platform offers — Escape and Done are.
         .onExitCommand { dismiss() }
     }
 
-    /// Caveats, commands, contents and conflicts fill the sheet the same way the related lists
-    /// do, so they earn the taller frame too — everything past it scrolls.
+    /// Caveats, commands, contents, conflicts and services fill the sheet the same way the
+    /// related lists do, so they earn the taller frame too — everything past it scrolls.
     private var hasDetails: Bool {
         displayed.caveats?.isEmpty == false || !displayed.commands.isEmpty
             || !displayed.artifacts.isEmpty || !displayed.conflicts.isEmpty
@@ -129,9 +124,9 @@ struct PackageDetailView: View {
             || !(model.dependents[displayed.id] ?? []).isEmpty
     }
 
-    private func height(hasSections: Bool) -> CGFloat {
+    private var height: CGFloat {
         if model.latestOperation(for: displayed) != nil { return 580 }
-        return hasSections ? 520 : 380
+        return hasRelated || hasDetails ? 520 : 380
     }
 
     /// The `.app` bundles this cask put on disk and that are still there. Resolved on each pass
@@ -557,17 +552,10 @@ private struct DetailPage: View {
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 5) {
                 ForEach(pkg.artifacts, id: \.kind) { artifact in
-                    GridRow {
-                        Label(label(for: artifact), systemImage: artifact.kind.symbol)
-                            .foregroundStyle(.secondary)
-                            .gridColumnAlignment(.leading)
+                    gridRow(label(for: artifact), symbol: artifact.kind.symbol) {
                         Text(names(for: artifact))
                             .fontDesign(artifact.kind.isMonospaced ? .monospaced : nil)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .accessibilityElement(children: .combine)
                 }
             }
             .font(.callout)
@@ -619,24 +607,24 @@ private struct DetailPage: View {
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 5) {
                 if !service.run.isEmpty {
-                    serviceRow("Command", symbol: "terminal") {
+                    gridRow("Command", symbol: "terminal") {
                         Text(service.run
                             .map { Package.substitutingPrefix($0, prefix: model.client.prefix) }
                             .joined(separator: " "))
                             .fontDesign(.monospaced)
                     }
                 }
-                serviceRow("Schedule", symbol: "clock.arrow.circlepath") {
+                gridRow("Schedule", symbol: "clock.arrow.circlepath") {
                     Text(service.scheduleLabel)
                 }
                 if !service.ports.isEmpty {
-                    serviceRow("Ports", symbol: "network") {
+                    gridRow("Ports", symbol: "network") {
                         Text(service.ports.joined(separator: " · "))
                             .fontDesign(.monospaced)
                     }
                 }
                 if let logPath = service.logPath {
-                    serviceRow("Logs", symbol: "text.alignleft") {
+                    gridRow("Logs", symbol: "text.alignleft") {
                         Text(Package.substitutingPrefix(logPath, prefix: model.client.prefix))
                             .fontDesign(.monospaced)
                     }
@@ -647,7 +635,7 @@ private struct DetailPage: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func serviceRow(_ label: String, symbol: String,
+    private func gridRow(_ label: String, symbol: String,
                             @ViewBuilder content: () -> some View) -> some View {
         GridRow {
             Label(label, systemImage: symbol)

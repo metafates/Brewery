@@ -6,7 +6,7 @@
 import Foundation
 import Observation
 
-enum BrewError: Error, Equatable {
+enum BrewError: Error {
     case notFound
     case cancelled
     case failed(exitCode: Int32)

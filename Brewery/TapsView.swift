@@ -84,8 +84,11 @@ struct TapsView: View {
         Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })
     }
 
+    private var query: String {
+        searchText.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
     private var filteredInfos: [TapInfo] {
-        let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return model.tapInfos }
         return model.tapInfos.filter { $0.name.lowercased().contains(query) }
     }
@@ -94,7 +97,6 @@ struct TapsView: View {
 
     /// The API-backed core taps: not clones, not removable, implicitly trusted.
     private var builtInRows: [BuiltIn] {
-        let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         let rows = [
             BuiltIn(name: "homebrew/core",
                     count: model.catalog.count { $0.kind == .formula && $0.tap == nil },
@@ -332,8 +334,9 @@ struct AddTapPopover: View {
     }
 
     private var namePreview: String {
-        isValid ? "\(name.lowercased().split(separator: "/")[0])/homebrew-\(name.lowercased().split(separator: "/")[1])"
-                : "user/homebrew-repo"
+        guard isValid else { return "user/homebrew-repo" }
+        let parts = name.lowercased().split(separator: "/")
+        return "\(parts[0])/homebrew-\(parts[1])"
     }
 
     private func submit() {

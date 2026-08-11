@@ -346,7 +346,7 @@ struct ContentView: View {
 
     private func badgeCount(for item: SidebarSection) -> Int {
         switch item {
-        case .outdated: model.outdatedCount
+        case .outdated: model.outdated.count
         case .services: model.runningServicesCount
         default: 0
         }
@@ -434,11 +434,8 @@ struct ContentView: View {
         return results[section] ?? browseHits
     }
 
-    /// What the grid will render. Reads the cached array rather than rebuilding it to count it.
-    private var displayedCount: Int {
-        guard isSearching else { return browseHits.count }
-        return (results[section] ?? browseHits).count
-    }
+    /// What the grid will render.
+    private var displayedCount: Int { displayedHits.count }
 
     /// What the browse listing is made of. Deliberately excludes the query: while a search is being
     /// typed the grid still shows this listing, so rebuilding it per keystroke would be pure waste.
@@ -577,16 +574,9 @@ struct ContentView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Picker("Kind", selection: $tapKindFilter) {
-                            ForEach(KindFilter.allCases) { kind in
-                                Text(kind.title).tag(kind)
-                            }
-                        }
-                        .pickerStyle(.inline)
+                        kindPicker($tapKindFilter)
                     } label: {
-                        Label("Filter", systemImage: tapKindFilter != .all
-                              ? "line.3.horizontal.decrease.circle.fill"
-                              : "line.3.horizontal.decrease.circle")
+                        filterLabel(active: tapKindFilter != .all)
                     }
                     .help("Filter by kind")
                     .accessibilityLabel("Filter")
@@ -606,7 +596,7 @@ struct ContentView: View {
                 }
             }
         }
-        if section == .outdated, model.outdatedCount > 0 {
+        if section == .outdated, !model.outdated.isEmpty {
             ToolbarItem(placement: .primaryAction) {
                 Button("Update All") { model.upgradeAll() }
                     .disabled(upgradeAllPending)
@@ -616,20 +606,11 @@ struct ContentView: View {
         if section == .discover {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Picker("Kind", selection: $kindFilter) {
-                        ForEach(KindFilter.allCases) { kind in
-                            Text(kind.title).tag(kind)
-                        }
-                    }
-                    .pickerStyle(.inline)
-
+                    kindPicker($kindFilter)
                     Toggle("Hide Deprecated", isOn: $hideDeprecated)
                     Toggle("From Taps Only", isOn: $tapsOnly)
                 } label: {
-                    // The filled variant is the tell that the grid is not showing everything.
-                    Label("Filter", systemImage: filtersActive
-                          ? "line.3.horizontal.decrease.circle.fill"
-                          : "line.3.horizontal.decrease.circle")
+                    filterLabel(active: filtersActive)
                 }
                 .help("Filter")
                 .accessibilityLabel("Filter")
@@ -638,18 +619,10 @@ struct ContentView: View {
         if section == .installed {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Picker("Kind", selection: $installedKindFilter) {
-                        ForEach(KindFilter.allCases) { kind in
-                            Text(kind.title).tag(kind)
-                        }
-                    }
-                    .pickerStyle(.inline)
-
+                    kindPicker($installedKindFilter)
                     Toggle("From Taps Only", isOn: $installedTapsOnly)
                 } label: {
-                    Label("Filter", systemImage: installedKindFilter != .all || installedTapsOnly
-                          ? "line.3.horizontal.decrease.circle.fill"
-                          : "line.3.horizontal.decrease.circle")
+                    filterLabel(active: installedKindFilter != .all || installedTapsOnly)
                 }
                 .help("Filter by kind")
                 .accessibilityLabel("Filter")
@@ -666,6 +639,22 @@ struct ContentView: View {
                 .accessibilityLabel("Installed Scope")
             }
         }
+    }
+
+    private func kindPicker(_ selection: Binding<KindFilter>) -> some View {
+        Picker("Kind", selection: selection) {
+            ForEach(KindFilter.allCases) { kind in
+                Text(kind.title).tag(kind)
+            }
+        }
+        .pickerStyle(.inline)
+    }
+
+    /// The filled variant is the tell that the grid is not showing everything.
+    private func filterLabel(active: Bool) -> some View {
+        Label("Filter", systemImage: active
+              ? "line.3.horizontal.decrease.circle.fill"
+              : "line.3.horizontal.decrease.circle")
     }
 
     // MARK: - Refresh
@@ -744,9 +733,7 @@ struct ContentView: View {
         } actions: {
             Link("Install Homebrew", destination: URL(string: "https://brew.sh")!)
                 .buttonStyle(.borderedProminent)
-            Button("Refresh") {
-                Task { await model.refresh() }
-            }
+            Button("Refresh") { refresh() }
         }
     }
 

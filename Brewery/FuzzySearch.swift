@@ -7,7 +7,7 @@ import Foundation
 
 /// One ranked result. Carries *why* it matched so a card can caption a command hit — a package
 /// surfaced only because it provides `convert` otherwise looks like a false positive.
-nonisolated struct SearchHit: Identifiable, Hashable {
+nonisolated struct SearchHit: Identifiable {
     let package: Package
     /// Non-nil only when the command index produced the winning score.
     let matchedCommand: String?
@@ -135,7 +135,7 @@ nonisolated enum FuzzySearch {
         if let displayName = package.displayName {
             fold(&buffer, displayName)
             if let value = score(query: q, candidate: buffer) {
-                best = best.map { Swift.max($0, value) } ?? value
+                best = max(best ?? .min, value)
             }
         }
         // Tap packages only (~200 of 16k): the qualified name as one more candidate, so
@@ -145,7 +145,7 @@ nonisolated enum FuzzySearch {
         if let tap = package.tap {
             fold(&buffer, "\(tap)/\(package.name)")
             if let value = score(query: q, candidate: buffer) {
-                best = best.map { Swift.max($0, value) } ?? value
+                best = max(best ?? .min, value)
             }
         }
         if let best { return best }

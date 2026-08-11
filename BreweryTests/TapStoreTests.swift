@@ -244,16 +244,14 @@ struct TapStoreTests {
                 == URL(string: "https://github.com/Homebrew/homebrew-core/blob/HEAD/Formula/w/wget.rb"))
     }
 
-    @Test("tap labels: full tap in the detail row, owner half on the card, core derived")
+    @Test("tap labels: the real tap, or the core tap the kind implies")
     func tapLabels() {
         let tap = Package(kind: .formula, name: "gum", displayName: nil, desc: nil, homepage: nil,
                           version: "", deprecated: false, disabled: false, tap: "charmbracelet/tap")
         #expect(tap.tapLabel == "charmbracelet/tap")
-        #expect(tap.tapOwner == "charmbracelet")
 
         let core = Package(kind: .cask, name: "iterm2", displayName: nil, desc: nil, homepage: nil,
                            version: "", deprecated: false, disabled: false)
         #expect(core.tapLabel == "homebrew/cask")
-        #expect(core.tapOwner == nil)
     }
 }

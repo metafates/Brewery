@@ -6,7 +6,7 @@
 import Foundation
 
 /// What one keg's `INSTALL_RECEIPT.json` tells us.
-nonisolated struct Receipt: Equatable, Hashable {
+nonisolated struct Receipt: Equatable {
     var onRequest: Bool
     var dependencies: [String]   // short names, `declared_directly` entries first
     var apps: [String] = []      // cask `.app` bundle names, e.g. "Firefox.app"
@@ -148,16 +148,13 @@ nonisolated enum Receipts {
                 result[id] = missing
                 continue
             }
-            result[id] = parse(data)
-        }
-
-        return result.mapValues { receipt in
-            var pruned = receipt
-            pruned.dependencies = receipt.dependencies.filter {
+            var receipt = parse(data)
+            receipt.dependencies = receipt.dependencies.filter {
                 installed[Package.packageID(kind: .formula, name: $0)] != nil
             }
-            return pruned
+            result[id] = receipt
         }
+        return result
     }
 
     /// Overlay keys are `kind:shortname`; neither formula names nor cask tokens contain a colon.
