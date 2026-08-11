@@ -61,9 +61,19 @@ final class AppModel {
     /// tears the detail column down, taking any `@State` query with it.
     var queries: [SidebarSection: String] = [:]
 
+    /// The sidebar's destination, and whether the operations popover is showing. Both are in the
+    /// model rather than the view because the menu bar owns commands for them — View ▸ the five
+    /// sections, View ▸ Show Operations — and a `Commands` builder can only reach app-level state.
+    var selection: SidebarSection? = .discover
+    var showOperations = false
+
     /// Bumped by the ⌘F menu command. `ContentView` observes it and moves focus to the search
     /// field — the automatic ⌘F binding has historically been unreliable on macOS.
     private(set) var findRequests = 0
+
+    /// Same channel for Homebrew ▸ Add Tap…: the popover is anchored to a toolbar button that only
+    /// exists on the tap list, so the view has to leave any drill-down before presenting it.
+    private(set) var addTapRequests = 0
 
     let client = BrewClient()
 
@@ -398,7 +408,7 @@ final class AppModel {
     }
 
     func upgradeAll() {
-        enqueue(.upgradeAll, title: "Upgrading all packages", targetID: nil)
+        enqueue(.upgradeAll, title: "Updating all packages", targetID: nil)
     }
 
     // MARK: - Services (v5)
@@ -562,5 +572,10 @@ final class AppModel {
 
     func requestFind() {
         findRequests += 1
+    }
+
+    func requestAddTap() {
+        selection = .taps
+        addTapRequests += 1
     }
 }

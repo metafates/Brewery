@@ -189,6 +189,29 @@ extension BreweryUITests {
     }
 }
 
+/// The menu bar is the macOS command surface: every destination has to be reachable from it, and
+/// from the keyboard alone. Asserted through the window title, which names the section.
+extension BreweryUITests {
+    func testSectionShortcutsSwitchSections() throws {
+        let app = launched()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
+        sleep(15)
+
+        let window = app.windows.firstMatch
+        for (key, section) in [("2", "Installed"), ("3", "Outdated"), ("5", "Taps"), ("1", "Discover")] {
+            app.typeKey(key, modifierFlags: .command)
+            sleep(1)
+            XCTAssertTrue(window.title.hasPrefix(section),
+                          "⌘\(key) should reach \(section); the window says “\(window.title)”.")
+        }
+
+        // Every toolbar action needs its menu bar command, so the menus themselves must exist.
+        for menu in ["View", "Homebrew", "Help"] {
+            XCTAssertTrue(app.menuBars.menuBarItems[menu].exists, "No \(menu) menu.")
+        }
+    }
+}
+
 /// Regression: a TipView sharing the view tree with `ContentUnavailableView.search` blanks the
 /// split view's sidebar (framework interaction, macOS 26). The tip is gated to browsing; this
 /// pins that an empty search keeps the sidebar rendered.

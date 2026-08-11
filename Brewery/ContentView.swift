@@ -52,6 +52,17 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         }
     }
 
+    /// The View menu's key equivalent for this destination, in `allCases` order.
+    var shortcut: KeyEquivalent {
+        switch self {
+        case .discover: "1"
+        case .installed: "2"
+        case .outdated: "3"
+        case .services: "4"
+        case .taps: "5"
+        }
+    }
+
     var searchPrompt: String {
         switch self {
         case .discover: "Search Homebrew"
@@ -131,7 +142,6 @@ struct ContentView: View {
     @AppStorage("installed.kindFilter") private var installedKindFilter: KindFilter = .all
     @AppStorage("installed.tapsOnly") private var installedTapsOnly = false
 
-    @State private var selection: SidebarSection? = .discover
     /// The Taps section's in-column drill-down: nil shows the tap list, a name shows that tap's
     /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs.
     @State private var selectedTap: String?
@@ -148,7 +158,6 @@ struct ContentView: View {
     /// change?" degraded into a 16k element-by-element comparison.
     @State private var browseHits: [SearchHit] = []
     @State private var selectedPackage: Package?
-    @State private var showOperations = false
     @State private var showAddTap = false
     @FocusState private var searchFocused: Bool
 
@@ -174,8 +183,10 @@ struct ContentView: View {
     // MARK: - Shell
 
     private var splitView: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
+        @Bindable var model = model
+
+        return NavigationSplitView {
+            List(selection: $model.selection) {
                 ForEach(SidebarSection.allCases) { item in
                     Label(item.title, systemImage: item.symbol)
                         .badge(badgeCount(for: item))
@@ -193,6 +204,11 @@ struct ContentView: View {
                 }
                 .searchable(text: searchQuery, prompt: searchPrompt)
                 .searchFocused($searchFocused)
+                // Return opens the top hit — the keyboard path from typing a name to reading about
+                // it, without reaching for the pointer.
+                .onSubmit(of: .search) {
+                    if let hit = displayedHits.first { selectedPackage = hit.package }
+                }
         }
         .task(id: searchKey) {
             let ranked = section
@@ -220,12 +236,18 @@ struct ContentView: View {
             browseHits = packages.map { SearchHit(package: $0, matchedCommand: nil) }
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
-        .onChange(of: selection) { if selection != .taps { selectedTap = nil } }
+        .onChange(of: model.selection) { if section != .taps { selectedTap = nil } }
         .onChange(of: selectedTap) { tapKindFilter = .all }
         .onChange(of: model.findRequests) { searchFocused = true }
+        // Homebrew ▸ Add Tap… lands on the tap list first: the popover hangs off a toolbar button
+        // that a drilled-in tap page does not show.
+        .onChange(of: model.addTapRequests) {
+            selectedTap = nil
+            showAddTap = true
+        }
         .onChange(of: model.failureToPresent?.id) { _, failure in
             guard failure != nil else { return }
-            showOperations = true
+            model.showOperations = true
             model.failureToPresent = nil
         }
     }
@@ -304,7 +326,7 @@ struct ContentView: View {
 
     // MARK: - Search
 
-    private var section: SidebarSection { selection ?? .discover }
+    private var section: SidebarSection { model.selection ?? .discover }
 
     nonisolated private static func byPopularity(_ a: Package, _ b: Package) -> Bool {
         let (x, y) = (a.installs90d ?? 0, b.installs90d ?? 0)
@@ -694,10 +716,12 @@ struct ContentView: View {
     // MARK: - Operations
 
     @ToolbarContentBuilder private var operationsToolbar: some ToolbarContent {
+        @Bindable var model = model
+
         if !model.operations.isEmpty {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showOperations.toggle()
+                    model.showOperations.toggle()
                 } label: {
                     if model.isQueueActive {
                         HStack(spacing: 5) {
@@ -716,7 +740,7 @@ struct ContentView: View {
                 }
                 .help("Operations")
                 .accessibilityLabel("Operations")
-                .popover(isPresented: $showOperations, arrowEdge: .bottom) {
+                .popover(isPresented: $model.showOperations, arrowEdge: .bottom) {
                     OperationsPopover()
                 }
             }
