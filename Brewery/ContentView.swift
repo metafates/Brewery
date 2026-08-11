@@ -9,7 +9,7 @@ import SwiftUI
 
 /// The fixed destinations of the sidebar.
 nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
-    case discover, installed, outdated, services
+    case discover, installed, outdated, services, taps
 
     var id: Self { self }
 
@@ -19,6 +19,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .installed: "Installed"
         case .outdated: "Outdated"
         case .services: "Services"
+        case .taps: "Taps"
         }
     }
 
@@ -29,6 +30,8 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .outdated: "arrow.triangle.2.circlepath"
         // Most brew services are servers — redis, postgres, nginx.
         case .services: "server.rack"
+        // The same glyph the detail sheet's tap row wears.
+        case .taps: "spigot"
         }
     }
 
@@ -38,6 +41,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .installed: "Search Installed"
         case .outdated: "Search Outdated"
         case .services: "Search Services"
+        case .taps: "Search Taps"
         }
     }
 
@@ -48,6 +52,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .installed: "No packages installed"
         case .outdated: "Everything is up to date"
         case .services: "No services"
+        case .taps: "This tap provides no packages"
         }
     }
 }
@@ -110,6 +115,9 @@ struct ContentView: View {
     @AppStorage("installed.tapsOnly") private var installedTapsOnly = false
 
     @State private var selection: SidebarSection? = .discover
+    /// The Taps section's in-column drill-down: nil shows the tap list, a name shows that tap's
+    /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs.
+    @State private var selectedTap: String?
     /// Ranked results per section, so leaving a tab and coming back shows that tab's results at
     /// once. A single array meant visiting a tab with an empty query cleared it, and the return
     /// trip flashed the unfiltered listing until the re-rank landed.
@@ -121,6 +129,7 @@ struct ContentView: View {
     @State private var browseHits: [SearchHit] = []
     @State private var selectedPackage: Package?
     @State private var showOperations = false
+    @State private var showAddTap = false
     @FocusState private var searchFocused: Bool
 
     /// How many cards are handed to the grid. It grows as the end of the list is reached and resets
@@ -185,7 +194,7 @@ struct ContentView: View {
             // Discover browses by popularity, not by name: an alphabetical walk of 16k packages
             // opens on "0 A.D." and never reaches anything anyone installs. Installed and Outdated
             // are inventories, where alphabetical is the order you scan.
-            if section == .discover {
+            if section == .discover || (section == .taps && TapStore.coreTaps.contains(selectedTap ?? "")) {
                 packages.sort {
                     let (a, b) = ($0.installs90d ?? 0, $1.installs90d ?? 0)
                     return a == b ? $0.name < $1.name : a > b
@@ -194,6 +203,7 @@ struct ContentView: View {
             browseHits = packages.map { SearchHit(package: $0, matchedCommand: nil) }
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
+        .onChange(of: selection) { if selection != .taps { selectedTap = nil } }
         .onChange(of: model.findRequests) { searchFocused = true }
         .onChange(of: model.failureToPresent?.id) { _, failure in
             guard failure != nil else { return }
@@ -210,6 +220,22 @@ struct ContentView: View {
         } else if section == .discover, model.catalog.isEmpty {
             ProgressView("Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if section == .taps, selectedTap == nil {
+            TapsView(searchText: searchText,
+                     onSelect: { tap in withAnimation(.smooth(duration: 0.3)) { selectedTap = tap } })
+                .refreshVeil(model.isRefreshing)
+        } else if section == .taps, let tap = selectedTap {
+            VStack(alignment: .leading, spacing: 0) {
+                TapPageHeader(tap: tap)
+                PackageGridView(hits: Array(displayedHits.prefix(window)),
+                                totalCount: displayedCount,
+                                isSearching: isSearching,
+                                onSelect: { selectedPackage = $0 },
+                                emptyMessage: emptyMessage,
+                                onNeedMore: { window += Self.windowStep },
+                                onRefresh: emptyStateRefresh)
+            }
+            .refreshVeil(model.isRefreshing)
         } else if section == .services {
             // State rows, not catalog cards — a handful of items, no windowing needed.
             ServicesView(hits: displayedHits,
@@ -260,6 +286,18 @@ struct ContentView: View {
         case .installed: installedFiltered(model.installedPackages(scope: installedScope))
         case .outdated: model.outdatedPackages
         case .services: model.servicePackages
+        case .taps: tapPagePackages
+        }
+    }
+
+    /// A tap page's contents. Core rows are the API catalog sliced by kind; third-party rows are
+    /// the scan's packages for that tap. The list view (selectedTap == nil) needs no packages.
+    private var tapPagePackages: [Package] {
+        switch selectedTap {
+        case nil: []
+        case "homebrew/core": model.catalog.filter { $0.kind == .formula && $0.tap == nil }
+        case "homebrew/cask": model.catalog.filter { $0.kind == .cask && $0.tap == nil }
+        case let tap?: model.tapPackages(for: tap)
         }
     }
 
@@ -304,7 +342,7 @@ struct ContentView: View {
             } else {
                 section.emptyMessage
             }
-        case .outdated, .services:
+        case .outdated, .services, .taps:
             section.emptyMessage
         }
     }
@@ -336,6 +374,7 @@ struct ContentView: View {
         let installedKindFilter: KindFilter
         let tapsOnly: Bool
         let installedTapsOnly: Bool
+        let selectedTap: String?
         /// Not a count: a tap rescan can swap entries while netting zero, which a count cannot see.
         let catalogGeneration: Int
         let installedCount: Int
@@ -351,6 +390,7 @@ struct ContentView: View {
                   installedKindFilter: installedKindFilter,
                   tapsOnly: tapsOnly,
                   installedTapsOnly: installedTapsOnly,
+                  selectedTap: selectedTap,
                   catalogGeneration: model.catalogGeneration,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
@@ -365,7 +405,8 @@ struct ContentView: View {
                                       installedScope: installedScope,
                                       installedKindFilter: installedKindFilter,
                                       tapsOnly: tapsOnly,
-                                      installedTapsOnly: installedTapsOnly),
+                                      installedTapsOnly: installedTapsOnly,
+                                      selectedTap: selectedTap),
                   catalogGeneration: model.catalogGeneration,
                   commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
@@ -399,6 +440,7 @@ struct ContentView: View {
         let installedKindFilter: KindFilter
         let tapsOnly: Bool
         let installedTapsOnly: Bool
+        let selectedTap: String?
     }
 
     // MARK: - Counts
@@ -418,6 +460,10 @@ struct ContentView: View {
         case .installed: return "\(formatted) installed"
         case .outdated: return "\(formatted) outdated"
         case .services: return count == 1 ? "1 service" : "\(formatted) services"
+        case .taps:
+            if selectedTap != nil { return count == 1 ? "1 package" : "\(formatted) packages" }
+            let taps = model.tapInfos.count + 2   // + the two built-in rows
+            return "\(taps) taps"
         }
     }
 
@@ -426,7 +472,7 @@ struct ContentView: View {
         switch section {
         case .discover: filtersActive
         case .installed: installedScope != .onRequest || installedKindFilter != .all || installedTapsOnly
-        case .outdated, .services: false
+        case .outdated, .services, .taps: false
         }
     }
 
@@ -436,6 +482,33 @@ struct ContentView: View {
     /// bar's ⇧⌘U is invisible from here, and the section whose whole job is updating should not
     /// make the user update one card at a time.
     @ToolbarContentBuilder private var filterToolbar: some ToolbarContent {
+        if section == .taps {
+            if let tap = selectedTap {
+                // In-column drill-down: back belongs in the navigation slot.
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        withAnimation(.smooth(duration: 0.3)) { selectedTap = nil }
+                    } label: {
+                        Label("Taps", systemImage: "chevron.backward")
+                    }
+                    .keyboardShortcut("[", modifiers: .command)
+                    .help("Back to \(tap == selectedTap ? "the tap list" : "Taps")")
+                }
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showAddTap = true
+                    } label: {
+                        Label("Add Tap", systemImage: "plus")
+                    }
+                    .help("Add a tap")
+                    .accessibilityLabel("Add Tap")
+                    .popover(isPresented: $showAddTap, arrowEdge: .bottom) {
+                        AddTapPopover(onAdd: { model.addTap($0) })
+                    }
+                }
+            }
+        }
         if section == .outdated, model.outdatedCount > 0 {
             ToolbarItem(placement: .primaryAction) {
                 Button("Update All") { model.upgradeAll() }

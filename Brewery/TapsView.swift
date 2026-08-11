@@ -1,0 +1,284 @@
+//
+//  TapsView.swift
+//  Brewery
+//
+
+import SwiftUI
+
+/// The Taps section's list: built-in catalogs pinned on top, then the cloned taps with their
+/// contents, install counts, freshness and brew 6 trust state. Rows open the tap's package page.
+struct TapsView: View {
+    let searchText: String
+    let onSelect: (String) -> Void
+
+    @Environment(AppModel.self) private var model
+    @State private var removing: TapInfo?
+
+    var body: some View {
+        List {
+            Section("Built in") {
+                ForEach(builtInRows, id: \.name) { row in
+                    BuiltInTapRow(row: row, onSelect: { onSelect(row.name) })
+                }
+            }
+
+            Section("Your taps") {
+                if filteredInfos.isEmpty {
+                    Text(searchText.isEmpty ? "No taps added yet — use + to add one."
+                                            : "No taps match the search.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(filteredInfos) { info in
+                        TapRow(info: info,
+                               installedCount: model.installedCount(fromTap: info.name),
+                               trust: model.trustState,
+                               onSelect: { onSelect(info.name) },
+                               onRemove: { removing = info })
+                    }
+                }
+            }
+        }
+        .listStyle(.inset)
+        .confirmationDialog(removalTitle, isPresented: removalPresented, titleVisibility: .visible) {
+            if let info = removing, model.installedCount(fromTap: info.name) == 0 {
+                Button("Remove Tap", role: .destructive) { model.removeTap(info.name) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let info = removing {
+                if model.installedCount(fromTap: info.name) > 0 {
+                    Text("Homebrew refuses to remove a tap while packages from it are installed. Uninstall them first.")
+                } else {
+                    Text("The tap's local copy is removed; it can be added again anytime. If Homebrew trusts it, that trust survives and reapplies on re-adding.")
+                }
+            }
+        }
+    }
+
+    private var removalTitle: String {
+        removing.map { "Remove \($0.name)?" } ?? ""
+    }
+
+    private var removalPresented: Binding<Bool> {
+        Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })
+    }
+
+    private var filteredInfos: [TapInfo] {
+        let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return model.tapInfos }
+        return model.tapInfos.filter { $0.name.lowercased().contains(query) }
+    }
+
+    struct BuiltIn { let name: String; let count: Int; let kindLabel: String }
+
+    /// The API-backed core taps: not clones, not removable, implicitly trusted.
+    private var builtInRows: [BuiltIn] {
+        let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        let rows = [
+            BuiltIn(name: "homebrew/core",
+                    count: model.catalog.count { $0.kind == .formula && $0.tap == nil },
+                    kindLabel: "formulae"),
+            BuiltIn(name: "homebrew/cask",
+                    count: model.catalog.count { $0.kind == .cask && $0.tap == nil },
+                    kindLabel: "casks"),
+        ]
+        guard !query.isEmpty else { return rows }
+        return rows.filter { $0.name.contains(query) }
+    }
+}
+
+/// The shared leading tile — taps have no favicon worth fetching (they are all GitHub repos),
+/// so the app's tap glyph does the identifying.
+private struct TapTile: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(.quaternary.opacity(0.6))
+            .frame(width: 32, height: 32)
+            .overlay {
+                Image(systemName: "spigot")
+                    .foregroundStyle(.secondary)
+            }
+    }
+}
+
+private struct BuiltInTapRow: View {
+    let row: TapsView.BuiltIn
+    let onSelect: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onSelect) {
+                HStack(spacing: 12) {
+                    TapTile()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.name)
+                        Text("\(row.count.formatted(.number)) \(row.kindLabel)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+
+            TagLabel("Built in")
+                .font(.caption)
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+private struct TapRow: View {
+    let info: TapInfo
+    let installedCount: Int
+    let trust: TrustState
+    let onSelect: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onSelect) {
+                HStack(spacing: 12) {
+                    TapTile()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(info.name)
+                        Text(contents)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows the tap's packages")
+
+            if let checked = info.lastChecked {
+                Text("Checked \(checked.formatted(.relative(presentation: .named)))")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            trustBadge
+        }
+        .padding(.vertical, 3)
+        .contextMenu {
+            Button("Remove Tap…", role: .destructive, action: onRemove)
+        }
+    }
+
+    private var contents: String {
+        var parts: [String] = []
+        if info.formulaCount > 0 {
+            parts.append("\(info.formulaCount) \(info.formulaCount == 1 ? "formula" : "formulae")")
+        }
+        if info.caskCount > 0 {
+            parts.append("\(info.caskCount) \(info.caskCount == 1 ? "cask" : "casks")")
+        }
+        if parts.isEmpty { parts.append("empty") }
+        if installedCount > 0 { parts.append("\(installedCount) installed") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Quiet when all is well; orange when brew is hiding things from the user.
+    @ViewBuilder private var trustBadge: some View {
+        if trust.isTrusted(info.name) {
+            Label("Trusted", systemImage: "checkmark.shield")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            let items = trust.trustedItemCount(in: info.name)
+            Label(items > 0 ? "\(items) item\(items == 1 ? "" : "s") trusted" : "Untrusted",
+                  systemImage: items > 0 ? "shield.lefthalf.filled" : "shield.slash")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
+    }
+}
+
+/// The slim header above a tap's package grid: where it comes from, how fresh it is, and — when
+/// brew distrusts it — why parts of it may be invisible elsewhere.
+struct TapPageHeader: View {
+    let tap: String
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 16) {
+                if let remote = info?.remote, let url = URL(string: remote) {
+                    Link(destination: url) {
+                        Label(url.host() ?? remote, systemImage: "safari")
+                    }
+                    .pointerStyle(.link)
+                }
+                if let checked = info?.lastChecked {
+                    Text("Checked \(checked.formatted(.relative(presentation: .named)))")
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+            }
+            .font(.callout)
+
+            if let info, !model.trustState.isTrusted(info.name) {
+                Label("Homebrew doesn't trust this tap yet: its services and some listings stay hidden. Installing an item trusts that item.",
+                      systemImage: "shield.slash")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+
+    private var info: TapInfo? {
+        model.tapInfos.first { $0.name == tap }
+    }
+}
+
+/// The add-tap popover: one field, live validation, and an honest caption about what tapping does.
+struct AddTapPopover: View {
+    let onAdd: (String) -> Void
+
+    @State private var name = ""
+    @Environment(\.dismiss) private var dismiss
+
+    private var isValid: Bool { AppModel.isValidTapName(name) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Add Tap")
+                .font(.headline)
+
+            TextField("user/repo", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 240)
+                .onSubmit { if isValid { submit() } }
+
+            Text("Clones github.com/\(namePreview). Formulae from it stay untrusted until you install one.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 240, alignment: .leading)
+
+            HStack {
+                Spacer()
+                Button("Add") { submit() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isValid)
+            }
+        }
+        .padding(14)
+    }
+
+    private var namePreview: String {
+        isValid ? "\(name.lowercased().split(separator: "/")[0])/homebrew-\(name.lowercased().split(separator: "/")[1])"
+                : "user/homebrew-repo"
+    }
+
+    private func submit() {
+        onAdd(name)
+        dismiss()
+    }
+}

@@ -17,7 +17,7 @@ A native macOS GUI for Homebrew. SwiftUI, macOS 26, zero third-party dependencie
 ## Non-goals (v1)
 
 - **No destructive brew commands.** No `uninstall`, `zap`, `cleanup`, `pin`/`unpin`, `--force`. Hard safety requirement — structurally enforced, see [Safety](#safety).
-- No taps management *commands* — no `tap`, `untap`, `trust`. **(v4)** reads installed taps from disk and surfaces their packages; adding, removing and trusting taps stays in the terminal. (The one trust write that happens is brew's own: installing by qualified name auto-trusts the item — disclosed in the UI, see v4.) **(v5)** Services are managed — but only `start`/`stop`: no `kill`, no `cleanup` (deletes plists), no `restart`/`run`, no root services, no `--file`. No doctor. No dependency *graph visualization* — v2 shows flat dependency/dependent lists from install receipts, nothing more.
+- **(v6)** Taps are managed — but only `tap` and `untap`: no `--force` (it uninstalls the tap's packages), no `--custom-remote` (silently repoints an existing tap at an arbitrary URL), no `--repair`/`--eval-all`. Trust stays read-only: the UI shows brew 6 trust state per tap, and the only trust write remains brew's own install-time auto-trust (disclosed in the UI). **(v5)** Services are managed — but only `start`/`stop`: no `kill`, no `cleanup` (deletes plists), no `restart`/`run`, no root services, no `--file`. No doctor. No dependency *graph visualization* — v2 shows flat dependency/dependent lists from install receipts, nothing more.
 - No analytics-based popularity *ranking* — v3 displays install counts in the detail sheet, but they still don't feed the search scorer (revisit only if search feels bad in practice).
 - No Settings pane, no multiple windows, no log persistence across launches.
 - No App Store distribution (the app cannot be sandboxed — it execs `brew`).
@@ -64,6 +64,15 @@ Verified against brew 6.x source and live probes (six service formulae installed
 - The formula API's **`service` block** (`service.rb:715-767`, `.compact_blank` — absent key = default): `run` (string *or* array), `run_type` ∈ `immediate`/`interval`/`cron`, `interval`, `cron`, `keep_alive` (object of booleans), `require_root`, `working_dir`, `log_path`, `error_log_path`, `sockets` (`tcp://host:port` strings), `environment_variables`, more. Paths embed `$HOMEBREW_PREFIX` — the caveats substitution already handles that.
 - Services never trigger brew auto-update (`utils/auto-update.sh:144-155` — `services` absent from the trigger list). `HOMEBREW_SERVICES_NO_DOMAIN_WARNING=1` silences a stderr domain warning that fires when uid≠euid — set on every invocation.
 - **Trust gate**: `services list` uses `Formula.installed`, whose bare `rescue` silently drops untrusted-tap formulae (`formula.rb:2648-2655`) — their services vanish from the list with exit 0. Accepted: Brewery-installed tap items are auto-trusted; the residual gap is documented in Risks.
+
+### Taps management (v6)
+
+Verified against brew 6.x source and live probes:
+
+- **`brew tap user/repo` cannot hang and cannot surprise.** One-arg form always clones `https://github.com/user/homebrew-repo` over HTTPS (`tap.rb:408-410`); brew itself sets `GIT_TERMINAL_PROMPT=0`; and brew 6 has **no interactive prompt anywhere** — `Ask.confirm?` short-circuits to false on non-TTY stdio (`ask.rb:13`), so piped invocations can never block. Progress (`==> Tapping…`, `Tapped N formulae`) goes to **stderr**. Already tapped → silent exit 0 (indistinguishable from success by code — the post-op rescan is the truth). Invalid name / unreachable repo / network failure → exit 1 with a readable error; brew removes partial clones itself. `brew tap` with args is on the auto-update trigger list (`auto-update.sh:151-152`) — the standing `HOMEBREW_NO_AUTO_UPDATE=1` covers it. Tapping **never writes trust**: the tap arrives untrusted, and untrusted formulae are never evaluated (the description-cache pass rescues `UntrustedTapError` before eval, `description_cache_store.rb:89`).
+- **`brew untap user/repo` is self-guarding on piped stdio.** With installed packages from the tap it prints "Refusing to untap…" and exits 1 having deleted nothing (`cmd/untap.rb:60-66` + `ask.rb:13`). Plain untap deletes the clone, manpage/completion symlinks and description-cache entries (`tap.rb:869-909`). **Trust entries survive untap** and silently reapply on re-tap — disclosed in the removal dialog. `untap --force` uninstalls the tap's kegs and casks first — destructive, unrepresentable here.
+- **Trust store**: `~/.config/homebrew/trust.json` (XDG), atomic writes → safe to read directly; keys `trustedtaps`/`trustedformulae`/`trustedcasks`/`trustedcommands`, values lowercased. Entries are `user/repo` **only for default-GitHub-remote taps**; custom-remote taps store normalized URLs, so the reader tolerates URL-shaped entries and treats anything unmatched as untrusted. Official taps are implicitly trusted and never stored (`tap.rb:1489-1491`). Partial trust = any item entry prefixed `tap/` (`trust.rb:290-295`).
+- **Cheap per-tap signals**: `.git/FETCH_HEAD` mtime = "last checked" (`brew update` touches it per tap, `cmd/update.sh:905`); contents counts come from the v4 scan; the remote from the already-parsed `.git/config`. `brew tap-info` is a trap — a GitHub API call per non-core tap plus formula eval — and is never used.
 
 ### Installed state
 
@@ -117,6 +126,7 @@ Every keg carries an install-time receipt, and it answers all of v2's dependency
 | `IconStore.swift` *(v3)* | actor: favicon fetch with in-flight dedup and a concurrency cap → memory dictionary + disk LRU (byte-capped); negative-result markers |
 | `FuzzySearch.swift` | Pure scorer + `@concurrent` ranking |
 | `ServicesView.swift` *(v5)* | The Services section: a `List` of icon/name/command rows with status + toggle; shared `ServiceToggle` |
+| `TapsView.swift` *(v6)* | The Taps section: tap rows with trust badges, the tap page, add-tap popover, remove confirmation |
 | `ContentView.swift` | `NavigationSplitView` shell: sidebar, `.searchable`, operations popover, brew-missing state |
 | `PackageGridView.swift` | `ScrollView` + `LazyVGrid` of cards, empty states |
 | `PackageCardView.swift` | One card: icon, name, status line, description, action button |
@@ -191,6 +201,15 @@ struct ServiceDefinition: Codable, Hashable {
 enum ServiceHealth: String { case started, stopped, none, scheduled, error, unknown, other }
 struct ServiceStatus { var health: ServiceHealth; var exitCode: Int? }
 
+// v6 — one row of the Taps tab, collected during the v4 scan (zero subprocesses):
+struct TapInfo { var name: String; var remote: String?; var formulaCount: Int; var caskCount: Int
+                 var lastChecked: Date? }   // FETCH_HEAD mtime — brew update touches it per tap
+
+// v6 — the trust store, read directly (atomic writes make that safe); absence = nothing trusted:
+struct TrustState { var taps: Set<String>; var itemPrefixes: [String] }
+// per-tap: official → built-in (implicitly trusted); name ∈ taps → trusted;
+// items with "name/" prefix → partially trusted (count); else untrusted
+
 enum PackageStatus {
     case notInstalled
     case installed(version: String)
@@ -254,13 +273,15 @@ enum BrewCommand: Equatable {
     case servicesList         // v5: ["services", "list", "--json"] — read
     case serviceStart(name: String)  // v5: ["services", "start", name] — mutating, reversible
     case serviceStop(name: String)   // v5: ["services", "stop", name] — mutating, reversible
+    case tap(name: String)           // v6: ["tap", name] — a git clone of github.com/user/homebrew-repo
+    case untap(name: String)         // v6: ["untap", name] — clone removal; brew refuses while in use
 
     var arguments: [String] { ... }
     var isMutating: Bool { ... }   // update / install / upgrade / upgradeAll / serviceStart / serviceStop
 }
 ```
 
-- No `uninstall`, `remove`, `rm`, `cleanup`, `pin`, `unpin`, `zap`, or `--force` case exists anywhere. **(v5)** Likewise no services `kill`/`cleanup`/`restart`/`run`, none of their aliases, no `--all`, no `--file=`, no `--sudo-service-user` — canonical `start`/`stop` on one named service is all that is representable, and both are launchd operations brew itself reverses.
+- No `uninstall`, `remove`, `rm`, `cleanup`, `pin`, `unpin`, `zap`, or `--force` case exists anywhere. **(v5)** Likewise no services `kill`/`cleanup`/`restart`/`run`, none of their aliases, no `--all`, no `--file=`, no `--sudo-service-user` — canonical `start`/`stop` on one named service is all that is representable, and both are launchd operations brew itself reverses. **(v6)** Likewise no `untap --force` (it uninstalls the tap's packages), no `--custom-remote`, no `--repair`, no `--eval-all`; tap names are validated to the default-GitHub `user/repo` shape before enqueue, and neither tap nor untap triggers the session `brew update`.
 - `BrewClient.run` accepts only a `BrewCommand`. There is no `run(arguments: [String])`.
 - Explicit `--formula`/`--cask` on install/upgrade: the app already knows the kind from the catalog, so brew never has to disambiguate a name that exists as both (which it would resolve with a warning).
 - `Process` execs the brew binary directly — no `/bin/sh -c`, so package names are single argv elements with no *shell* injection surface. Names only ever come from decoded catalog/outdated entries, never from a free text field; `enqueue` additionally rejects names starting with `-` so a hostile catalog entry can't be parsed by brew as a flag.
@@ -413,6 +434,7 @@ Alternatives considered: keeping `URLCache` + retry-on-appear (doesn't fix cance
 - **Animation** is deliberately sparse, and only where it hides a rough edge: icons crossfade in when they arrive, the card's action control blur-replaces between Install / spinner / checkmark, and the operations count rolls with `.numericText`. The grid does **not** animate rearranging — a reshuffle on every keystroke is noise, not feedback. The `.navigationSubtitle` count cannot animate: it is AppKit-rendered in the titlebar, so a `contentTransition` does not survive the trip.
 - **Quit while a mutation runs**: `NSApplicationDelegateAdaptor` + `applicationShouldTerminate` shows a confirm dialog when an install/upgrade is running. On confirmed quit, the running brew gets `interrupt()` (the same SIGINT path as Cancel) and up to 5 s to exit; if it still hasn't (rare — brew traps INT), quit anyway and accept the orphan as the lesser evil versus a hung quit. Queued-but-unstarted operations are simply discarded.
 - **(v5) Services section** — System Settings › Login Items, not the card grid (services are state rows): `PackageIconView` (32 pt) + title, subtitle = the humanized run command (monospaced, middle-truncated, `$HOMEBREW_PREFIX` substituted by the caveats helper), trailing status caption + `Toggle`. Toggle on = loaded (`started`/`scheduled`/`error`/`stopped`), off = `none`/`unknown`; on-flip enqueues `serviceStart`, off-flip `serviceStop` (qualified by effective tap; **no session `brew update`** — nothing package-related changes). Status caption speaks only when it has something to say: green "Running", orange "Scheduled", red "Failed (exit N)". Busy swaps the toggle for the small `ProgressView` via the existing `status(for:)`. `require_root` services: toggle disabled, "Requires root — manage in Terminal". Row click opens the detail sheet. The detail sheet gains a **Service** section for any formula with a `service` block — the Contents-style two-column grid (Command mono, Type humanized incl. keep-alive, Ports from sockets, Logs path) topped by the same shared `ServiceToggle` when installed; one component in both places, one source of truth.
+- **(v6) Taps section** — a Sources-style `List`: third-party rows show name, "N formulae · M casks · K installed", last-checked relative date, and a trust badge (quiet `checkmark.shield` Trusted / orange "N items trusted" / orange `shield.slash` Untrusted); `homebrew/core` and `homebrew/cask` sit pinned on top as **Built in** (catalog counts, implicitly trusted, not removable). Row click pushes the tap page in-column (toolbar back in `.navigation` placement, the established slide): remote link, counts, a one-line trust explainer for untrusted taps, and the ordinary `PackageGridView` over that tap's packages (search-within-tap via subset ranking; core pages are the catalog filtered by kind, popularity-sorted). Toolbar `+` opens the add-tap popover — `user/repo` field with live validation and an honesty caption ("Clones github.com/user/homebrew-repo. Formulae from it stay untrusted until you install one.") — and enqueues `tap` with a live log. Context-menu **Remove Tap…** confirms with the exact consequences (clone removed; installed packages remain but lose updates; brew keeps trusting it if re-added) and is disabled with an explanation while packages from the tap are installed — brew would refuse anyway; the UI just declines to enqueue doomed work.
 - **Empty states**: `ContentUnavailableView.search` for no results; "Everything is up to date" in Outdated; full-window "Homebrew not found" with a brew.sh link; "Couldn't load catalog" + Retry when no cache and download failed; **(v5)** "No services" when nothing installed defines one.
 - **(v4) Taps in the UI** — identity everywhere, chrome nowhere:
   - **Card**: the status line gains `TagLabel(owner)` for third-party items — the **owner segment only** (`charmbracelet`, not `charmbracelet/tap`): it is the identity people recognize, and the full string does not fit a caption row that already holds kind + version in a 230 pt column (`.truncationMode(.middle)` + low layout priority as backstop). Core items show no tap tag — 16k cards saying "homebrew/core" is noise, and the kind tag already implies core.
@@ -447,6 +469,7 @@ Swift Testing for units; no BrewClient integration tests (they'd depend on machi
 - **(v4) Parsing additions**: outdated fixture pairing a tap-qualified formula `full_name` with a short cask token — pins that the join rule holds with taps in play.
 - **(v4) FuzzySearch additions**: "charmbracelet" surfaces that tap's packages; a qualified-candidate hit never outranks an exact short-name match; qualified scoring never fires for `tap == nil` packages.
 - **(v4) BrewCommand additions**: `install(name: "user/repo/foo")` argv is still exactly 3 elements and trips no destructive-token regex.
+- **(v6) Taps**: BrewCommand argv for `tap`/`untap` + the widened tripwire (`--custom-remote|--repair|--eval-all` join the forbidden tokens); TrustStore fixtures — the four keys, lowercasing, URL-shaped entries tolerated, missing file → nothing trusted, partial-trust prefix matching; TapInfo collection (counts, FETCH_HEAD mtime) on a fixture tree; `user/repo` validation cases (URLs, dashes, empty rejected).
 - **(v5) Services**: BrewCommand argv per case + the widened tripwire (`kill|--file|--sudo-service-user` join the forbidden tokens; "services" joins the first-token whitelist); `parseServicesList` fixtures — all seven statuses, an unknown status string (→ `.other`), null user/exit_code, empty array; `ServiceDefinition` decode — string-vs-array `run`, `keep_alive` object shapes, `require_root`, absent block → nil; run-type humanizer ("Runs continuously" / "Every 5 min" / cron), `$HOMEBREW_PREFIX` substitution in the command line.
 
 ## Build order
@@ -478,6 +501,11 @@ Each step builds and is independently verifiable (`xcodebuild ... | xcbeautify` 
    c. *Model*: `serviceStatuses` overlay in `refreshState`, `startService`/`stopService` (no session update). *Verify: overlay matches `brew services list` in Terminal.*
    d. *UI*: sidebar section + badge, `ServicesView`, detail Service section, shared toggle. *Verify: screenshots — mixed states incl. atuin's error, toggle mid-flight spinner, redis detail.*
    e. *Live + perf*: toggle redis on/off through the queue; UI thresholds unchanged.
+12. **v6: Taps tab** — in sub-steps, each buildable:
+   a. *TapInfo + TrustStore + tests*. *Verify: six real taps with true counts/dates; charmbracelet derives "2 items trusted".*
+   b. *Commands + model actions + tests*. *Verify: argv exact; validation rejects URLs and flags.*
+   c. *TapsView + routing*. *Verify: screenshots — list with live trust spectrum, tap page, popover, dialog.*
+   d. *Live round trip*: add a small tap through the queue, remove it again; Remove disabled for a tap with installed packages. *Verify: perf thresholds unchanged.*
 
 ## Risks & mitigations
 
@@ -496,3 +524,6 @@ Each step builds and is independently verifiable (`xcodebuild ... | xcbeautify` 
 | *(v5)* services exit codes lie (warnings exit 0) | never trust the code: the post-operation `refreshState` re-reads `services list --json` after every toggle |
 | *(v5)* untrusted-tap services vanish silently from `services list` (brew-side bare `rescue`) | accepted; Brewery-installed tap items are auto-trusted, and the section is defined as "what brew reports" |
 | *(v5)* `require_root` services started as user warn-and-fail later | toggle disabled with a "requires root" caption instead of offering a start that lies |
+| *(v6)* trust entries survive untap and reapply on re-tap (brew-side) | disclosed in the removal dialog; trust management itself stays in the terminal |
+| *(v6)* "already tapped" exits 0 silently — success and no-op look identical | the post-op rescan is the truth; the row list, not the exit code, tells the user what happened |
+| *(v6)* tap progress arrives on stderr | the operation log merges both streams already; nothing is discarded |

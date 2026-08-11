@@ -170,6 +170,47 @@ struct TapStoreTests {
         #expect(TapStore.formulaFiles(at: flat).map(\.lastPathComponent) == ["rootformula.rb"])
     }
 
+    // MARK: - Trust store (v6)
+
+    @Test("trust.json parses: keys, lowercasing, URL entries tolerated, partial trust counted")
+    func trustParsing() {
+        let json = """
+        {"trustedtaps": ["Oven-sh/Bun", "https://git.example/foo/homebrew-bar"],
+         "trustedformulae": ["charmbracelet/tap/crush", "charmbracelet/tap/freeze"],
+         "trustedcasks": ["some/tap/thing"]}
+        """
+        let state = TapStore.TrustStore.parse(Data(json.utf8))
+
+        #expect(state.isTrusted("oven-sh/bun"))          // lowercased on both sides
+        #expect(!state.isTrusted("charmbracelet/tap"))   // only items are trusted there
+        #expect(state.trustedItemCount(in: "charmbracelet/tap") == 2)
+        #expect(state.trustedItemCount(in: "some/tap") == 1)
+        // A URL-shaped tap entry matches no user/repo name — conservative untrusted.
+        #expect(!state.isTrusted("foo/bar"))
+    }
+
+    @Test("malformed or missing trust data reads as nothing trusted")
+    func trustDefensive() {
+        #expect(TapStore.TrustStore.parse(Data("not json".utf8)) == TrustState())
+        #expect(TapStore.TrustStore.parse(Data("[1,2]".utf8)) == TrustState())
+        #expect(TrustState().isTrusted("any/tap") == false)
+        // Official taps are implicitly trusted — brew never writes them to the store.
+        #expect(TrustState().isTrusted("homebrew/command-not-found"))
+        #expect(TrustState().trustedItemCount(in: "any/tap") == 0)
+    }
+
+    @Test("tap name validation: user/repo only — no URLs, flags or extra segments")
+    func tapNameValidation() {
+        #expect(AppModel.isValidTapName("oven-sh/bun"))
+        #expect(AppModel.isValidTapName("Some_User/repo.name"))
+        #expect(!AppModel.isValidTapName("oven-sh"))
+        #expect(!AppModel.isValidTapName("a/b/c"))
+        #expect(!AppModel.isValidTapName("https://github.com/x/y"))
+        #expect(!AppModel.isValidTapName("-flag/repo"))   // dash-prefix is doubly rejected
+        #expect(!AppModel.isValidTapName(""))
+        #expect(!AppModel.isValidTapName("user/repo name"))
+    }
+
     // MARK: - Effective-tap plumbing
 
     @Test("receipt tap normalization: core and absent fold to nil")

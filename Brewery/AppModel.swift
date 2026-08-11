@@ -350,7 +350,8 @@ final class AppModel {
         // A catalog entry can never start with a dash, but brew would read one as a flag if it did.
         switch command {
         case let .install(name, _), let .upgrade(name, _),
-             let .serviceStart(name), let .serviceStop(name):
+             let .serviceStart(name), let .serviceStop(name),
+             let .tap(name), let .untap(name):
             guard !name.isEmpty, !name.hasPrefix("-") else { return }
         default:
             break
@@ -430,6 +431,43 @@ final class AppModel {
         enqueue(.serviceStop(name: qualifiedName(for: package)),
                 title: "Stopping \(package.title)",
                 targetID: package.id)
+    }
+
+    // MARK: - Taps (v6)
+
+    /// The Taps tab's rows, straight from the scan; the trust snapshot rides along.
+    var tapInfos: [TapInfo] { tapScan.infos }
+    var trustState: TrustState { tapScan.trust }
+
+    /// A tap page's contents come from the scan, not the composed catalog: a tap entry that lost
+    /// the core-vs-tap dedupe (bun was upstreamed into core) still belongs on *its tap's* page.
+    func tapPackages(for tap: String) -> [Package] {
+        tapScan.packages.filter { $0.tap == tap }
+    }
+
+    /// Installed packages whose *effective* tap is this one — the receipt outranks the catalog,
+    /// so a collided tap install still counts toward its true origin.
+    func installedCount(fromTap tap: String) -> Int {
+        installed.count { id, info in
+            (info.tap ?? catalogIndex[id]?.tap) == tap
+        }
+    }
+
+    /// Default-GitHub `user/repo` only: URLs and flags are unrepresentable, and the shape keeps
+    /// brew's trust reference clean.
+    nonisolated static func isValidTapName(_ name: String) -> Bool {
+        // First characters alphanumeric: brew would read a leading dash as a flag.
+        name.wholeMatch(of: /[A-Za-z0-9][A-Za-z0-9_-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*/) != nil
+    }
+
+    func addTap(_ name: String) {
+        guard Self.isValidTapName(name) else { return }
+        enqueue(.tap(name: name.lowercased()), title: "Adding \(name)", targetID: nil)
+    }
+
+    func removeTap(_ name: String) {
+        guard Self.isValidTapName(name) else { return }
+        enqueue(.untap(name: name), title: "Removing \(name)", targetID: nil)
     }
 
     private func pump() {

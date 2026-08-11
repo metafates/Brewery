@@ -26,6 +26,12 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     case servicesList
     case serviceStart(name: String)
     case serviceStop(name: String)
+    // v6 — a tap is a git clone of github.com/user/homebrew-repo; untap removes the clone and
+    // refuses by itself while the tap's packages are installed. `untap --force` (which would
+    // uninstall those packages), `--custom-remote`, `--repair` and `--eval-all` are
+    // unrepresentable.
+    case tap(name: String)
+    case untap(name: String)
 
     var arguments: [String] {
         switch self {
@@ -51,6 +57,10 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["services", "start", name]
         case let .serviceStop(name):
             ["services", "stop", name]
+        case let .tap(name):
+            ["tap", name]
+        case let .untap(name):
+            ["untap", name]
         }
     }
 
@@ -59,7 +69,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         case .listFormulae, .listCasks, .outdated, .servicesList:
             false
-        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop:
+        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap:
             true
         }
     }
@@ -68,7 +78,9 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     /// the queue otherwise front-loads before the first mutation.
     var touchesPackages: Bool {
         switch self {
-        case .serviceStart, .serviceStop: false
+        // Service toggles change launchd state; tap/untap clone fresh checkouts — none of them
+        // benefit from a `brew update` first.
+        case .serviceStart, .serviceStop, .tap, .untap: false
         default: isMutating
         }
     }

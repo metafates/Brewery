@@ -5,11 +5,46 @@
 
 import Foundation
 
-/// Everything one scan of `Library/Taps` learned: the packages, and which taps produced them —
-/// the tap set is the guard that keeps a stale receipt from re-cloning an untapped repo.
+/// One row of the Taps tab, collected during the scan — zero subprocesses.
+nonisolated struct TapInfo: Equatable, Identifiable {
+    var name: String          // "user/repo"
+    var remote: String?       // normalized https remote, when parseable
+    var formulaCount: Int     // post-graveyard: what the app actually surfaces
+    var caskCount: Int
+    var lastChecked: Date?    // .git/FETCH_HEAD mtime — brew update touches it per tap
+
+    var id: String { name }
+}
+
+/// The brew 6 trust store, read directly — its writes are atomic, so a read never sees a torn
+/// file, and an absent file simply means nothing is trusted. Entries for custom-remote taps are
+/// stored as URLs; they fail name matching here and read as untrusted, which is the conservative
+/// answer.
+nonisolated struct TrustState: Equatable {
+    var taps: Set<String> = []
+    var itemPrefixes: [String] = []
+
+    func isTrusted(_ tap: String) -> Bool {
+        // Official taps are implicitly trusted and never stored (brew's tap.rb:1489-1491).
+        tap.lowercased().hasPrefix("homebrew/") || taps.contains(tap.lowercased())
+    }
+
+    /// Individually trusted formulae/casks from a tap that is not trusted as a whole —
+    /// the residue of qualified installs.
+    func trustedItemCount(in tap: String) -> Int {
+        let prefix = tap.lowercased() + "/"
+        return itemPrefixes.count { $0.hasPrefix(prefix) }
+    }
+}
+
+/// Everything one scan of `Library/Taps` learned: the packages, which taps produced them (the
+/// guard that keeps a stale receipt from re-cloning an untapped repo), the per-tap rows, and the
+/// trust store snapshot.
 nonisolated struct TapScan: Equatable {
     var packages: [Package] = []
     var taps: Set<String> = []
+    var infos: [TapInfo] = []
+    var trust = TrustState()
 }
 
 /// Reads the third-party taps straight off disk — the directory listing *is* the tap list
@@ -55,11 +90,26 @@ nonisolated enum TapStore {
                                         repoDirectory: repoDir.lastPathComponent),
                       !coreTaps.contains(tap) else { continue }
                 result.taps.insert(tap)
-                result.packages += packages(of: tap, at: repoDir,
-                                            installed: installed, installs90d: installs90d)
+                let packages = packages(of: tap, at: repoDir,
+                                        installed: installed, installs90d: installs90d)
+                result.packages += packages
+                result.infos.append(TapInfo(
+                    name: tap,
+                    remote: remoteURL(of: repoDir),
+                    formulaCount: packages.count { $0.kind == .formula },
+                    caskCount: packages.count { $0.kind == .cask },
+                    lastChecked: fetchHeadDate(of: repoDir)))
             }
         }
+        result.trust = TrustStore.read()
         return result
+    }
+
+    /// When brew last checked this tap for updates: `brew update` touches FETCH_HEAD per tap.
+    static func fetchHeadDate(of tapDirectory: URL) -> Date? {
+        let fetchHead = tapDirectory.appending(path: ".git", directoryHint: .isDirectory)
+            .appending(path: "FETCH_HEAD", directoryHint: .notDirectory)
+        return (try? FileManager.default.attributesOfItem(atPath: fetchHead.path))?[.modificationDate] as? Date
     }
 
     /// `<user>/homebrew-<repo>` → `user/repo`, lowercased — brew's own naming rule. A directory
@@ -278,6 +328,43 @@ nonisolated enum TapStore {
             index = line.index(after: index)
         }
         return nil
+    }
+
+    // MARK: - Trust
+
+    /// Reads brew 6's trust store. Pure parsing is split out for tests; the file lives at the
+    /// XDG config home (brew's default on this platform) with `~/.homebrew` as the fallback.
+    enum TrustStore {
+        static var candidates: [URL] {
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            return [
+                home.appending(path: ".config/homebrew/trust.json"),
+                home.appending(path: ".homebrew/trust.json"),
+            ]
+        }
+
+        static func read() -> TrustState {
+            for url in candidates {
+                if let data = try? Data(contentsOf: url) {
+                    return parse(data)
+                }
+            }
+            return TrustState()
+        }
+
+        /// Keys per brew's `SETTING_KEYS`; values arrive lowercased but are folded again here —
+        /// matching is the one thing this store must never get wrong. A malformed file reads as
+        /// nothing trusted, exactly like brew's own defensive parse.
+        static func parse(_ data: Data) -> TrustState {
+            guard let object = try? JSONSerialization.jsonObject(with: data),
+                  let dictionary = object as? [String: Any] else { return TrustState() }
+            func strings(_ key: String) -> [String] {
+                ((dictionary[key] as? [Any]) ?? []).compactMap { ($0 as? String)?.lowercased() }
+            }
+            return TrustState(
+                taps: Set(strings("trustedtaps")),
+                itemPrefixes: strings("trustedformulae") + strings("trustedcasks") + strings("trustedcommands"))
+        }
     }
 
     // MARK: - Remote
