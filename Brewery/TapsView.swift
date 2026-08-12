@@ -4,6 +4,26 @@
 //
 
 import SwiftUI
+import TipKit
+
+/// The one thing a newcomer has to be told here, in the grammar Discover already uses for the
+/// same job (`PackageKindsTip`): a dismissible card, remembered, rather than a paragraph welded
+/// under the toolbar forever. HIG *Onboarding*: "Consider providing a collection of
+/// context-specific tips instead of a single onboarding flow."
+struct TapsTip: Tip {
+    var title: Text {
+        Text("Taps are package catalogs")
+    }
+
+    var message: Text? {
+        Text("Homebrew ships two. Add more published by developers — anything they list installs like any other package.")
+    }
+
+    /// "prefer the filled variant" (HIG *Offering help* → Creating tips) of the glyph the rows wear.
+    var image: Image? {
+        Image(systemName: "spigot.fill")
+    }
+}
 
 /// The Taps section's list: built-in catalogs pinned on top, then the cloned taps with their
 /// contents, install counts, freshness and brew 6 trust state. Rows open the tap's package page.
@@ -13,24 +33,29 @@ struct TapsView: View {
 
     @Environment(AppModel.self) private var model
     @State private var removing: TapInfo?
+    @State private var tip = TapsTip()
+    /// TipView hides itself once dismissed, but the row it sits in would keep its insets — the
+    /// gap would read as a layout bug. Gate the whole row on the tip's own status instead.
+    @State private var showTip = false
 
     var body: some View {
         List {
+            if showTip {
+                Section {
+                    TipView(tip)
+                        .listRowSeparator(.hidden)
+                }
+            }
+
             Section {
                 ForEach(builtInRows, id: \.name) { row in
                     BuiltInTapRow(row: row, onSelect: { onSelect(row.name) })
                 }
             } header: {
-                // Orientation copy reads best *before* the rows — a footer teaches you what a
-                // list was only after you've read it.
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Built in")
-                    Text("Formulae are command-line tools, casks are Mac apps.")
-                        .font(.caption)
-                        .fontWeight(.regular)
-                        .foregroundStyle(.secondary)
-                        .textCase(nil)
-                }
+                // A header labels its group. The vocabulary that used to hang under it is the
+                // tip's job now, and formula-vs-cask is already Discover's tip and the tag
+                // tooltips — HIG *Offering help*: "Avoid bloating your help content."
+                Text("Built in")
             }
 
             Section {
@@ -49,17 +74,15 @@ struct TapsView: View {
                     }
                 }
             } header: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Your taps")
-                    Text("Extra catalogs published by developers. Anything they list installs like any other package.")
-                        .font(.caption)
-                        .fontWeight(.regular)
-                        .foregroundStyle(.secondary)
-                        .textCase(nil)
-                }
+                Text("Your taps")
             }
         }
         .listStyle(.inset)
+        .task {
+            for await status in tip.statusUpdates {
+                showTip = status == .available
+            }
+        }
         .confirmationDialog(removalTitle, isPresented: removalPresented, titleVisibility: .visible) {
             if let info = removing, model.installedCount(fromTap: info.name) == 0 {
                 Button("Remove Tap", role: .destructive) { model.removeTap(info.name) }

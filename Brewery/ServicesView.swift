@@ -23,22 +23,15 @@ struct ServicesView: View {
         if hits.isEmpty {
             emptyState
         } else {
-            List {
-                Section {
-                    ForEach(hits) { hit in
-                        ServiceRow(package: hit.package,
-                                   isSelected: hit.package.id == selectedID,
-                                   onSelect: { onSelect(hit.package) })
-                    }
-                } header: {
-                    // No title — the window title is "Services"; just the orientation line,
-                    // read before the rows rather than dangling after them.
-                    Text("Background helpers like databases and media servers. Switching one on starts it now and at every login; off stops it.")
-                        .font(.caption)
-                        .fontWeight(.regular)
-                        .foregroundStyle(.secondary)
-                        .textCase(nil)
-                }
+            // No header: a section header holding only prose is a paragraph in a label's slot —
+            // it truncates, and the window title already says "Services · N services". What the
+            // banner was really explaining is a consequence of one control, and it now lives on
+            // that control (HIG *Offering help* → macOS: "Explain the action or task the control
+            // initiates", "Be brief") — where it is still there the day you flip the switch.
+            List(hits) { hit in
+                ServiceRow(package: hit.package,
+                           isSelected: hit.package.id == selectedID,
+                           onSelect: { onSelect(hit.package) })
             }
             .listStyle(.inset)
         }
@@ -185,10 +178,22 @@ struct ServiceToggle: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .labelsHidden()
-                .help(isLoaded.wrappedValue ? "Stop \(package.title)" : "Start \(package.title)")
+                // The tooltip states the consequence, not the control's name — a switch already
+                // says "start" by its position, and what a newcomer cannot see is the login part.
+                // `brew services stop` "unregister[s] it from launching at login", so the off side
+                // is a two-part fact too (brew: services/subcommand/stop.rb).
+                .help(consequence)
+                // A tooltip is pointer-only; VoiceOver gets the same sentence as the hint, and
+                // keeps the package name in the label where it belongs.
                 .accessibilityLabel(isLoaded.wrappedValue ? "Stop \(package.title) service"
                                                           : "Start \(package.title) service")
+                .accessibilityHint(consequence)
         }
+    }
+
+    private var consequence: String {
+        isLoaded.wrappedValue ? "Stops now and won’t start at login"
+                              : "Starts now and at every login"
     }
 
     private var isLoaded: Binding<Bool> {
