@@ -43,6 +43,29 @@ Top-class UI/UX is a hard requirement, not a nice-to-have. Follow Apple HIG and 
 - **Every toolbar action has a menu bar command and a key equivalent.** Destinations are ⌘1…⌘5; show/hide items name the state they will produce.
 - **Every animation has a Reduce Motion branch.** x-axis slides become crossfades, blurs are dropped, repeating symbol effects hold still.
 
+### Load the HIG skills — always, before touching UI
+
+"Follow Apple HIG" is a checkable claim, not a vibe. Before writing or reviewing any UI in this repo, load the `apple-hig-skills` skills that cover the surface you are touching, and cite the rule you are applying. Do not design macOS UI from memory — this pass found four structural divergences that all read fine until the actual guidance was open next to the code.
+
+Always load `apple-hig-skills:hig-platforms` (macOS: menu bar, window management, keyboard, personalization, "fewer nested levels and less need for modality"). Then, by surface:
+
+| Touching | Load |
+|---|---|
+| sidebar, split view, the window, lists, the inspector pane | `hig-components-layout` |
+| toolbar, menu bar commands, context menus, buttons | `hig-components-menus` |
+| sheets, popovers, alerts, confirmation dialogs | `hig-components-dialogs` |
+| pickers, toggles, sliders, text fields, labels | `hig-components-controls` |
+| the search field, its scopes and suggestions | `hig-components-search` |
+| progress and status | `hig-components-status` |
+| modality, feedback, loading, settings, onboarding, help, undo | `hig-patterns` |
+| color, typography, SF Symbols, motion, materials, accessibility, UI copy | `hig-foundations` |
+| keyboard shortcuts, pointer, gestures | `hig-inputs` |
+| VoiceOver and other Apple framework integrations | `hig-technologies` |
+
+The skill landing page is only an index: **read the specific `references/*.md`** it points at (`references/modality.md`, `references/toolbars.md`, …). Those files list the rule headings verbatim, which is what makes a claim like "HIG *Toolbars* → macOS: make every toolbar item available as a command in the menu bar" quotable in a commit message or an `ARCHITECTURE.md` entry.
+
+When guidance and this repo's committed grammar disagree, say so in `ARCHITECTURE.md` rather than silently picking one — the deliberate divergences (no Settings scene, no `.searchScopes`, no `.searchSuggestions`, manual page stack instead of `NavigationStack`) are recorded there with their reasons, and the reason is the useful part.
+
 ## The screenshot loop (visual verification)
 
 The terminal has no Screen Recording permission, so `screencapture` fails. Instead: write a temporary `*ShotTests.swift` in `BreweryUITests/` that walks the UI and saves `XCTAttachment(screenshot: app.windows.firstMatch.screenshot())` with `.lifetime = .keepAlways`; run it with `-resultBundlePath`, export via `xcrun xcresulttool export attachments`, map names through the exported `manifest.json`, Read the PNGs, then **delete the test file**. Traps learned the hard way:
