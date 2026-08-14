@@ -325,20 +325,13 @@ private struct DetailPage: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-        } else if pkg.isFont, let font = installedFontURL {
+        } else if let font = model.installedFontURL(for: pkg) {
             // Same word, same chrome as an app cask's Open: the payload defines what opening
             // means, and double-clicking a font file in Finder opens Font Book the same way.
             // LaunchServices, no brew, so the safety model is untouched.
-            Button("Open") { NSWorkspace.shared.open(font) }
+            Button("Open") { model.openFont(at: font) }
                 .help("Open \(pkg.title) in Font Book")
         }
-    }
-
-    /// The first of the cask's font files still on disk — resolved per pass like
-    /// `launchable`, so a font deleted by hand stops being offered.
-    private var installedFontURL: URL? {
-        guard model.installed[pkg.id] != nil else { return nil }
-        return fontNames.lazy.compactMap { FontPreview.fontURL(named: $0) }.first
     }
 
     private var fontNames: [String] {

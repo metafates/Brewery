@@ -82,6 +82,8 @@ struct PackageCardView: View {
         case .installed:
             if let app = model.launchableApps(for: package).first {
                 Button("Open") { model.openApp(at: app) }
+            } else if let font = model.installedFontURL(for: package) {
+                Button("Open") { model.openFont(at: font) }
             }
         default:
             EmptyView()
@@ -218,6 +220,12 @@ struct PackageCardView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .help("Open \(app.deletingPathExtension().lastPathComponent)")
+            } else if let font = model.installedFontURL(for: package) {
+                // Fonts launch too — into Font Book, the pane's grammar on the card.
+                Button("Open") { model.openFont(at: font) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Open \(package.title) in Font Book")
             } else {
                 // A label, not a disabled button: state should not dress up as a dead control,
                 // and disabled chrome washes the checkmark out to near-invisibility.

@@ -707,6 +707,20 @@ final class AppModel {
         Task { _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: .init()) }
     }
 
+    /// The first of a font cask's files still in `~/Library/Fonts` — the Open target on the
+    /// card and in the pane. Resolved per call like `launchableApps`, so a font deleted by
+    /// hand stops being offered.
+    func installedFontURL(for package: Package) -> URL? {
+        guard package.isFont, installed[package.id] != nil else { return nil }
+        return package.artifacts.first { $0.kind == .font }?
+            .names.lazy.compactMap { FontPreview.fontURL(named: $0) }.first
+    }
+
+    /// A font file's default handler is Font Book; LaunchServices does the rest.
+    func openFont(at url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
     func latestOperation(for package: Package) -> BrewOperation? {
         operations.last { $0.targetID == package.id }
     }
