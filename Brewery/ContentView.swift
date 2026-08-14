@@ -276,25 +276,23 @@ struct ContentView: View {
             ProgressView("Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if section == .taps {
-            // The detail sheet's drill-down grammar (manual — macOS NavigationStack does not
-            // animate pushes in a split view's detail column): the list stays mounted, keeping
-            // its scroll position, and recedes while the tap's page slides in over it.
+            // In-column drill-down, no transition (v9): macOS NavigationStack does not animate
+            // this push — a split view's detail column swaps instantly, as do Finder's and
+            // Mail's own drill-ins — so the hand-rolled slide was imitating motion the platform
+            // doesn't perform here, and a translucent grid crossing a fading list read as smear,
+            // not navigation (HIG Motion: add motion purposefully; avoid adding motion to
+            // frequent interactions). Still a ZStack rather than if/else: the list stays
+            // mounted, keeping its scroll position for the way back.
             ZStack {
                 TapsView(searchText: searchText, onSelect: openTap)
                     .opacity(selectedTap == nil ? 1 : 0)
-                    .offset(x: selectedTap == nil || reduceMotion ? 0 : -60)
                     // Disabled, not just covered: the hidden rows must leave the Tab order.
                     .disabled(selectedTap != nil)
                     .accessibilityHidden(selectedTap != nil)
                 if let tap = selectedTap {
                     packageGrid(tap: tap)
-                        // Opaque, so the receding list never shows through between the cards.
+                        // Opaque, so the mounted list never shows through between the cards.
                         .background(.background)
-                        // Reduce Motion turns the push into the crossfade it asks x-axis
-                        // transitions to become.
-                        .transition(reduceMotion ? .opacity
-                                                 : .move(edge: .trailing).combined(with: .opacity))
-                        .zIndex(1)
                 }
             }
             .refreshVeil(model.isRefreshing)
@@ -407,11 +405,11 @@ struct ContentView: View {
         return formatter
     }()
 
-    /// The listing is built *before* the slide starts: the browse task rebuilds it
-    /// asynchronously, and a grid that slides in empty and fills mid-flight reads as a cut.
+    /// The listing is built synchronously *before* the page swaps in: the browse task rebuilds
+    /// it asynchronously, and a page that lands empty and fills a beat later reads as a bug.
     private func openTap(_ tap: String) {
         browseHits = browseListing(for: tap)
-        withAnimation(.smooth(duration: 0.3)) { selectedTap = tap }
+        selectedTap = tap
     }
 
     /// Discover only, and only while browsing: the tip is a newcomer's explainer, not search
@@ -695,7 +693,7 @@ struct ContentView: View {
                 // In-column drill-down: back belongs in the navigation slot.
                 ToolbarItem(placement: .navigation) {
                     Button {
-                        withAnimation(.smooth(duration: 0.3)) { selectedTap = nil }
+                        selectedTap = nil
                     } label: {
                         Label("Taps", systemImage: "chevron.backward")
                     }
