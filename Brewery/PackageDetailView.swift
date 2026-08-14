@@ -277,7 +277,11 @@ private struct DetailPage: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                statRow("tag") { versionLine }
+                // Tap-scanned formulae can have no version at all — a bare tag glyph
+                // beside nothing read as a broken row, so the row renders only with text.
+                if showsVersionRow {
+                    statRow("tag") { versionLine }
+                }
 
                 if let installs = pkg.installs90d {
                     statRow("chart.bar") {
@@ -398,6 +402,15 @@ private struct DetailPage: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
             content()
+        }
+    }
+
+    /// Installed and outdated always have a version to show; otherwise only a non-empty
+    /// catalog version earns the row.
+    private var showsVersionRow: Bool {
+        switch model.status(for: pkg) {
+        case .installed, .outdated: true
+        case .notInstalled, .busy: !pkg.version.isEmpty
         }
     }
 
