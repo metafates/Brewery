@@ -253,7 +253,9 @@ private struct DetailPage: View {
                 Spacer(minLength: 0)
             }
 
-            HStack(alignment: .top, spacing: 8) {
+            // Baselines, not tops: the Installed label beside the bordered Open button hung
+            // above it when the row aligned boxes instead of text.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 action
                 // Beside the package it opens, not in a dialog footer — there is no dialog. Kept
                 // bordered so the one filled button in the pane is always the state-changing one.
@@ -319,10 +321,11 @@ private struct DetailPage: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
         } else if pkg.isFont, let font = installedFontURL {
-            // The pane's Open grammar applied to the one payload a font has. LaunchServices
-            // hands the file to Font Book; no brew, so the safety model is untouched.
-            Button("Open in Font Book") { NSWorkspace.shared.open(font) }
-                .help("Shows the installed font files in Font Book")
+            // Same word, same chrome as an app cask's Open: the payload defines what opening
+            // means, and double-clicking a font file in Finder opens Font Book the same way.
+            // LaunchServices, no brew, so the safety model is untouched.
+            Button("Open") { NSWorkspace.shared.open(font) }
+                .help("Open \(pkg.title) in Font Book")
         }
     }
 
