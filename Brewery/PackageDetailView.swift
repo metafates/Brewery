@@ -135,10 +135,16 @@ private struct DetailPage: View {
 
                 if pkg.homepageURL != nil || pkg.rubySourceURL != nil {
                     HStack(spacing: 16) {
+                        // "Homepage", not the bare host: the App Store labels this link
+                        // generically too ("Developer Website"), a long domain has no good
+                        // wrap at 300 pt, and a lowercase literal beside "Recipe" mixed two
+                        // grammars in one row. The destination survives in the tooltip —
+                        // and the word matches the card context menu's "Open Homepage".
                         if let url = pkg.homepageURL {
                             Link(destination: url) {
-                                Label(url.host() ?? "Homepage", systemImage: "safari")
+                                Label("Homepage", systemImage: "safari")
                             }
+                            .help(url.absoluteString)
                             .accessibilityLabel("Open the \(pkg.title) homepage")
                         }
                         // The .rb file this package is defined by, on GitHub. Labelled
