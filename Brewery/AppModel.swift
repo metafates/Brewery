@@ -77,7 +77,14 @@ final class AppModel {
     /// sections, View ▸ Show Operations — and a `Commands` builder can only reach app-level state.
     var selection: SidebarSection? = .discover
     var showOperations = false
-    var showInspector = false
+    /// Open by default: the first card click then describes into a pane that is already laid
+    /// out, instead of reflowing the whole grid to make room (Mail's reading-pane grammar —
+    /// present with a No Selection placeholder until something is chosen). Hidden-or-shown
+    /// persists across launches: pane visibility is personalization (HIG macOS: let people
+    /// configure windows to display the views they use most), so a closed pane stays closed.
+    var showInspector = UserDefaults.standard.object(forKey: "inspector.shown") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showInspector, forKey: "inspector.shown") }
+    }
 
     /// Bumped by the ⌘F menu command. `ContentView` observes it and moves focus to the search
     /// field — the automatic ⌘F binding has historically been unreliable on macOS.
