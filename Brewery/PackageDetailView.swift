@@ -16,6 +16,11 @@ import SwiftUI
 /// back button, its own swipe-back gesture and three hardcoded heights — an app inside the app.
 struct PackageDetailView: View {
     let package: Package
+    /// v9 — whether this pane's back button owns ⌘[. False while a tap page is showing: two
+    /// live back stacks would both claim the shortcut and SwiftUI would pick one arbitrarily,
+    /// so the content column — the primary navigation — wins (HIG Keyboards: don't create
+    /// ambiguous shortcuts). The button itself stays clickable and focusable regardless.
+    var ownsBackShortcut = true
 
     /// The pages pushed above `package` by dependency/conflict rows. Following the graph is a
     /// drill-down, so it gets real navigation: back returns exactly the way you came, and each
@@ -77,7 +82,7 @@ struct PackageDetailView: View {
                 Label(pages[pages.count - 2].title, systemImage: "chevron.backward")
             }
             .buttonStyle(.borderless)
-            .keyboardShortcut("[", modifiers: .command)
+            .keyboardShortcut(ownsBackShortcut ? KeyboardShortcut("[", modifiers: .command) : nil)
             .help("Back")
             Spacer(minLength: 0)
         }
@@ -479,9 +484,15 @@ private struct DetailPage: View {
             ForEach(Array(CaveatFormat.blocks(of: text).enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .text(let paragraph):
-                    // AppKit-backed on purpose: links get the pointing hand over exactly
-                    // the link (and open on click) — per-run cursors are beyond SwiftUI Text.
-                    RichText(text: CaveatFormat.attributed(paragraph))
+                    // Native Text (v9): it renders the code chips and opens the link runs on
+                    // click. This was an AppKit NSTextField for one refinement — the pointing
+                    // hand over exactly the link, which SwiftUI has no per-run cursor for —
+                    // and a whole NSViewRepresentable with a sizing workaround wasn't worth
+                    // a cursor.
+                    Text(CaveatFormat.attributed(paragraph))
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 case .code(let code):
                     codeBlock(code)
                 }
@@ -778,75 +789,40 @@ nonisolated enum CaveatFormat {
     /// A prose paragraph, dressed: inline Markdown (inline-only — full parsing would collapse the
     /// newlines the text depends on; failure falls back to the raw string), code spans tinted so
     /// mono-heavy prose stops reading as noise, and bare URLs linkified — caveats cite docs pages
-    /// as plain text.
-    static func attributed(_ paragraph: String) -> NSAttributedString {
-        let markdown = (try? AttributedString(
+    /// as plain text. Native `AttributedString` for a native `Text` (v9): the base font is the
+    /// view's own `.font(.callout)`, which the code spans' run-level font overrides.
+    static func attributed(_ paragraph: String) -> AttributedString {
+        var result = (try? AttributedString(
             markdown: paragraph,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(paragraph)
 
-        let result = NSMutableAttributedString(attributedString: NSAttributedString(markdown))
-        let whole = NSRange(location: 0, length: result.length)
-        let baseFont = NSFont.preferredFont(forTextStyle: .callout)
-        result.addAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor], range: whole)
-
         // Code spans: the mono face plus a quiet chip, matching the code blocks' language.
-        var offset = 0
-        for run in markdown.runs {
-            let length = markdown[run.range].characters.count
-            if run.inlinePresentationIntent?.contains(.code) == true {
-                let range = NSRange(location: offset, length: length)
-                result.addAttributes([
-                    .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize - 1, weight: .regular),
-                    .backgroundColor: NSColor.quaternarySystemFill,
-                ], range: range)
-            }
-            offset += length
+        // Ranges are collected first — attribute writes coalesce runs mid-iteration.
+        let codeRanges = result.runs.compactMap { run in
+            run.inlinePresentationIntent?.contains(.code) == true ? run.range : nil
+        }
+        for range in codeRanges {
+            result[range].font = .callout.monospaced()
+            result[range].backgroundColor = Color(nsColor: .quaternarySystemFill)
         }
 
-        // Bare URLs become real links (where Markdown didn't already make one).
+        // Bare URLs become real links (where Markdown didn't already make one). The detector
+        // speaks NSRange over the plain string; both index spaces count characters, so offsets
+        // carry across.
+        let plain = String(result.characters)
         if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
-            for match in detector.matches(in: result.string, range: whole) {
-                guard let url = match.url,
-                      result.attribute(.link, at: match.range.location, effectiveRange: nil) == nil
-                else { continue }
-                result.addAttribute(.link, value: url, range: match.range)
+            for match in detector.matches(in: plain, range: NSRange(plain.startIndex..., in: plain)) {
+                guard let url = match.url, let range = Range(match.range, in: plain) else { continue }
+                let lower = result.characters.index(
+                    result.startIndex, offsetBy: plain.distance(from: plain.startIndex, to: range.lowerBound))
+                let upper = result.characters.index(
+                    result.startIndex, offsetBy: plain.distance(from: plain.startIndex, to: range.upperBound))
+                guard !result[lower..<upper].runs.contains(where: { $0.link != nil }) else { continue }
+                result[lower..<upper].link = url
             }
         }
         return result
-    }
-}
-
-/// An AppKit-backed rich label: a selectable `NSTextField` gives links the pointing hand over
-/// exactly the link and opens them on click — the Mail/Notes behavior SwiftUI `Text` cannot
-/// reproduce, because pointer styles there are per-view, never per-run.
-private struct RichText: NSViewRepresentable {
-    let text: NSAttributedString
-
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(labelWithAttributedString: text)
-        field.isSelectable = true
-        // Without this a selectable label flattens its attributes on selection and links go dead.
-        field.allowsEditingTextAttributes = true
-        field.lineBreakMode = .byWordWrapping
-        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return field
-    }
-
-    func updateNSView(_ field: NSTextField, context: Context) {
-        field.attributedStringValue = text
-    }
-
-    /// Measures without touching the field. Assigning `preferredMaxLayoutWidth` here — a mutation
-    /// inside a sizing query — dirties AppKit's constraints, which asks for another layout pass,
-    /// which sizes again: a fixed-width sheet converged on the first pass and hid the loop, but in
-    /// a resizable pane the proposals never settle and the window runs out of Update Constraints
-    /// passes and throws. `cellSize(forBounds:)` already takes the width it should wrap at.
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextField, context: Context) -> CGSize? {
-        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
-        let bounds = NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)
-        let size = nsView.cell?.cellSize(forBounds: bounds) ?? .zero
-        return CGSize(width: width, height: ceil(size.height))
     }
 }
 

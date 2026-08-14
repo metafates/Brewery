@@ -96,6 +96,17 @@ private struct ServiceRow: View {
         // The same accent wash the selected card wears, so one selection reads one way.
         .listRowBackground(Rectangle().fill(isSelected ? AnyShapeStyle(.tint.quaternary)
                                                        : AnyShapeStyle(.clear)))
+        // The cards' rule (HIG Context menus: support them consistently throughout the app):
+        // the switch's action by name, absent — not dimmed — while busy or root-gated.
+        .contextMenu {
+            if model.status(for: package) != .busy, package.service?.requireRoot != true {
+                if model.serviceStatus(for: package)?.health.isLoaded == true {
+                    Button("Stop") { model.stopService(package) }
+                } else {
+                    Button("Start") { model.startService(package) }
+                }
+            }
+        }
     }
 
     /// "redis-server /opt/homebrew/etc/redis.conf" — argv0's basename plus the arguments, with

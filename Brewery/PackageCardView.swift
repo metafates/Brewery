@@ -66,6 +66,35 @@ struct PackageCardView: View {
                 .padding(12)
                 .animation(.smooth(duration: 0.2), value: model.status(for: package))
         }
+        // Right-click is a macOS reflex on any item (HIG Context menus: support them
+        // consistently throughout the app — the tap rows already do). Small and relevant;
+        // unavailable items are absent, not dimmed; everything here also exists in the main
+        // interface, so the menu is pure convenience.
+        .contextMenu { contextItems }
+    }
+
+    @ViewBuilder private var contextItems: some View {
+        switch model.status(for: package) {
+        case .notInstalled where !package.disabled:
+            Button("Install") { model.install(package) }
+        case .outdated where model.outdated[package.id]?.pinned != true:
+            Button("Update") { model.upgrade(package) }
+        case .installed:
+            if let app = model.launchableApps(for: package).first {
+                Button("Open") { model.openApp(at: app) }
+            }
+        default:
+            EmptyView()
+        }
+        if let url = package.homepageURL {
+            Link("Open Homepage", destination: url)
+        }
+        Divider()
+        // The brew token — what a terminal command or a bug report wants.
+        Button("Copy Name") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(package.name, forType: .string)
+        }
     }
 
     /// Why this card is here at all: a package matched only because it provides the executable the
@@ -179,16 +208,28 @@ struct PackageCardView: View {
                              : "Update \(package.title)")
 
         case .installed:
-            // A label, not a disabled button: state should not dress up as a dead control,
-            // and disabled chrome washes the checkmark out to near-invisibility.
-            Label {
-                Text("Installed").foregroundStyle(.secondary)
-            } icon: {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            // The App Store's grammar (v9): an installed app's button says Open. Single-bundle
+            // casks get it — bordered, so the one filled button on a card stays the
+            // state-changing one. Formulae and multi-app casks keep the state label: nothing
+            // unambiguous to open (the detail pane's Open menu handles the multi-app few).
+            if let app = model.launchableApps(for: package).first,
+               model.launchableApps(for: package).count == 1 {
+                Button("Open") { model.openApp(at: app) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Open \(app.deletingPathExtension().lastPathComponent)")
+            } else {
+                // A label, not a disabled button: state should not dress up as a dead control,
+                // and disabled chrome washes the checkmark out to near-invisibility.
+                Label {
+                    Text("Installed").foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+                .font(.subheadline)
+                .accessibilityLabel("Installed")
+                .help("\(package.title) is installed.")
             }
-            .font(.subheadline)
-            .accessibilityLabel("Installed")
-            .help("\(package.title) is installed.")
 
         case .busy:
             // Status only — no cancel affordance on the card (a control here read as clutter

@@ -3,6 +3,7 @@
 //  Brewery
 //
 
+import AppKit
 import Foundation
 import Observation
 
@@ -75,7 +76,15 @@ final class AppModel {
     /// The sidebar's destination, and whether the operations popover is showing. Both are in the
     /// model rather than the view because the menu bar owns commands for them — View ▸ the five
     /// sections, View ▸ Show Operations — and a `Commands` builder can only reach app-level state.
-    var selection: SidebarSection? = .discover
+    /// Persisted (v9): the app reopens where it was left — HIG Launching, "restore the previous
+    /// state when your app restarts so people can continue where they left off". Someone who
+    /// lives in Outdated should not re-navigate there every launch.
+    var selection: SidebarSection? = SidebarSection(
+        rawValue: UserDefaults.standard.string(forKey: "sidebar.section") ?? "") ?? .discover {
+        didSet {
+            if let selection { UserDefaults.standard.set(selection.rawValue, forKey: "sidebar.section") }
+        }
+    }
     var showOperations = false
     /// Open by default: the first card click then describes into a pane that is already laid
     /// out, instead of reflowing the whole grid to make room (Mail's reading-pane grammar —
@@ -677,6 +686,25 @@ final class AppModel {
     func remove(_ operation: BrewOperation) {
         guard operation.state == .queued else { return }
         operations.removeAll { $0.id == operation.id }
+    }
+
+    /// Safari's Downloads grammar: Clear drops what is done, keeps what is queued or running.
+    /// An operation still awaiting its refresh stays too — removing it would drop the busy hold
+    /// and resurrect the stale-answer blink for its card.
+    func clearFinishedOperations() {
+        operations.removeAll { $0.isFinished && !$0.awaitingRefresh }
+    }
+
+    /// The `.app` bundles this cask put on disk and that are still there. Resolved per call, not
+    /// cached: an app dragged to the Trash should stop being offered.
+    func launchableApps(for package: Package) -> [URL] {
+        (installed[package.id]?.apps ?? []).compactMap(Receipts.appURL(named:))
+    }
+
+    /// Handed to LaunchServices, which starts the app as its own process — nothing is spawned as
+    /// a child of Brewery, so quitting Brewery leaves it running.
+    func openApp(at url: URL) {
+        Task { _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: .init()) }
     }
 
     func latestOperation(for package: Package) -> BrewOperation? {

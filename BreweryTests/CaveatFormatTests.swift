@@ -3,7 +3,7 @@
 //  BreweryTests
 //
 
-import AppKit
+import SwiftUI
 import Testing
 @testable import Brewery
 
@@ -47,20 +47,22 @@ struct CaveatFormatTests {
     @Test("attributed prose: code spans get the mono chip, bare URLs become links")
     func attributed() {
         let result = CaveatFormat.attributed("Run `tlmgr` first, see https://example.com/docs for details")
-        let text = result.string
 
-        let codeRange = (text as NSString).range(of: "tlmgr")
-        let codeFont = result.attribute(.font, at: codeRange.location, effectiveRange: nil) as? NSFont
-        #expect(codeFont?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true)
-        #expect(result.attribute(.backgroundColor, at: codeRange.location, effectiveRange: nil) != nil)
+        func run(containing text: String) -> AttributedString.Runs.Run? {
+            guard let range = result.range(of: text) else { return nil }
+            return result.runs.first { $0.range.contains(range.lowerBound) }
+        }
 
-        let urlRange = (text as NSString).range(of: "https://example.com/docs")
-        let link = result.attribute(.link, at: urlRange.location, effectiveRange: nil) as? URL
-        #expect(link?.host() == "example.com")
+        let code = run(containing: "tlmgr")
+        #expect(code?.font == .callout.monospaced())
+        #expect(code?.backgroundColor != nil)
 
-        // Prose stays un-chipped.
-        let proseFont = result.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
-        #expect(proseFont?.fontDescriptor.symbolicTraits.contains(.monoSpace) == false)
+        #expect(run(containing: "https://example.com/docs")?.link?.host() == "example.com")
+
+        // Prose stays un-chipped and un-linked.
+        let prose = run(containing: "first")
+        #expect(prose?.font == nil)
+        #expect(prose?.link == nil)
     }
 
     @Test("all-prose, all-code, tabs, and trailing blank lines")

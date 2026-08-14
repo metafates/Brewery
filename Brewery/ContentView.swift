@@ -314,7 +314,9 @@ struct ContentView: View {
     /// to start a fresh one rather than leave you inside the previous package's dependencies.
     @ViewBuilder private var inspector: some View {
         if let package = selectedPackage {
-            PackageDetailView(package: package)
+            // The pane's back yields ⌘[ while a tap page shows its own — one shortcut, one owner.
+            PackageDetailView(package: package,
+                              ownsBackShortcut: !(section == .taps && selectedTap != nil))
                 .id(package.id)
         } else {
             // Reachable: ⌘I opens the pane whether or not anything is selected.
@@ -995,10 +997,22 @@ private struct OperationsPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Operations")
-                .font(.headline)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+            HStack {
+                Text("Operations")
+                    .font(.headline)
+                Spacer()
+                // Safari's Downloads grammar: Clear drops the finished, keeps the live. Absent
+                // when there is nothing to clear. (Operations still awaiting their refresh
+                // survive it — see clearFinishedOperations.)
+                if model.operations.contains(where: { $0.isFinished && !$0.awaitingRefresh }) {
+                    Button("Clear") { model.clearFinishedOperations() }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .help("Remove finished operations from the list")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             Divider()
             ScrollView {
                 LazyVStack(spacing: 0) {

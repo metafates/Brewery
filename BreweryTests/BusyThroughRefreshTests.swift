@@ -31,6 +31,23 @@ struct BusyThroughRefreshTests {
         #expect(model.status(for: wget) == .notInstalled)
     }
 
+    @Test func clearDropsTheFinishedButNeverTheLiveOrTheRefreshing() {
+        let model = AppModel()
+        let finished = BrewOperation(command: .update, title: "Updating Homebrew", targetID: nil)
+        finished.state = .succeeded
+        let refreshing = BrewOperation(command: .install(name: "wget", cask: false),
+                                       title: "Installing wget", targetID: wget.id)
+        refreshing.state = .succeeded
+        refreshing.awaitingRefresh = true
+        let running = BrewOperation(command: .upgradeAll, title: "Updating all packages", targetID: nil)
+        running.state = .running
+        model.operations = [finished, refreshing, running]
+
+        model.clearFinishedOperations()
+
+        #expect(model.operations.map(\.title) == ["Installing wget", "Updating all packages"])
+    }
+
     @Test func finishedUpgradeAllHoldsEveryOutdatedCard() {
         let model = AppModel()
         model.outdated[wget.id] = OutdatedInfo(installed: ["1.24.0"], current: "1.25.0",
