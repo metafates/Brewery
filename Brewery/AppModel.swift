@@ -125,7 +125,16 @@ final class AppModel {
              "==> Upgrading libpq",
              "  18.4 -> 18.6 ",
              "==> Pouring libpq--18.6.arm64_tahoe.bottle.tar.gz"].forEach(running.append)
-            operations = [done, running]
+            // A per-package operation, so the card's cancellable busy state is reachable too.
+            // First in the array — the popover renders reversed, and OperationsSurfaceTests
+            // expects the upgradeAll row on top.
+            let single = BrewOperation(command: .upgrade(name: "ffmpeg", cask: false),
+                                       title: "Updating ffmpeg",
+                                       targetID: Package.packageID(kind: .formula, name: "ffmpeg"))
+            single.state = .running
+            ["==> Fetching ffmpeg",
+             "==> Downloading https://ghcr.io/v2/homebrew/core/ffmpeg/manifests/9.0.1"].forEach(single.append)
+            operations = [single, done, running]
         }
     }
 
