@@ -141,20 +141,22 @@ private struct DetailPage: View {
                             }
                             .accessibilityLabel("Open the \(pkg.title) homepage")
                         }
-                        // The .rb file this package is defined by, on GitHub. Labelled by
-                        // kind — Formula / Cask, brew's own words for the definition — not
-                        // the file name, which restated the token shown two rows up; the
-                        // exact file survives in the tooltip. Same face as the homepage
-                        // link — two links in one row speak with one voice, and the </>
-                        // glyph already says "code".
+                        // The .rb file this package is defined by, on GitHub. Labelled
+                        // "Recipe" — brew's own frame (Formula Cookbook, Cask Cookbook):
+                        // one plain word that says "the instructions brew installs this
+                        // from" for both kinds. Not the file name (restated the token two
+                        // rows up — it lives in the tooltip), not the kind (duplicated the
+                        // header tag), and not "Source", which beside a homepage link reads
+                        // as the app's own source code. Same face as the homepage link —
+                        // two links in one row speak with one voice, and the </> glyph
+                        // already says "code".
                         if let source = pkg.rubySourceURL,
                            let file = pkg.rubySourceFileName {
                             Link(destination: source) {
-                                Label(pkg.kind == .formula ? "Formula" : "Cask",
-                                      systemImage: "chevron.left.forwardslash.chevron.right")
+                                Label("Recipe", systemImage: "chevron.left.forwardslash.chevron.right")
                             }
                             .help("Open \(file) on GitHub")
-                            .accessibilityLabel("Open the \(pkg.title) definition source")
+                            .accessibilityLabel("Open the \(pkg.title) recipe")
                         }
                     }
                     // Links get the pointing hand; nothing else in the app does.
