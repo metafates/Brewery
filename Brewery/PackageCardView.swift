@@ -191,37 +191,15 @@ struct PackageCardView: View {
             .help("\(package.title) is installed.")
 
         case .busy:
-            // The App Store control: the indicator *is* the cancel — a stop square centered in
-            // the spinner, one click to halt (HIG Progress indicators: when it's feasible, let
-            // people halt processing; Buttons: associate familiar actions with familiar icons —
-            // this is the halt glyph every install ring on the platform wears). Only when this
-            // package has its own operation: a card made busy by Upgrade All, or one whose
-            // operation is finishing up (awaitingRefresh), has nothing left to stop.
-            if let operation = model.activeOperation(for: package) {
-                Button { model.cancel(operation) } label: {
-                    ZStack {
-                        ProgressView()
-                            .controlSize(.small)
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 6))
-                            .foregroundStyle(.secondary)
-                    }
-                    // Wider than the 16-point spinner, so the click target is button-sized
-                    // (HIG Buttons: make buttons easy for people to use).
-                    .frame(width: 24, height: 24)
-                    .contentShape(.rect)
-                    // A bare ProgressView in a button's label hoists itself out as an AX
-                    // ActivityIndicator and the button vanishes — the Operations toolbar trap.
-                    .accessibilityElement(children: .ignore)
-                }
-                .buttonStyle(.borderless)
-                .help("Cancel")
-                .accessibilityLabel("Cancel \(package.title)")
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("Working on \(package.title)")
-            }
+            // Status only — no cancel affordance on the card (a control here read as clutter
+            // on a surface this small). Halting stays one click away where the queue lives:
+            // the operations popover's row and the log window's toolbar, which keeps HIG
+            // Progress indicators' "let people halt processing" satisfied app-wide while the
+            // card stays macOS-quiet ("prefer an activity indicator to communicate the status
+            // of a background operation").
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel("Working on \(package.title)")
         }
     }
 }
