@@ -31,6 +31,10 @@ struct PackageGridView<Header: View>: View {
     /// date" invites exactly that question. Omitted where it is not, such as a filter hiding
     /// everything on Discover.
     var onRefresh: (() -> Void)?
+    /// v8: while the freshness check runs, an empty Outdated section must not claim "Everything
+    /// is up to date" — the answer is still being computed. Spinner instead (HIG Progress
+    /// indicators, macOS: a spinner for a background operation, description where helpful).
+    var isChecking = false
     /// v6: an optional page header that scrolls with the content — the App Store pattern. A fixed
     /// header above the ScrollView fights macOS's scroll-under-chrome behavior and clips cards.
     let header: () -> Header
@@ -39,6 +43,7 @@ struct PackageGridView<Header: View>: View {
          selectedID: Package.ID? = nil,
          onSelect: @escaping (Package) -> Void, emptyMessage: String? = nil,
          onNeedMore: @escaping () -> Void, onRefresh: (() -> Void)? = nil,
+         isChecking: Bool = false,
          @ViewBuilder header: @escaping () -> Header = { EmptyView() }) {
         self.hits = hits
         self.totalCount = totalCount
@@ -48,6 +53,7 @@ struct PackageGridView<Header: View>: View {
         self.emptyMessage = emptyMessage
         self.onNeedMore = onNeedMore
         self.onRefresh = onRefresh
+        self.isChecking = isChecking
         self.header = header
     }
 
@@ -90,6 +96,17 @@ struct PackageGridView<Header: View>: View {
     private var emptyState: some View {
         if isSearching {
             ContentUnavailableView.search
+        } else if isChecking {
+            // Software Update's grammar: a centered spinner while the check runs, the claim
+            // ("Everything is up to date") only once it has finished.
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.large)
+                Text("Checking for updates…")
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Checking for updates")
         } else if let emptyMessage {
             ContentUnavailableView {
                 Label(emptyMessage, systemImage: "shippingbox")

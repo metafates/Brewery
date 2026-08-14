@@ -337,10 +337,59 @@ struct ContentView: View {
                         emptyMessage: emptyMessage,
                         onNeedMore: { window += Self.windowStep },
                         onRefresh: emptyStateRefresh,
+                        isChecking: section == .outdated && model.isCheckingForUpdates,
                         header: {
-                            if let tap { TapPageHeader(tap: tap) } else { discoverTip }
+                            if let tap {
+                                TapPageHeader(tap: tap)
+                            } else if section == .outdated {
+                                freshnessCaption
+                            } else {
+                                discoverTip
+                            }
                         })
     }
+
+    /// v8 — the Outdated page's status feedback, integrated into the page rather than raised at
+    /// it (HIG *Feedback*): a small spinner naming the launch-time check while it runs, else how
+    /// long ago brew's metadata was last refreshed — the answer to "is this list stale?" that
+    /// used to require a terminal. Lives in the header slot so it scrolls with content and sits
+    /// in a consistent location in both the grid and the empty state; when the section is empty
+    /// the checking spinner is the empty state itself, so this caption keeps to the timestamp.
+    @ViewBuilder private var freshnessCaption: some View {
+        Group {
+            if model.isCheckingForUpdates, displayedCount > 0 {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Checking for updates…")
+                }
+                // Combined here, not on the whole caption: fused onto the plain-text branch it
+                // demoted the caption from a static text to a group, hiding it from VoiceOver's
+                // text navigation (and from UI tests) alike.
+                .accessibilityElement(children: .combine)
+            } else if let checked = model.metadataCheckedAt {
+                // Minute cadence: a live seconds counter in a calm caption draws the eye for no
+                // benefit. The string must be computed *from context.date*: a Text whose stored
+                // inputs never change diffs as unchanged, so the schedule alone redraws nothing —
+                // verified the hard way, a caption frozen at "2 seconds ago".
+                TimelineView(.everyMinute) { context in
+                    Text("Last checked \(Self.checkedFormatter.localizedString(for: checked, relativeTo: context.date))")
+                }
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+    }
+
+    /// "now", "5 minutes ago", "2 hours ago" — anchored to the timeline tick, not to format time.
+    private static let checkedFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter
+    }()
 
     /// The listing is built *before* the slide starts: the browse task rebuilds it
     /// asynchronously, and a grid that slides in empty and fills mid-flight reads as a cut.

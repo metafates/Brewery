@@ -161,6 +161,43 @@ final class BrewClient {
         return environment
     }
 
+    // MARK: - Metadata freshness (v8)
+
+    /// brew's own API refresh window (`HOMEBREW_API_AUTO_UPDATE_SECS` default, env_config.rb:57).
+    /// Metadata younger than this is exactly what a terminal `brew outdated` would settle for.
+    static let metadataWindow: TimeInterval = 450
+
+    /// When brew last had known-good API metadata: the newest mtime among the internal payloads.
+    /// brew touches that mtime only after a successful download or revalidation (api.rb:141-146),
+    /// so terminal-side updates count too. nil — no payload at all — reads as maximally stale.
+    func metadataDate() -> Date? {
+        Self.newestMetadataDate(in: Self.apiDirectory(
+            environment: ProcessInfo.processInfo.environment,
+            home: FileManager.default.homeDirectoryForCurrentUser))
+    }
+
+    /// The `api/internal` directory of the cache brew will use for the processes *we* spawn:
+    /// the inherited `HOMEBREW_CACHE` override if the GUI environment carries one, else the
+    /// macOS default (utils/os.sh:55).
+    nonisolated static func apiDirectory(environment: [String: String], home: URL) -> URL {
+        let cache = environment["HOMEBREW_CACHE"].map { URL(filePath: $0) }
+            ?? home.appending(path: "Library/Caches/Homebrew")
+        return cache.appending(path: "api/internal")
+    }
+
+    /// brew 6 answers everything from one payload per arch tag (`packages.<tag>.jws.json`,
+    /// api/internal.rb:30-31). The suffix match skips the `.payload`/`.payload.index` siblings,
+    /// which brew rewrites on parse, not on refresh.
+    nonisolated static func newestMetadataDate(in directory: URL) -> Date? {
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return nil }
+        return entries
+            .filter { $0.lastPathComponent.hasPrefix("packages.")
+                && $0.lastPathComponent.hasSuffix(".jws.json") }
+            .compactMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate }
+            .max()
+    }
+
     // MARK: - Read helpers
 
     func listInstalled() async throws -> [Package.ID: InstalledInfo] {

@@ -52,6 +52,17 @@ final class AppModel {
     /// toolbar glyph, so a refresh is visibly happening rather than apparently ignored.
     private(set) var isRefreshing = false
 
+    /// v8 — true while the inline `brew update` of the freshness rule runs. Drives the Outdated
+    /// page's "Checking for updates…" states; also holds `pump()`, so a mutation enqueued
+    /// mid-check starts right after it (with fresh metadata) instead of colliding with brew's
+    /// exclusive update flock.
+    private(set) var isCheckingForUpdates = false
+
+    /// v8 — the newest API payload mtime, brew's "metadata last known good" (terminal updates
+    /// count too). Re-stat'd on every refresh; feeds the "Last checked" caption and the
+    /// staleness gate.
+    private(set) var metadataCheckedAt: Date?
+
     /// Set once when an operation fails so the operations popover can auto-present; the view
     /// clears it after showing.
     var failureToPresent: BrewOperation?
@@ -80,7 +91,10 @@ final class AppModel {
 
     private var catalogFetchedAt: Date?
     private var didBootstrap = false
-    private var didEnqueueSessionUpdate = false
+    /// v8 — when the last inline `brew update` was *started*, successful or not. brew only
+    /// touches the payload mtime on success, so without this an offline machine would re-attempt
+    /// (and time out) on every single ⌘R; with it, once per window.
+    private var lastMetadataAttempt: Date?
     private var runningTask: Task<Void, Never>?
     private var refreshGeneration = 0
 
@@ -108,6 +122,13 @@ final class AppModel {
             await loadCatalog()
         }
         await state.value
+
+        // v8 — probes first (cached-metadata answers on screen in a second), then the freshness
+        // rule corrects them: brew's own outdated computation runs against a cache our standing
+        // HOMEBREW_NO_AUTO_UPDATE freezes, so a stale launch re-probes after one `brew update`.
+        if await checkForUpdatesIfStale() {
+            await refreshState()
+        }
     }
 
     /// ⌘R: re-probe brew, re-read installed/outdated, and re-run the 24 h catalog staleness check.
@@ -119,11 +140,47 @@ final class AppModel {
 
         client.discover()
 
+        // v8 — unlike bootstrap, the check runs *before* the probes: the veil is already up, and
+        // one landing beats showing stale answers mid-refresh only to swap them seconds later.
+        _ = await checkForUpdatesIfStale()
+
         let state = Task { await self.refreshState() }
         if catalogFetchedAt.map(CatalogStore.isStale) ?? true {
             await loadCatalog()
         }
         await state.value
+    }
+
+    /// The v8 freshness rule: brew's metadata must be no older than brew's own API window
+    /// (450 s) before `outdated` is worth asking. An explicit `brew update` is not gated by
+    /// `HOMEBREW_NO_AUTO_UPDATE` (only the auto-update path checks it), so it refreshes the API
+    /// cache and tap clones even with our env set. Failure is silent by design — the probes fall
+    /// back to the cached answer, exactly the pre-v8 behavior. Returns whether an update ran.
+    private func checkForUpdatesIfStale() async -> Bool {
+        metadataCheckedAt = client.metadataDate()
+        guard client.isAvailable, !isCheckingForUpdates, !isQueueActive, metadataIsStale else {
+            return false
+        }
+        if let attempt = lastMetadataAttempt,
+           Date.now.timeIntervalSince(attempt) < BrewClient.metadataWindow {
+            return false
+        }
+        lastMetadataAttempt = .now
+
+        isCheckingForUpdates = true
+        // The pump held while the check ran; release whatever queued up meanwhile.
+        defer { isCheckingForUpdates = false; pump() }
+
+        _ = try? await client.run(.update) { _ in }
+        metadataCheckedAt = client.metadataDate()
+        return true
+    }
+
+    /// Stale means older than brew's own refresh window — the freshness a terminal `brew
+    /// outdated` guarantees, which makes it the parity target, not a number we invented.
+    private var metadataIsStale: Bool {
+        guard let date = metadataCheckedAt else { return true }
+        return Date.now.timeIntervalSince(date) > BrewClient.metadataWindow
     }
 
     func retryCatalog() async {
@@ -195,6 +252,10 @@ final class AppModel {
     private func refreshState() async {
         refreshGeneration &+= 1
         let generation = refreshGeneration
+
+        // One cheap stat per refresh keeps the "Last checked" caption honest even when the
+        // update happened in a terminal.
+        metadataCheckedAt = client.metadataDate()
 
         brewMissing = !client.isAvailable
         guard client.isAvailable else {
@@ -366,12 +427,16 @@ final class AppModel {
             break
         }
 
-        // Auto-update is disabled on every invocation, so brew's metadata can drift; one explicit
-        // `brew update` per session, ahead of the first package mutation, brings it back in line.
+        // v8 — auto-update is disabled on every invocation, so a package mutation must bring
+        // brew's metadata in line first; but only when it actually drifted. The once-per-session
+        // flag this replaces both under-updated (a days-long session updated once, then drifted)
+        // and over-updated (an install a minute after the launch check paid ~5 s for a no-op).
         // Service toggles skip it — they change launchd state, not packages.
-        if !didEnqueueSessionUpdate, command.touchesPackages {
-            didEnqueueSessionUpdate = true
-            operations.append(BrewOperation(command: .update, title: "Updating Homebrew", targetID: nil))
+        if command.touchesPackages, !isCheckingForUpdates, !updatePending {
+            metadataCheckedAt = client.metadataDate()
+            if metadataIsStale {
+                operations.append(BrewOperation(command: .update, title: "Updating Homebrew", targetID: nil))
+            }
         }
 
         operations.append(BrewOperation(command: command, title: title, targetID: targetID))
@@ -493,8 +558,16 @@ final class AppModel {
         enqueue(.untrustTap(name: name), title: "Untrusting \(name)", targetID: nil)
     }
 
+    /// A second update queued behind a pending one would just no-op for five seconds.
+    private var updatePending: Bool {
+        operations.contains { $0.command == .update && !$0.isFinished }
+    }
+
     private func pump() {
-        guard runningTask == nil,
+        // Held while the inline freshness check runs: `brew update` takes a non-blocking
+        // exclusive flock, so a concurrent queued mutation's own update would error, not wait.
+        // The check's completion pumps again.
+        guard runningTask == nil, !isCheckingForUpdates,
               let next = operations.first(where: { $0.state == .queued }) else { return }
 
         next.state = .running

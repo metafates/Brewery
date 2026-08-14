@@ -76,6 +76,9 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     }
 
     /// Mutating commands are serialized through the operation queue and get `SUDO_ASKPASS`.
+    /// One exception (v8): `.update` — argument-less, non-destructive — may also run inline from
+    /// the freshness check, which holds the queue's pump for its duration, so the serialization
+    /// guarantee survives it.
     var isMutating: Bool {
         switch self {
         case .listFormulae, .listCasks, .outdated, .servicesList:
