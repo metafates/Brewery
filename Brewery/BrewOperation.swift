@@ -25,6 +25,11 @@ final class BrewOperation: Identifiable {
     let title: String
     let targetID: Package.ID?
     var state: State = .queued
+    /// v9 — true from the moment the operation finishes until the refresh it triggered has
+    /// landed. In that window the overlays are still pre-mutation, so a card that dropped its
+    /// busy state on `state` alone flashed the stale answer — "Install", a beat after
+    /// installing — until the probes caught up.
+    var awaitingRefresh = false
     private(set) var lines: [String] = []
 
     init(command: BrewCommand, title: String, targetID: Package.ID?) {

@@ -374,11 +374,14 @@ final class AppModel {
     }
 
     /// A bare `brew upgrade` touches every outdated formula and cask except the pinned ones, so a
-    /// running `upgradeAll` makes all of them busy at once.
+    /// running `upgradeAll` makes all of them busy at once. Busy outlives the operation by one
+    /// refresh (`awaitingRefresh`): between completion and the probes landing, the overlays still
+    /// answer for the old world, and the card must not repeat that stale answer.
     private func isBusy(_ package: Package) -> Bool {
-        for operation in operations where !operation.isFinished {
+        for operation in operations where !operation.isFinished || operation.awaitingRefresh {
             if operation.targetID == package.id { return true }
-            if operation.command == .upgradeAll, operation.state == .running,
+            if operation.command == .upgradeAll,
+               operation.state == .running || operation.awaitingRefresh,
                let info = outdated[package.id], !info.pinned {
                 return true
             }
@@ -626,13 +629,20 @@ final class AppModel {
         }
 
         operation.state = state
+        // Set in the same synchronous block as `state`, so no frame sees the gap between them.
+        operation.awaitingRefresh = true
         if state == .failed, failureToPresent == nil {
             failureToPresent = operation
         }
 
         runningTask = nil
-        // Success or failure, a mutation can have changed what is installed.
-        Task { await self.refreshState() }
+        // Success or failure, a mutation can have changed what is installed — and until that
+        // refresh lands, the operation keeps holding its card: dropping busy on completion
+        // alone showed the pre-mutation overlays for the second the probes take.
+        Task {
+            await self.refreshState()
+            operation.awaitingRefresh = false
+        }
         pump()
     }
 
