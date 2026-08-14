@@ -189,6 +189,18 @@ struct TapStoreTests {
         #expect(!state.isTrusted("foo/bar"))
     }
 
+    @Test("consent asked exactly when installing would grant new trust (v10)")
+    func trustConsent() {
+        let state = TrustState(taps: ["oven-sh/bun"],
+                               itemPrefixes: ["charmbracelet/tap/gum"])
+
+        #expect(!state.needsConsent(tap: "oven-sh/bun", name: "bun"))         // tap trusted
+        #expect(!state.needsConsent(tap: "charmbracelet/tap", name: "gum"))   // item trusted
+        #expect(!state.needsConsent(tap: "charmbracelet/tap", name: "Gum"))   // case folds
+        #expect(state.needsConsent(tap: "charmbracelet/tap", name: "crush"))  // neither
+        #expect(!state.needsConsent(tap: "homebrew/core", name: "wget"))      // implicit trust
+    }
+
     @Test("malformed or missing trust data reads as nothing trusted")
     func trustDefensive() {
         #expect(TapStore.TrustStore.parse(Data("not json".utf8)) == TrustState())

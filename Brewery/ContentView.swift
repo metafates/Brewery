@@ -187,6 +187,13 @@ struct ContentView: View {
 
     // MARK: - Shell
 
+    /// v10 — the trust-consent dialog's title: the situation, succinctly (HIG Alerts).
+    private var trustConsentTitle: Text {
+        guard let package = model.pendingInstall,
+              let tap = model.effectiveTap(for: package) else { return Text(verbatim: "") }
+        return Text("Install \(package.title) from \(tap)?")
+    }
+
     private var splitView: some View {
         @Bindable var model = model
 
@@ -221,6 +228,19 @@ struct ContentView: View {
                     inspector
                         .inspectorColumnWidth(min: 300, ideal: 340, max: 480)
                 }
+        }
+        // v10 — trust consent, at the moment of consequence: every Install surface funnels
+        // through AppModel.install, and when the grant would be new the dialog asks instead.
+        // The same confirmationDialog grammar the tap page's Trust and Remove decisions use.
+        .confirmationDialog(trustConsentTitle,
+                            isPresented: $model.trustConsentPresented,
+                            titleVisibility: .visible,
+                            presenting: model.pendingInstall) { package in
+            Button("Install") { model.confirmedInstall(package) }
+            Button("Trust Tap and Install") { model.confirmedInstall(package, trustingTap: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: { package in
+            Text("This tap isn't trusted yet. Installing trusts only \(package.name)'s recipe; trusting the tap covers everything it ships.")
         }
         .task(id: searchKey) {
             let ranked = section

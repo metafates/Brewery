@@ -35,6 +35,13 @@ nonisolated struct TrustState: Equatable {
         let prefix = tap.lowercased() + "/"
         return itemPrefixes.count { $0.hasPrefix(prefix) }
     }
+
+    /// v10 — whether installing `name` from `tap` would grant trust brew doesn't already
+    /// have: the tap isn't trusted and no per-item entry covers this name. URL-shaped
+    /// custom-remote entries fail the exact match and simply re-ask — the conservative side.
+    func needsConsent(tap: String, name: String) -> Bool {
+        !isTrusted(tap) && !itemPrefixes.contains("\(tap)/\(name)".lowercased())
+    }
 }
 
 /// Everything one scan of `Library/Taps` learned: the packages, which taps produced them (the

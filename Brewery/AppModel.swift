@@ -505,7 +505,40 @@ final class AppModel {
         pump()
     }
 
+    /// v10 — the package whose Install awaits the trust-consent dialog; nil = no dialog.
+    var pendingInstall: Package?
+
+    var trustConsentPresented: Bool {
+        get { pendingInstall != nil }
+        set { if !newValue { pendingInstall = nil } }
+    }
+
+    /// Installing a qualified tap item makes brew trust that item's recipe as a silent side
+    /// effect (`cmd/install.rb` runs `Trust.trust_fully_qualified_items!` before the gate;
+    /// the gate itself never prompts — `trust.rb` just refuses). Consent is asked only when
+    /// that grant would be new. The scan guard mirrors `qualifiedName`: a tap outside the
+    /// scan installs unqualified and grants nothing.
+    func installNeedsTrustConsent(_ package: Package) -> Bool {
+        guard let tap = effectiveTap(for: package), tapScan.taps.contains(tap) else { return false }
+        return trustState.needsConsent(tap: tap, name: package.name)
+    }
+
+    /// Every Install surface funnels through here — pane, card, context menu — so the
+    /// consent dialog cannot be bypassed by installing from a different corner of the app.
     func install(_ package: Package) {
+        guard !installNeedsTrustConsent(package) else {
+            pendingInstall = package
+            return
+        }
+        confirmedInstall(package)
+    }
+
+    /// The dialog's two affirmative paths. FIFO queue: the trust grant, when asked for,
+    /// lands before the install starts.
+    func confirmedInstall(_ package: Package, trustingTap: Bool = false) {
+        if trustingTap, let tap = effectiveTap(for: package) {
+            trustTap(tap)
+        }
         enqueue(.install(name: qualifiedName(for: package), cask: package.kind == .cask),
                 title: "Installing \(package.title)",
                 targetID: package.id)

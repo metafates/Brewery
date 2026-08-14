@@ -463,21 +463,15 @@ private struct DetailPage: View {
                       : "Update \(pkg.title)")
                 .accessibilityLabel("Update \(pkg.title)")
         case .notInstalled:
-            // The trust disclosure: installing a tap item makes brew trust it persistently, and
-            // that should not happen silently on a click.
-            VStack(alignment: .leading, spacing: 4) {
-                Button("Install") { model.install(pkg) }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(pkg.disabled)
-                    .help(installHelp)
-                    .accessibilityLabel("Install \(pkg.title)")
-                if !pkg.disabled, let tap = model.effectiveTap(for: pkg) {
-                    Text("Trusts \(tap)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .help("Installing tells Homebrew to trust \(tap)/\(pkg.name) permanently.")
-                }
-            }
+            // v10 — no caption under Install: the trust disclosure moved into the consent
+            // dialog, which appears only when installing would actually grant new trust.
+            // The old always-on "Trusts user/tap" line named the wrong scope (the grant is
+            // per-item) and kept showing for taps already trusted, where it disclosed nothing.
+            Button("Install") { model.install(pkg) }
+                .buttonStyle(.borderedProminent)
+                .disabled(pkg.disabled)
+                .help(installHelp)
+                .accessibilityLabel("Install \(pkg.title)")
         }
     }
 
@@ -485,8 +479,8 @@ private struct DetailPage: View {
         if pkg.disabled {
             return "Homebrew has disabled this package, so it can no longer be installed."
         }
-        if let tap = model.effectiveTap(for: pkg) {
-            return "Install \(pkg.title) — Homebrew will trust \(tap)/\(pkg.name) permanently."
+        if model.installNeedsTrustConsent(pkg), let tap = model.effectiveTap(for: pkg) {
+            return "Install \(pkg.title) — Brewery asks about trusting \(tap) first."
         }
         return "Install \(pkg.title)"
     }
