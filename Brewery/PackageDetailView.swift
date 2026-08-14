@@ -110,6 +110,8 @@ private struct DetailPage: View {
 
     @Environment(AppModel.self) private var model
     @State private var showLicenses = false
+    @State private var fontFaces: [FontPreview.Face] = []
+    @State private var facesExpanded = false
 
     var body: some View {
         // Resolved once per pass: both lists were read three times each (the `isEmpty` guards,
@@ -155,6 +157,11 @@ private struct DetailPage: View {
                     .pointerStyle(.link)
                 }
 
+                if !fontFaces.isEmpty {
+                    Divider()
+                    fontPreview
+                }
+
                 if let text = pkg.resolvedCaveats(prefix: model.client.prefix), !text.isEmpty {
                     Divider()
                     caveats(text)
@@ -198,7 +205,16 @@ private struct DetailPage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
         }
+        .task(id: fontTaskID) {
+            fontFaces = []
+            guard pkg.isFont, model.installed[pkg.id] != nil else { return }
+            fontFaces = await FontPreview.resolve(names: fontNames)
+        }
     }
+
+    /// Re-resolve when the page's package changes — and when it becomes installed, which is
+    /// the moment a preview first has files to find.
+    private var fontTaskID: String { "\(pkg.id)|\(model.installed[pkg.id] != nil)" }
 
     // MARK: - Header
 
@@ -302,7 +318,23 @@ private struct DetailPage: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+        } else if pkg.isFont, let font = installedFontURL {
+            // The pane's Open grammar applied to the one payload a font has. LaunchServices
+            // hands the file to Font Book; no brew, so the safety model is untouched.
+            Button("Open in Font Book") { NSWorkspace.shared.open(font) }
+                .help("Shows the installed font files in Font Book")
         }
+    }
+
+    /// The first of the cask's font files still on disk — resolved per pass like
+    /// `launchable`, so a font deleted by hand stops being offered.
+    private var installedFontURL: URL? {
+        guard model.installed[pkg.id] != nil else { return nil }
+        return fontNames.lazy.compactMap { FontPreview.fontURL(named: $0) }.first
+    }
+
+    private var fontNames: [String] {
+        pkg.artifacts.first { $0.kind == .font }?.names ?? []
     }
 
     private var kindTag: some View {
@@ -572,6 +604,57 @@ private struct DetailPage: View {
         default:
             return artifact.names.joined(separator: " · ")
         }
+    }
+
+    // MARK: - Font preview
+
+    private static let fontSample = "The quick brown fox jumps over the lazy dog."
+    private static let faceLimit = 6
+
+    /// Each installed face demonstrated in itself — for a font cask the glyphs are the
+    /// payload, so this is the screenshots slot. Faces resolve once per page (the `.task`),
+    /// not per pass: CoreText parses the files, which is more than a `fileExists` check.
+    private var fontPreview: some View {
+        let multiFamily = Set(fontFaces.map(\.family)).count > 1
+        let shown = facesExpanded ? fontFaces : Array(fontFaces.prefix(Self.faceLimit))
+
+        return VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Preview")
+
+            ForEach(shown) { face in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(faceTitle(face, qualified: multiFamily))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(Self.fontSample)
+                        // Relative, so the sample tracks text-size settings like every
+                        // built-in style (HIG Typography, custom-font accessibility).
+                        .font(.custom(face.postScriptName, size: 18, relativeTo: .title3))
+                        .lineLimit(1)
+                }
+                // The pangram is decoration; rows of it read aloud would bury the one
+                // fact each row carries — which face this is.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(faceTitle(face, qualified: true)) sample")
+            }
+
+            if !facesExpanded, fontFaces.count > Self.faceLimit {
+                // Nerd Font packs ship dozens of near-identical weights: summary in
+                // place, detail on demand — the license row's own rule.
+                Button("Show \(fontFaces.count - Self.faceLimit) More Styles") {
+                    facesExpanded = true
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The style name, family-qualified when a pack ships several families.
+    private func faceTitle(_ face: FontPreview.Face, qualified: Bool) -> String {
+        if face.style.isEmpty { return face.family }
+        return qualified ? "\(face.family) \(face.style)" : face.style
     }
 
     /// The formula's background service: the toggle when it is installed, then the definition in
