@@ -858,6 +858,10 @@ struct ContentView: View {
                                 .contentTransition(.numericText(value: Double(model.activeCount)))
                                 .animation(.smooth(duration: 0.25), value: model.activeCount)
                         }
+                        // Opaque to accessibility: a bare ProgressView in a button's label
+                        // hoists itself out as an ActivityIndicator and the *button* vanishes
+                        // from the tree — unreachable by VoiceOver exactly while work runs.
+                        .accessibilityElement(children: .ignore)
                     } else if model.lastOperationFailed {
                         // A different glyph, not just a red one: the failure has to survive
                         // dismissing the popover, and it has to survive colour-blindness too.
@@ -868,13 +872,19 @@ struct ContentView: View {
                     }
                 }
                 .help(model.lastOperationFailed ? "Operations — the last one failed" : "Operations")
-                .accessibilityLabel(model.lastOperationFailed ? "Operations, last operation failed"
-                                                              : "Operations")
+                .accessibilityLabel(operationsLabel)
                 .popover(isPresented: $model.showOperations, arrowEdge: .bottom) {
                     OperationsPopover()
                 }
             }
         }
+    }
+
+    /// What the glyph shows, said aloud: the running count while active, the failure tell after.
+    private var operationsLabel: String {
+        if model.isQueueActive { return "Operations, \(model.activeCount) running" }
+        if model.lastOperationFailed { return "Operations, last operation failed" }
+        return "Operations"
     }
 
     // MARK: - Unavailable states
@@ -975,12 +985,15 @@ struct RefreshVeil: ViewModifier {
     }
 }
 
-/// The Safari-downloads pattern: everything this session did, newest first, each row unfolding
-/// into its live log.
+/// The Safari-downloads pattern: everything this session did, newest first, glanceable and
+/// manageable here — read in a window. The logs used to unfold inline, which outgrew the
+/// surface (HIG *Popovers*: "use a popover to expose a small amount of information"; "avoid
+/// making a popover too big"): a monospace stream in a fixed 380-point frame clipped lines
+/// and buried the queue it shared the popover with.
 private struct OperationsPopover: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var expanded: Set<BrewOperation.ID> = []
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1002,63 +1015,49 @@ private struct OperationsPopover: View {
         .frame(width: 380)
     }
 
-    @ViewBuilder private func row(_ operation: BrewOperation) -> some View {
-        let isExpanded = expanded.contains(operation.id)
+    private func row(_ operation: BrewOperation) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: operation.symbolName)
+                .foregroundStyle(tint(for: operation.state))
+                // The "Running…" caption below already says this without moving.
+                .symbolEffect(.rotate, options: .repeating,
+                              isActive: operation.state == .running && !reduceMotion)
 
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: operation.symbolName)
-                    .foregroundStyle(tint(for: operation.state))
-                    // The "Running…" caption below already says this without moving.
-                    .symbolEffect(.rotate, options: .repeating,
-                                  isActive: operation.state == .running && !reduceMotion)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(operation.title)
+                    .lineLimit(1)
+                Text(operation.state.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(operation.title)
-                        .lineLimit(1)
-                    Text(description(for: operation.state))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            Spacer(minLength: 4)
 
-                Spacer(minLength: 4)
-
-                switch operation.state {
-                case .running:
-                    Button("Cancel") { model.cancel(operation) }
-                        .controlSize(.small)
-                case .queued:
-                    Button {
-                        model.remove(operation)
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Remove from queue")
-                    .accessibilityLabel("Remove from queue")
-                default:
-                    EmptyView()
-                }
-
+            switch operation.state {
+            case .running:
+                Button("Cancel") { model.cancel(operation) }
+                    .controlSize(.small)
+            case .queued:
                 Button {
-                    if isExpanded {
-                        expanded.remove(operation.id)
-                    } else {
-                        expanded.insert(operation.id)
-                    }
+                    model.remove(operation)
                 } label: {
-                    Image(systemName: "chevron.right")
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    Image(systemName: "xmark")
                 }
                 .buttonStyle(.borderless)
-                .help(isExpanded ? "Hide Log" : "Show Log")
-                .accessibilityLabel(isExpanded ? "Hide Log" : "Show Log")
+                .help("Remove from queue")
+                .accessibilityLabel("Remove from queue")
+            default:
+                EmptyView()
             }
 
-            if isExpanded {
-                OperationLogView(operation: operation)
-                    .frame(height: 160)
+            Button {
+                openWindow(id: "operation-log", value: operation.id)
+            } label: {
+                Image(systemName: "terminal")
             }
+            .buttonStyle(.borderless)
+            .help("Open the log in its own window")
+            .accessibilityLabel("Show Log")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -1070,16 +1069,6 @@ private struct OperationsPopover: View {
         case .running: .accentColor
         case .succeeded: .green
         case .failed: .red
-        }
-    }
-
-    private func description(for state: BrewOperation.State) -> String {
-        switch state {
-        case .queued: "Waiting"
-        case .running: "Running…"
-        case .succeeded: "Completed"
-        case .failed: "Failed"
-        case .cancelled: "Cancelled"
         }
     }
 }

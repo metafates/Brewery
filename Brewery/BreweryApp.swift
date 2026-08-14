@@ -106,6 +106,19 @@ struct BreweryApp: App {
                      destination: URL(string: "https://docs.brew.sh/FAQ")!)
             }
         }
+
+        // One auxiliary window per operation's log (HIG *Windows*: "consider providing the
+        // option to view content in a new window"), opened from the operations popover and
+        // listed in the Window menu by its operation title. Value-only (no default value), so
+        // the scene never answers File ▸ New Window — the single-window rule above holds.
+        // Restoration is off: operations are session state, and a restored log of a dead
+        // queue would be an empty shell.
+        WindowGroup("Log", id: "operation-log", for: BrewOperation.ID.self) { $operationID in
+            OperationLogWindow(operationID: operationID)
+                .environment(model)
+        }
+        .defaultSize(width: 580, height: 440)
+        .restorationBehavior(.disabled)
     }
 }
 

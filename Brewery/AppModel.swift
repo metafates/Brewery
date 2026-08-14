@@ -100,6 +100,33 @@ final class AppModel {
 
     init() {
         brewMissing = !client.isAvailable
+
+        // UI-test seeding (`OperationsSurfaceTests`): operations exist only mid-mutation, and
+        // a test must not mutate the machine, so the operations surface gets a canned queue.
+        if ProcessInfo.processInfo.arguments.contains("-demo-operation") {
+            let done = BrewOperation(command: .update, title: "Updating Homebrew", targetID: nil)
+            done.state = .succeeded
+            ["==> Updating Homebrew...",
+             "Updated 2 taps (homebrew/core and homebrew/cask)."].forEach(done.append)
+            let running = BrewOperation(command: .upgradeAll, title: "Updating all packages", targetID: nil)
+            running.state = .running
+            ["==> Upgrading 3 outdated packages:",
+             "ffmpeg 9.0 -> 9.0.1, libpq 18.4 -> 18.6, ruff 0.16.2 -> 0.16.3",
+             "==> Fetching downloads for: ffmpeg, libpq and ruff",
+             "==> Downloading https://ghcr.io/v2/homebrew/core/ffmpeg/manifests/9.0.1",
+             "==> Fetching ffmpeg",
+             "==> Downloading https://ghcr.io/v2/homebrew/core/ffmpeg/blobs/sha256:2f4d",
+             "==> Upgrading ffmpeg",
+             "  9.0 -> 9.0.1 ",
+             "==> Pouring ffmpeg--9.0.1.arm64_tahoe.bottle.tar.gz",
+             "🍺  /opt/homebrew/Cellar/ffmpeg/9.0.1: 289 files, 51.3MB",
+             "==> Running `brew cleanup ffmpeg`...",
+             "Warning: Skipping cleanup (HOMEBREW_NO_INSTALL_CLEANUP is set).",
+             "==> Upgrading libpq",
+             "  18.4 -> 18.6 ",
+             "==> Pouring libpq--18.6.arm64_tahoe.bottle.tar.gz"].forEach(running.append)
+            operations = [done, running]
+        }
     }
 
     // MARK: - Loading

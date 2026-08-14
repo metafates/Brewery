@@ -29,7 +29,13 @@ struct OperationLogView: View {
             .font(.system(.caption, design: .monospaced))
             .padding(8)
         }
-        .defaultScrollAnchor(.bottom)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        // Short output reads from the top, the way every log does; the two bottom anchors
+        // keep the tail pinned once it overflows. One plain `.bottom` anchor also *aligned*
+        // undersized content to the bottom — invisible in the popover's old 160-point frame,
+        // a void above three lines in a full-height window.
+        .defaultScrollAnchor(.top, for: .alignment)
         .frame(minHeight: 80)
         .background(.background.secondary, in: .rect(cornerRadius: 8))
         .overlay {

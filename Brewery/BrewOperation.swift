@@ -57,3 +57,16 @@ final class BrewOperation: Identifiable {
         }
     }
 }
+
+extension BrewOperation.State {
+    /// One vocabulary for the popover row's caption and the log window's subtitle.
+    var label: String {
+        switch self {
+        case .queued: "Waiting"
+        case .running: "Running…"
+        case .succeeded: "Completed"
+        case .failed: "Failed"
+        case .cancelled: "Cancelled"
+        }
+    }
+}
