@@ -127,6 +127,13 @@ final class AppModel {
         // rule corrects them: brew's own outdated computation runs against a cache our standing
         // HOMEBREW_NO_AUTO_UPDATE freezes, so a stale launch re-probes after one `brew update`.
         if await checkForUpdatesIfStale() {
+            // The claim must wait for the answer: the flag stays up through the re-probe, or an
+            // empty Outdated page says "Everything is up to date" for the second it takes the
+            // fresh read to land — the exact lie v8 exists to kill. No suspension between the
+            // check dropping the flag and this raising it, so no frame sees the gap; the held
+            // pump costs a queued mutation only the probe's own second.
+            isCheckingForUpdates = true
+            defer { isCheckingForUpdates = false; pump() }
             await refreshState()
         }
     }

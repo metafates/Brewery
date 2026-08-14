@@ -368,12 +368,17 @@ struct ContentView: View {
                 // text navigation (and from UI tests) alike.
                 .accessibilityElement(children: .combine)
             } else if let checked = model.metadataCheckedAt {
-                // Minute cadence: a live seconds counter in a calm caption draws the eye for no
-                // benefit. The string must be computed *from context.date*: a Text whose stored
-                // inputs never change diffs as unchanged, so the schedule alone redraws nothing —
-                // verified the hard way, a caption frozen at "2 seconds ago".
-                TimelineView(.everyMinute) { context in
-                    Text("Last checked \(Self.checkedFormatter.localizedString(for: checked, relativeTo: context.date))")
+                // Ticks every second so the caption turns over the moment its unit does; the
+                // *string* stays minute-granular ("just now", then "1 minute ago"), so the text
+                // only redraws when the unit flips and the caption stays calm (HIG Progress
+                // indicators: keep indicators moving so people know something is continuing to
+                // happen). Not `.everyMinute`: its ticks are wall-clock minute boundaries, not
+                // anchored to `checked` — the unit flip landed up to a minute late, and on macOS
+                // the schedule proved unreliable outright ("does not update in real time").
+                // The string must be computed *from context.date*: a Text whose stored inputs
+                // never change diffs as unchanged, so the schedule alone redraws nothing.
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(Self.lastCheckedCaption(checked: checked, now: context.date))
                 }
             }
         }
@@ -384,10 +389,21 @@ struct ContentView: View {
         .padding(.top, 10)
     }
 
-    /// "now", "5 minutes ago", "2 hours ago" — anchored to the timeline tick, not to format time.
+    /// Under a minute it is "just now" — Finder's word for it: at minute granularity a seconds
+    /// figure would sit frozen mid-count. The guard also clamps a tick that lands before the
+    /// stat (schedule alignment, clock skew), which otherwise phrases the past as the future
+    /// ("in 30 seconds"). Static and pure so the bucketing has a test.
+    static func lastCheckedCaption(checked: Date, now: Date) -> String {
+        guard now.timeIntervalSince(checked) >= 60 else { return "Last checked just now" }
+        return "Last checked \(checkedFormatter.localizedString(for: checked, relativeTo: now))"
+    }
+
+    /// "5 minutes ago", "2 hours ago", "yesterday" — anchored to the timeline tick, not to format
+    /// time. Locale pinned because every other string in the app is unlocalized English.
     private static let checkedFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.dateTimeStyle = .named
+        formatter.locale = Locale(identifier: "en_US")
         return formatter
     }()
 
@@ -937,6 +953,12 @@ struct RefreshVeil: ViewModifier {
         content
             .blur(radius: active && !reduceMotion ? 6 : 0)
             .opacity(active ? 0.5 : 1)
+            // Receded means receded: content blurred past legibility must not stay clickable —
+            // what it looks like and what it does have to agree. `.disabled`, not a hit-test
+            // block, so the cards leave the Tab order too. Only the veiled pane locks; sidebar,
+            // toolbar, search and menu commands stay live (HIG Loading: let people do other
+            // things while they wait).
+            .disabled(active)
             .overlay {
                 if active {
                     Label("Checking for updates…", systemImage: "arrow.triangle.2.circlepath")
