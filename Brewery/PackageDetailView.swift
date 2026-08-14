@@ -111,7 +111,7 @@ private struct DetailPage: View {
     @Environment(AppModel.self) private var model
     @State private var showLicenses = false
     @State private var fontFaces: [FontPreview.Face] = []
-    @State private var facesExpanded = false
+    @State private var fontFacesDropped = 0
 
     var body: some View {
         // Resolved once per pass: both lists were read three times each (the `isEmpty` guards,
@@ -206,9 +206,10 @@ private struct DetailPage: View {
             .padding(20)
         }
         .task(id: fontTaskID) {
-            fontFaces = []
+            (fontFaces, fontFacesDropped) = ([], 0)
             guard pkg.isFont, model.installed[pkg.id] != nil else { return }
-            fontFaces = await FontPreview.resolve(names: fontNames)
+            (fontFaces, fontFacesDropped) = await FontPreview.resolve(names: fontNames,
+                                                                      limit: Self.faceLimit)
         }
     }
 
@@ -614,17 +615,19 @@ private struct DetailPage: View {
     private static let fontSample = "The quick brown fox jumps over the lazy dog."
     private static let faceLimit = 6
 
-    /// Each installed face demonstrated in itself — for a font cask the glyphs are the
-    /// payload, so this is the screenshots slot. Faces resolve once per page (the `.task`),
+    /// Each shown face demonstrated in itself — for a font cask the glyphs are the
+    /// payload, so this is the screenshots slot. Bounded, never expanding: the pane
+    /// samples a font, and the full specimen is Font Book's job (the Open button above).
+    /// A Show-More expander shipped first and died in review — 96 inline rows buried
+    /// every section below the preview. Faces resolve once per page (the `.task`),
     /// not per pass: CoreText parses the files, which is more than a `fileExists` check.
     private var fontPreview: some View {
         let multiFamily = Set(fontFaces.map(\.family)).count > 1
-        let shown = facesExpanded ? fontFaces : Array(fontFaces.prefix(Self.faceLimit))
 
         return VStack(alignment: .leading, spacing: 8) {
             sectionTitle("Preview")
 
-            ForEach(shown) { face in
+            ForEach(fontFaces) { face in
                 VStack(alignment: .leading, spacing: 1) {
                     Text(faceTitle(face, qualified: multiFamily))
                         .font(.caption)
@@ -641,14 +644,13 @@ private struct DetailPage: View {
                 .accessibilityLabel("\(faceTitle(face, qualified: true)) sample")
             }
 
-            if !facesExpanded, fontFaces.count > Self.faceLimit {
-                // Nerd Font packs ship dozens of near-identical weights: summary in
-                // place, detail on demand — the license row's own rule.
-                Button("Show \(fontFaces.count - Self.faceLimit) More Styles") {
-                    facesExpanded = true
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tint)
+            // No silent cap: what the selection left out is stated, and where to see it.
+            if fontFacesDropped > 0 {
+                Text(fontFacesDropped == 1
+                     ? "And 1 more style in Font Book"
+                     : "And \(fontFacesDropped) more styles in Font Book")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

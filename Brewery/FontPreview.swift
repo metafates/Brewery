@@ -62,22 +62,45 @@ nonisolated enum FontPreview {
         }
     }
 
-    /// Deduplicated (by PostScript name) and ordered for display: family, then weight
-    /// ascending, then upright before italic — Font Book's Regular, Italic, Bold, Bold Italic.
-    static func order(_ faces: [Face]) -> [Face] {
+    /// The faces worth a pane row, and the count of what stayed behind. The pane samples a
+    /// font; it is not a specimen browser — Font Book is, one click away on Open — so the
+    /// list is bounded and *representative* rather than exhaustive: deduplicated by
+    /// PostScript name, each family ordered Regular → Italic → heavier weights (upright
+    /// before italic at equal distance from regular), then families interleaved so every
+    /// family shows its Regular before any shows its second face. A Nerd Font pack's six
+    /// rows become one per family instead of six flavors of Thin.
+    static func representatives(_ faces: [Face], limit: Int) -> (shown: [Face], dropped: Int) {
         var seen: Set<String> = []
-        return faces
+        let ranked = faces
             .filter { seen.insert($0.postScriptName).inserted }
             .sorted {
-                ($0.family, $0.weight, $0.italic ? 1 : 0, $0.style)
-                    < ($1.family, $1.weight, $1.italic ? 1 : 0, $1.style)
+                ($0.family, abs($0.weight), $0.italic ? 1 : 0, $0.style)
+                    < ($1.family, abs($1.weight), $1.italic ? 1 : 0, $1.style)
             }
+
+        var families: [String] = []
+        var byFamily: [String: [Face]] = [:]
+        for face in ranked {
+            if byFamily[face.family] == nil { families.append(face.family) }
+            byFamily[face.family, default: []].append(face)
+        }
+
+        var shown: [Face] = []
+        var rank = 0
+        let deepest = byFamily.values.map(\.count).max() ?? 0
+        while shown.count < limit, rank < deepest {
+            for family in families where rank < byFamily[family]!.count && shown.count < limit {
+                shown.append(byFamily[family]![rank])
+            }
+            rank += 1
+        }
+        return (shown, ranked.count - shown.count)
     }
 
-    /// The pane's one call: artifact names → installed files → ordered faces.
+    /// The pane's one call: artifact names → installed files → the bounded selection.
     /// `@concurrent` is load-bearing for the same reason as `Receipts.sweep` — descriptor
     /// creation reads font files, and a plain `nonisolated async` runs on the caller's actor.
-    @concurrent static func resolve(names: [String]) async -> [Face] {
-        order(names.compactMap { fontURL(named: $0) }.flatMap(faces(at:)))
+    @concurrent static func resolve(names: [String], limit: Int) async -> (shown: [Face], dropped: Int) {
+        representatives(names.compactMap { fontURL(named: $0) }.flatMap(faces(at:)), limit: limit)
     }
 }

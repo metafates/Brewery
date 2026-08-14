@@ -41,13 +41,37 @@ struct FontPreviewTests {
         #expect(FontPreview.faces(at: URL(filePath: "/nonexistent/nope.ttf")).isEmpty)
     }
 
-    /// Ordering is display order: weights ascend, italic follows its upright, duplicate
-    /// PostScript names (the same file listed twice) collapse.
-    @Test func orderingAndDedup() {
-        let regular = FontPreview.Face(postScriptName: "X-Regular", family: "X", style: "Regular", weight: 0, italic: false)
-        let italic = FontPreview.Face(postScriptName: "X-Italic", family: "X", style: "Italic", weight: 0, italic: true)
-        let bold = FontPreview.Face(postScriptName: "X-Bold", family: "X", style: "Bold", weight: 0.4, italic: false)
+    private static func face(_ postScript: String, family: String, style: String,
+                             weight: Double, italic: Bool = false) -> FontPreview.Face {
+        FontPreview.Face(postScriptName: postScript, family: family, style: style,
+                         weight: weight, italic: italic)
+    }
 
-        #expect(FontPreview.order([bold, italic, regular, regular]) == [regular, italic, bold])
+    /// A single family reads as a type specimen: Regular, Italic, Bold, Bold Italic —
+    /// weights by distance from regular, upright before italic, duplicates collapsed.
+    @Test func singleFamilyOrder() {
+        let regular = Self.face("X-Regular", family: "X", style: "Regular", weight: 0)
+        let italic = Self.face("X-Italic", family: "X", style: "Italic", weight: 0, italic: true)
+        let bold = Self.face("X-Bold", family: "X", style: "Bold", weight: 0.4)
+        let boldItalic = Self.face("X-BoldItalic", family: "X", style: "Bold Italic", weight: 0.4, italic: true)
+
+        let result = FontPreview.representatives([boldItalic, bold, italic, regular, regular], limit: 6)
+        #expect(result.shown == [regular, italic, bold, boldItalic])
+        #expect(result.dropped == 0)
+    }
+
+    /// A multi-family pack shows every family's Regular before any family's second face,
+    /// the cap holds, and the remainder is counted — never silently dropped.
+    @Test func multiFamilyRoundRobinAndCap() {
+        var faces: [FontPreview.Face] = []
+        for family in ["A", "B", "C"] {
+            faces.append(Self.face("\(family)-Thin", family: family, style: "Thin", weight: -0.6))
+            faces.append(Self.face("\(family)-Regular", family: family, style: "Regular", weight: 0))
+            faces.append(Self.face("\(family)-Bold", family: family, style: "Bold", weight: 0.4))
+        }
+
+        let result = FontPreview.representatives(faces, limit: 4)
+        #expect(result.shown.map(\.postScriptName) == ["A-Regular", "B-Regular", "C-Regular", "A-Bold"])
+        #expect(result.dropped == 5)
     }
 }
