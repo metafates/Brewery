@@ -112,6 +112,7 @@ private struct DetailPage: View {
     @State private var showLicenses = false
     @State private var fontFaces: [FontPreview.Face] = []
     @State private var fontFacesDropped = 0
+    @State private var diskBytes: Int64?
     @State private var bannerPhase = BannerPhase.absent
 
     /// v10.1 — the banner slot's lifecycle: reserved while the card is on its way, gone if it
@@ -251,11 +252,28 @@ private struct DetailPage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
         }
-        .task(id: fontTaskID) {
+        .task(id: installedTaskID) {
             (fontFaces, fontFacesDropped) = ([], 0)
             guard pkg.isFont, model.installed[pkg.id] != nil else { return }
             (fontFaces, fontFacesDropped) = await FontPreview.resolve(names: fontNames,
                                                                       limit: Self.faceLimit)
+        }
+        .task(id: installedTaskID) {
+            diskBytes = nil
+            guard model.installed[pkg.id] != nil, let prefix = model.client.prefix else { return }
+            var roots: [URL] = []
+            switch pkg.kind {
+            case .formula:
+                // Every keg of the formula: what is on disk is what the machine is paying.
+                roots.append(prefix.appending(path: "Cellar", directoryHint: .isDirectory)
+                    .appending(path: pkg.name, directoryHint: .isDirectory))
+            case .cask:
+                roots.append(prefix.appending(path: "Caskroom", directoryHint: .isDirectory)
+                    .appending(path: pkg.name, directoryHint: .isDirectory))
+                roots += model.launchableApps(for: pkg)
+                roots += fontNames.compactMap { FontPreview.fontURL(named: $0) }
+            }
+            diskBytes = await DiskUsage.bytes(at: roots)
         }
         .task(id: pkg.id) {
             guard !pkg.isFont,
@@ -301,9 +319,9 @@ private struct DetailPage: View {
             .accessibilityHidden(true)
     }
 
-    /// Re-resolve when the page's package changes — and when it becomes installed, which is
-    /// the moment a preview first has files to find.
-    private var fontTaskID: String { "\(pkg.id)|\(model.installed[pkg.id] != nil)" }
+    /// Re-resolve the on-disk lookups (font faces, disk usage) when the page's package
+    /// changes — and when it becomes installed, the moment there are files to find.
+    private var installedTaskID: String { "\(pkg.id)|\(model.installed[pkg.id] != nil)" }
 
     // MARK: - Header
 
@@ -357,6 +375,16 @@ private struct DetailPage: View {
                 // beside nothing read as a broken row, so the row renders only with text.
                 if showsVersionRow {
                     statRow("tag") { versionLine }
+                }
+
+                // v10 — the App Store's Size row, measured rather than promised: what the
+                // installed package occupies, formatted the way Finder would print it.
+                if let diskBytes {
+                    statRow("internaldrive") {
+                        Text("\(diskBytes.formatted(.byteCount(style: .file))) on disk")
+                            .foregroundStyle(.secondary)
+                    }
+                    .help("Measured from what this package installed on this Mac")
                 }
 
                 if let installs = pkg.installs90d {
