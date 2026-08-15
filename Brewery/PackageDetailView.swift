@@ -112,7 +112,23 @@ private struct DetailPage: View {
     @State private var showLicenses = false
     @State private var fontFaces: [FontPreview.Face] = []
     @State private var fontFacesDropped = 0
-    @State private var bannerImage: NSImage?
+    @State private var bannerPhase = BannerPhase.absent
+
+    /// v10.1 — the banner slot's lifecycle: reserved while the card is on its way, gone if it
+    /// never arrives. Knowing the footprint up front is what makes the reservation honest.
+    private enum BannerPhase: Equatable {
+        case absent
+        case loading
+        case loaded(NSImage)
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            switch (lhs, rhs) {
+            case (.absent, .absent), (.loading, .loading): true
+            case let (.loaded(a), .loaded(b)): a === b
+            default: false
+            }
+        }
+    }
 
     var body: some View {
         // Resolved once per pass: both lists were read three times each (the `isEmpty` guards,
@@ -172,9 +188,20 @@ private struct DetailPage: View {
 
                 // v10 — the repo's social-preview card as hero artwork, in the screenshots
                 // slot. Not for fonts: their Preview section is strictly better artwork.
-                if let bannerImage {
-                    bannerView(bannerImage)
+                // v10.1 — the slot is reserved while the card loads (HIG Loading: "show
+                // something as soon as possible"; placeholders over spinners is the icon
+                // grammar) and the image crossfades in — the pop-in reflow read as a glitch.
+                Group {
+                    switch bannerPhase {
+                    case .absent:
+                        EmptyView()
+                    case .loading:
+                        bannerPlaceholder
+                    case .loaded(let image):
+                        bannerView(image)
+                    }
                 }
+                .animation(.easeOut(duration: 0.2), value: bannerPhase)
 
                 if !fontFaces.isEmpty {
                     Divider()
@@ -231,11 +258,30 @@ private struct DetailPage: View {
                                                                       limit: Self.faceLimit)
         }
         .task(id: pkg.id) {
-            bannerImage = nil
             guard !pkg.isFont,
-                  let source = IconStore.bannerSource(homepage: pkg.homepageURL) else { return }
-            bannerImage = await IconStore.banners.image(key: source.key, url: source.url)
+                  let source = IconStore.bannerSource(homepage: pkg.homepageURL) else {
+                bannerPhase = .absent
+                return
+            }
+            bannerPhase = .loading
+            if let image = await IconStore.banners.image(key: source.key, url: source.url) {
+                bannerPhase = .loaded(image)
+            } else {
+                // Offline or no card after all: collapse. The rare case pays one reflow
+                // rather than every pane paying a permanent empty box.
+                bannerPhase = .absent
+            }
         }
+    }
+
+    /// The card's reserved footprint: GitHub renders og cards at 1200×600 (verified on the
+    /// wire, not the og-spec's 1.91:1), so the slot is laid out at final size and the image
+    /// replaces the quiet fill without a reflow.
+    private var bannerPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(.quaternary.opacity(0.5))
+            .aspectRatio(2, contentMode: .fit)
+            .accessibilityHidden(true)
     }
 
     /// GitHub's cards are 2:1-ish; full pane width, its own corner radius, and a hairline —
