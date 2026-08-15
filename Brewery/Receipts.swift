@@ -11,6 +11,10 @@ nonisolated struct Receipt: Equatable {
     var dependencies: [String]   // short names, `declared_directly` entries first
     var apps: [String] = []      // cask `.app` bundle names, e.g. "Firefox.app"
     var tap: String? = nil       // v4, from `source.tap`; core taps normalized to nil
+    /// v10 — `poured_from_bottle` inverted: brew's autoremove never removes a formula built
+    /// from source (`utils/autoremove.rb`), so the orphan report must not claim it would.
+    /// Absent or unreadable counts as built-from-source — the side that under-reports.
+    var builtFromSource: Bool = true
 }
 
 /// Reads Homebrew's per-keg install receipts. They answer both of v2's questions — "did the user
@@ -40,7 +44,8 @@ nonisolated enum Receipts {
         return Receipt(onRequest: payload.installedOnRequest ?? false,
                        dependencies: order(payload.runtimeDependencies?.entries ?? []),
                        apps: payload.uninstallArtifacts?.flatMap { $0.app ?? [] } ?? [],
-                       tap: normalizedTap(payload.source?.tap))
+                       tap: normalizedTap(payload.source?.tap),
+                       builtFromSource: payload.pouredFromBottle != true)
     }
 
     /// Receipts say `homebrew/core`/`homebrew/cask` for core installs; folding those to nil keeps
@@ -107,6 +112,7 @@ nonisolated enum Receipts {
         let runtimeDependencies: Dependencies?
         let uninstallArtifacts: [Artifact]?
         let source: Source?
+        let pouredFromBottle: Bool?
     }
 
     // MARK: - Sweep
@@ -182,6 +188,35 @@ nonisolated enum Receipts {
             if FileManager.default.fileExists(atPath: url.path) { return url }
         }
         return nil
+    }
+
+    // MARK: - Orphans (v10)
+
+    /// What `brew autoremove` would remove (`utils/autoremove.rb`), to the same fixpoint —
+    /// removing an orphan can orphan what it depended on, so the sweep repeats until stable.
+    /// Three protections mirror brew's exactly: on-request formulae stay; formulae built
+    /// from source stay (brew only autoremoves bottles); and cask dependencies stay — cask
+    /// receipts carry no runtime deps, so those come from the catalog's `depends_on` in
+    /// `caskDependencies`, and the fixpoint protects their transitive deps for free.
+    /// Pure — the same receipt data the Dependencies and Required-by rows trust.
+    static func orphans(installed: [Package.ID: InstalledInfo],
+                        caskDependencies: [Package.ID: [String]] = [:]) -> Set<Package.ID> {
+        var alive = installed
+        while true {
+            var needed: Set<Package.ID> = []
+            for (id, info) in alive {
+                for name in info.dependencies + (caskDependencies[id] ?? []) {
+                    needed.insert(Package.packageID(kind: .formula, name: name))
+                }
+            }
+            let doomed = alive.filter { id, info in
+                id.hasPrefix("formula:") && !info.onRequest && !info.builtFromSource
+                    && !needed.contains(id)
+            }
+            guard !doomed.isEmpty else { break }
+            for id in doomed.keys { alive.removeValue(forKey: id) }
+        }
+        return Set(installed.keys).subtracting(alive.keys)
     }
 
     // MARK: - Inversion

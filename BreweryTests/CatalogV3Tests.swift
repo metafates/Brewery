@@ -194,7 +194,8 @@ struct CatalogV3Tests {
             "homepage": "https://www.mozilla.org/firefox/",
             "version": "141.0",
             "caveats": "Installing this cask means you have AGREED to the terms at $HOMEBREW_PREFIX/share/doc.",
-            "conflicts_with": { "cask": ["firefox@developer-edition"] }
+            "conflicts_with": { "cask": ["firefox@developer-edition"] },
+            "depends_on": { "macos": { ">=": ["10.15"] }, "formula": ["libx"] }
           }
         ]
         """
@@ -249,6 +250,10 @@ struct CatalogV3Tests {
         // kind .cask so the pane's row pushes to the right namespace.
         #expect(firefox.conflicts == [Conflict(name: "firefox@developer-edition", reason: nil, kind: .cask)])
         #expect(firefox.commands.isEmpty)
+        // v10 — depends_on.formula survives the slim decode (the macos key is ignored);
+        // the orphan report needs it to know what a cask keeps alive.
+        #expect(firefox.caskDependencies == ["libx"])
+        #expect(font.caskDependencies.isEmpty)
     }
 
     // MARK: - Conflicts
@@ -331,7 +336,7 @@ struct CatalogV3Tests {
         // Bumped whenever a field joins Package (4: `license`, 5: `rubySourcePath`,
         // 6: `artifacts`, 7: `service`): an older file decodes without it and would otherwise be
         // served as if it were complete.
-        #expect(CatalogStore.cacheVersion == 8)
+        #expect(CatalogStore.cacheVersion == 9)
         #expect(CatalogCache(fetchedAt: .now, packages: []).version == CatalogStore.cacheVersion)
 
         // What the shipped v2 file looks like: no `version` key at all, so the decode throws — which

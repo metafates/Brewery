@@ -86,6 +86,72 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     }
 }
 
+/// v10 — the Orphans scope's header: the report's totals and the one command that acts on
+/// them. A report with a copyable command, deliberately not a button — the safety whitelist
+/// forbids `uninstall`, so removal stays in Terminal: Brewery shows, Terminal destroys
+/// (Storage Management's grammar: a recommendation with sizes, the destructive act elsewhere).
+private struct OrphanSummaryBar: View {
+    @Environment(AppModel.self) private var model
+    @State private var bytes: Int64?
+
+    private var ids: [Package.ID] { model.orphanIDs.sorted() }
+
+    var body: some View {
+        if !ids.isEmpty {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    // The size joins the line in place once measured — horizontal growth
+                    // only, nothing below moves.
+                    Text("^[\(ids.count) orphaned dependencies](inflect: true)\(bytes.map { " · \($0.formatted(.byteCount(style: .file))) reclaimable" } ?? "")")
+                        .fontWeight(.semibold)
+                    Text("Installed for packages that are no longer here. Homebrew can remove them all:")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                HStack(spacing: 8) {
+                    Text("brew autoremove")
+                        .font(.callout)
+                        .monospaced()
+                        .textSelection(.enabled)
+                    CopyButton(text: "brew autoremove")
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
+                .help("Run in Terminal to remove every orphaned dependency")
+            }
+            .padding(12)
+            .background(.background.secondary, in: .rect(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(.separator, lineWidth: 1)
+            }
+            .accessibilityElement(children: .combine)
+            .task(id: ids) {
+                bytes = nil
+                guard let prefix = model.client.prefix else { return }
+                var total: Int64 = 0
+                for id in ids {
+                    let name = String(id.dropFirst("formula:".count))
+                    let key = "\(id)|\(model.installed[id]?.versions.last ?? "")"
+                    if let cached = DiskUsage.cache[key] {
+                        total += cached
+                        continue
+                    }
+                    let root = prefix.appending(path: "Cellar", directoryHint: .isDirectory)
+                        .appending(path: name, directoryHint: .isDirectory)
+                    if let measured = await DiskUsage.bytes(at: [root]) {
+                        DiskUsage.cache[key] = measured
+                        total += measured
+                    }
+                }
+                bytes = total
+            }
+        }
+    }
+}
+
 /// Discover's kind filter. Applied to the array before it reaches the ranker, which is why it is
 /// plain state and not `.searchScopes`: scopes only surface while a search is active, and the
 /// filter has to govern empty-query browsing just the same.
@@ -115,9 +181,10 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// The Installed section's scope: what the user asked for, or everything that is on disk.
+/// The Installed section's scope: what the user asked for, everything that is on disk, or
+/// (v10) the orphan report — dependencies nothing installed still needs.
 nonisolated enum InstalledScope: String, CaseIterable, Identifiable {
-    case onRequest, all
+    case onRequest, all, orphans
 
     var id: String { rawValue }
 
@@ -125,6 +192,7 @@ nonisolated enum InstalledScope: String, CaseIterable, Identifiable {
         switch self {
         case .onRequest: "On Request"
         case .all: "All"
+        case .orphans: "Orphans"
         }
     }
 }
@@ -363,6 +431,8 @@ struct ContentView: View {
                                 TapPageHeader(tap: tap)
                             } else if section == .outdated {
                                 freshnessCaption
+                            } else if section == .installed, installedScope == .orphans {
+                                OrphanSummaryBar()
                             } else {
                                 discoverTip
                             }
@@ -554,6 +624,8 @@ struct ContentView: View {
         case .installed:
             if installedKindFilter != .all || installedTapsOnly, !model.installed.isEmpty {
                 "No installed packages match the filter"
+            } else if installedScope == .orphans, !model.installed.isEmpty {
+                "No orphaned dependencies"
             } else if installedScope == .onRequest, !model.installed.isEmpty {
                 "No packages installed on request"
             } else {

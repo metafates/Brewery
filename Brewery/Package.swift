@@ -160,6 +160,10 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let tap: String?          // "user/repo" for third-party taps; nil = core (implied by kind)
     let tapRemote: String?    // the tap clone's git remote, for source links; nil for core
     let artifacts: [CaskArtifact] // casks only; payload artifacts aggregated by kind
+    /// v10 — casks only: `depends_on.formula` from the cask DSL. Cask receipts carry no
+    /// runtime dependencies, so this is the only record of the formulae a cask keeps alive —
+    /// which is exactly what brew's own autoremove reads (`utils/autoremove.rb`).
+    var caskDependencies: [String] = []
     let service: ServiceDefinition? // formulae only; nil = defines no background service
 
     /// Written out rather than synthesized: a `let` with an inline default drops out of the
@@ -181,6 +185,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
          tap: String? = nil,
          tapRemote: String? = nil,
          artifacts: [CaskArtifact] = [],
+         caskDependencies: [String] = [],
          service: ServiceDefinition? = nil) {
         self.kind = kind
         self.name = name
@@ -199,6 +204,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         self.tap = tap
         self.tapRemote = tapRemote
         self.artifacts = artifacts
+        self.caskDependencies = caskDependencies
         self.service = service
     }
 
@@ -331,6 +337,8 @@ nonisolated struct InstalledInfo: Equatable, Hashable {
     /// From the receipt's `source.tap`, normalized: core taps and absent → nil, else "user/repo".
     /// Outranks the catalog's tap — the receipt records what was *actually* installed.
     var tap: String? = nil
+    /// v10 — `poured_from_bottle` inverted; brew never autoremoves a from-source build.
+    var builtFromSource: Bool = false
 }
 
 nonisolated struct OutdatedInfo: Equatable, Hashable {

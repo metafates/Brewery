@@ -47,7 +47,7 @@ nonisolated struct CatalogStore {
     static let maxCacheAge: TimeInterval = 24 * 60 * 60
 
     /// Bumped whenever `Package`'s shape changes; a mismatch discards the cache and re-downloads.
-    static let cacheVersion = 8   // v10: cask conflicts join `Package.conflicts`
+    static let cacheVersion = 9   // v10: cask conflicts, then cask `depends_on` formulae
 
     /// Application Support/Brewery, created on demand.
     static var supportDirectory: URL {
@@ -302,11 +302,28 @@ nonisolated struct CatalogStore {
         let rubySourcePath: String?
         let artifacts: [ArtifactEntry]?
         let conflictsWith: Lenient<ConflictsEntry>?
+        let dependsOn: Lenient<DependsOnEntry>?
 
         enum CodingKeys: String, CodingKey {
             case token, name, desc, homepage, version, deprecated, disabled, caveats, artifacts
             case rubySourcePath = "ruby_source_path"
             case conflictsWith = "conflicts_with"
+            case dependsOn = "depends_on"
+        }
+    }
+
+    /// A cask's `depends_on` object; only the `formula` list matters here — it names the
+    /// formulae this cask keeps alive, which the orphan report must respect the way brew's
+    /// autoremove does. Lenient at both levels: an odd shape yields no deps, never no cask.
+    struct DependsOnEntry: Decodable {
+        let formula: [String]
+
+        private enum CodingKeys: String, CodingKey { case formula }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            formula = ((try? container.decode([Lenient<String>].self, forKey: .formula)) ?? [])
+                .compactMap(\.value)
         }
     }
 
@@ -424,7 +441,8 @@ nonisolated struct CatalogStore {
                         .map { Conflict(name: $0, reason: nil, kind: .cask) },
                     installs90d: installs[entry.token],
                     rubySourcePath: entry.rubySourcePath,
-                    artifacts: aggregateArtifacts(entry.artifacts ?? []))
+                    artifacts: aggregateArtifacts(entry.artifacts ?? []),
+                    caskDependencies: entry.dependsOn?.value?.formula ?? [])
         }
     }
 }

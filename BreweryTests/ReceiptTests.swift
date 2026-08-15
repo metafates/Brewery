@@ -303,4 +303,51 @@ struct CaskAppTests {
         #expect(receipt.apps.isEmpty)
         #expect(!receipt.onRequest)
     }
+
+    // MARK: - Orphans (v10)
+
+    private static func dep(_ deps: [String] = []) -> InstalledInfo {
+        InstalledInfo(versions: ["1.0"], onRequest: false, dependencies: deps)
+    }
+
+    /// The fixpoint matches `brew autoremove` (`utils/autoremove.rb`): direct orphans go,
+    /// and so does what only they were keeping alive — round after round until stable.
+    /// On-request packages, from-source builds and anything a survivor needs all stay.
+    @Test("orphans fall to the autoremove fixpoint")
+    func orphanFixpoint() {
+        let installed: [Package.ID: InstalledInfo] = [
+            "formula:app": InstalledInfo(versions: ["1.0"], onRequest: true, dependencies: ["lib"]),
+            "formula:lib": Self.dep(["sublib"]),      // kept by app
+            "formula:sublib": Self.dep(),             // kept by lib
+            "formula:stray": Self.dep(["straylib"]),  // orphan — nothing needs it
+            "formula:straylib": Self.dep(),           // orphaned the round after stray falls
+            "cask:tool": Self.dep(),                  // casks are never orphans
+        ]
+        #expect(Receipts.orphans(installed: installed) == ["formula:stray", "formula:straylib"])
+
+        // A cask's depends_on formulae (from the catalog — cask receipts carry no deps)
+        // hold formulae alive, transitively: the neovide → neovim → lpeg shape.
+        let caskHeld: [Package.ID: InstalledInfo] = [
+            "cask:neovide": InstalledInfo(versions: ["1.0"], onRequest: true),
+            "formula:neovim": Self.dep(["lpeg"]),
+            "formula:lpeg": Self.dep(),
+        ]
+        #expect(Receipts.orphans(installed: caskHeld,
+                                 caskDependencies: ["cask:neovide": ["neovim"]]).isEmpty)
+        // Without the cask's claim the whole chain falls.
+        #expect(Receipts.orphans(installed: caskHeld) == ["formula:neovim", "formula:lpeg"])
+
+        // brew only autoremoves bottles: a from-source build never falls.
+        let fromSource: [Package.ID: InstalledInfo] = [
+            "formula:handmade": InstalledInfo(versions: ["1.0"], onRequest: false,
+                                              builtFromSource: true),
+        ]
+        #expect(Receipts.orphans(installed: fromSource).isEmpty)
+
+        // Nothing installed on request ever falls.
+        let requested: [Package.ID: InstalledInfo] = [
+            "formula:solo": InstalledInfo(versions: ["1.0"], onRequest: true),
+        ]
+        #expect(Receipts.orphans(installed: requested).isEmpty)
+    }
 }

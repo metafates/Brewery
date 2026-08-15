@@ -381,6 +381,7 @@ final class AppModel {
             result[id]?.dependencies = receipt.dependencies
             result[id]?.apps = receipt.apps
             result[id]?.tap = receipt.tap
+            result[id]?.builtFromSource = receipt.builtFromSource
         }
         return result
     }
@@ -421,14 +422,34 @@ final class AppModel {
                with: installed.mapValues { $0.versions })
     }
 
+    /// v10 — the orphan report: what `brew autoremove` would remove. Cask receipts carry no
+    /// runtime dependencies, so each installed cask's `depends_on` formulae come from the
+    /// catalog — that is how brew itself protects them (`utils/autoremove.rb` reads the cask
+    /// DSL, not tabs). Recomputed per access; ~350 kegs and a few rounds are well under a
+    /// millisecond.
+    var orphanIDs: Set<Package.ID> {
+        var caskDependencies: [Package.ID: [String]] = [:]
+        for id in installed.keys where id.hasPrefix("cask:") {
+            if let deps = package(for: id)?.caskDependencies, !deps.isEmpty {
+                caskDependencies[id] = deps
+            }
+        }
+        return Receipts.orphans(installed: installed, caskDependencies: caskDependencies)
+    }
+
     /// The Installed section under the scope picker. `.all` is the full list; `.onRequest` drops the
-    /// kegs that are only on disk because something else needed them.
+    /// kegs that are only on disk because something else needed them; `.orphans` (v10) keeps only
+    /// what `brew autoremove` would remove.
     func installedPackages(scope: InstalledScope) -> [Package] {
         switch scope {
         case .all:
-            installedPackages
+            return installedPackages
         case .onRequest:
-            installedPackages.filter { installed[$0.id]?.onRequest ?? true }
+            return installedPackages.filter { installed[$0.id]?.onRequest ?? true }
+        case .orphans:
+            // Resolved once, not per element — the fixpoint is cheap but not free.
+            let orphans = orphanIDs
+            return installedPackages.filter { orphans.contains($0.id) }
         }
     }
 
