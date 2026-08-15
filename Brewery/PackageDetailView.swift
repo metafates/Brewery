@@ -737,14 +737,15 @@ private struct DetailPage: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// Formulae that cannot be installed alongside this one. Each name is a row like a dependency,
+    /// Packages that cannot be installed alongside this one — formula conflicts with brew's
+    /// reasons, cask conflicts (v10) as bare cask tokens. Each name is a row like a dependency,
     /// so following one retargets the sheet; a name the catalog does not cover stays plain text.
     private var conflicts: some View {
         VStack(alignment: .leading, spacing: 2) {
             sectionTitle("Conflicts with")
 
             ForEach(pkg.conflicts, id: \.name) { conflict in
-                if let package = model.package(for: Package.packageID(kind: .formula, name: conflict.name)) {
+                if let package = model.package(for: Package.packageID(kind: conflict.kind ?? .formula, name: conflict.name)) {
                     RelatedRow(package: package,
                                version: model.installed[package.id]?.versions.last,
                                detail: conflict.reason) {

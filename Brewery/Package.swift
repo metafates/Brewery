@@ -11,10 +11,14 @@ nonisolated enum PackageKind: String, Codable, Hashable, CaseIterable {
     case formula, cask
 }
 
-/// One entry of a formula's `conflicts_with` list, paired with its reason when the API gives one.
+/// One entry of a package's conflicts list. Formulae pair `conflicts_with` with its reasons;
+/// cask conflicts (v10) name other casks and carry no reason — brew's cask DSL accepts only
+/// the `cask` key. `kind` says what the row resolves to: nil means formula, which is also
+/// what pre-v10 caches decode as.
 nonisolated struct Conflict: Codable, Hashable {
     let name: String
     let reason: String?
+    var kind: PackageKind? = nil
 }
 
 /// What a cask puts on the machine, aggregated by kind — the payload half of the API's
@@ -148,7 +152,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let deprecated: Bool
     let disabled: Bool        // disabled packages cannot be installed
     let caveats: String?      // may embed a literal "$HOMEBREW_PREFIX" — see `resolvedCaveats`
-    let conflicts: [Conflict] // formulae only; cask `conflicts_with` has another shape and is skipped
+    let conflicts: [Conflict] // formula conflicts carry reasons; cask conflicts (v10) name casks
     let commands: [String]    // formulae only; the executables this formula installs
     let installs90d: Int?     // nil when the package is absent from the analytics files
     let license: String?      // formulae only; SPDX identifier

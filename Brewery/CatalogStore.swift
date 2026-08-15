@@ -47,7 +47,7 @@ nonisolated struct CatalogStore {
     static let maxCacheAge: TimeInterval = 24 * 60 * 60
 
     /// Bumped whenever `Package`'s shape changes; a mismatch discards the cache and re-downloads.
-    static let cacheVersion = 7
+    static let cacheVersion = 8   // v10: cask conflicts join `Package.conflicts`
 
     /// Application Support/Brewery, created on demand.
     static var supportDirectory: URL {
@@ -301,10 +301,28 @@ nonisolated struct CatalogStore {
         let caveats: String?
         let rubySourcePath: String?
         let artifacts: [ArtifactEntry]?
+        let conflictsWith: Lenient<ConflictsEntry>?
 
         enum CodingKeys: String, CodingKey {
             case token, name, desc, homepage, version, deprecated, disabled, caveats, artifacts
             case rubySourcePath = "ruby_source_path"
+            case conflictsWith = "conflicts_with"
+        }
+    }
+
+    /// A cask's `conflicts_with` is an object, not the formula's parallel arrays, and brew 6's
+    /// DSL accepts only the `cask` key (`cask/dsl/conflicts_with.rb:12`) — entries are cask
+    /// tokens, and reasons don't exist. Wrapped `Lenient` at the field: an odd shape yields no
+    /// conflicts, never no cask.
+    struct ConflictsEntry: Decodable {
+        let cask: [String]
+
+        private enum CodingKeys: String, CodingKey { case cask }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            cask = ((try? container.decode([Lenient<String>].self, forKey: .cask)) ?? [])
+                .compactMap(\.value)
         }
     }
 
@@ -402,6 +420,8 @@ nonisolated struct CatalogStore {
                     deprecated: entry.deprecated ?? false,
                     disabled: entry.disabled ?? false,
                     caveats: entry.caveats,
+                    conflicts: (entry.conflictsWith?.value?.cask ?? [])
+                        .map { Conflict(name: $0, reason: nil, kind: .cask) },
                     installs90d: installs[entry.token],
                     rubySourcePath: entry.rubySourcePath,
                     artifacts: aggregateArtifacts(entry.artifacts ?? []))

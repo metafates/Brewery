@@ -231,7 +231,7 @@ struct CatalogV3Tests {
                                      Conflict(name: "parrot", reason: nil)])
     }
 
-    @Test("casks carry caveats and installs, never conflicts or commands")
+    @Test("casks carry caveats, installs and cask conflicts — never commands")
     func caskMerge() throws {
         let packages = try CatalogStore.decodeCasks(Data(Self.caskJSON.utf8),
                                                     installs: ["firefox": 46_785])
@@ -239,12 +239,15 @@ struct CatalogV3Tests {
         let font = try #require(packages.first)
         #expect(font.caveats == nil)
         #expect(font.installs90d == nil)
+        // A null `conflicts_with` is no conflicts, not a decode failure.
+        #expect(font.conflicts.isEmpty)
 
         let firefox = packages[1]
         #expect(firefox.installs90d == 46_785)
         #expect(firefox.caveats?.hasPrefix("Installing this cask") == true)
-        // The object-shaped cask `conflicts_with` is deferred: decoding it must not even be attempted.
-        #expect(firefox.conflicts.isEmpty)
+        // v10 — the object-shaped cask `conflicts_with` decodes: cask tokens, no reasons,
+        // kind .cask so the pane's row pushes to the right namespace.
+        #expect(firefox.conflicts == [Conflict(name: "firefox@developer-edition", reason: nil, kind: .cask)])
         #expect(firefox.commands.isEmpty)
     }
 
@@ -328,7 +331,7 @@ struct CatalogV3Tests {
         // Bumped whenever a field joins Package (4: `license`, 5: `rubySourcePath`,
         // 6: `artifacts`, 7: `service`): an older file decodes without it and would otherwise be
         // served as if it were complete.
-        #expect(CatalogStore.cacheVersion == 7)
+        #expect(CatalogStore.cacheVersion == 8)
         #expect(CatalogCache(fetchedAt: .now, packages: []).version == CatalogStore.cacheVersion)
 
         // What the shipped v2 file looks like: no `version` key at all, so the decode throws — which
