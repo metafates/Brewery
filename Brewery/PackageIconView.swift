@@ -3,12 +3,14 @@
 //  Brewery
 //
 
+import AppKit
 import SwiftUI
 
-/// The package homepage's favicon, or an SF Symbol in a tinted rounded rect when there is no
-/// homepage to ask about — or the fetch has not finished. Backed by `IconStore` rather than
-/// `AsyncImage`: a cell scrolled out of the grid cancels this view's await, but the store's fetch
-/// runs on regardless, so the icon is already cached when the cell comes back.
+/// The installed bundle's real icon when a cask's `.app` is on disk (v10 — identity straight
+/// from the app itself, no network), else the package homepage's favicon, else an SF Symbol in
+/// a tinted rounded rect. Favicons are backed by `IconStore` rather than `AsyncImage`: a cell
+/// scrolled out of the grid cancels this view's await, but the store's fetch runs on
+/// regardless, so the icon is already cached when the cell comes back.
 struct PackageIconView: View {
     let package: Package
     var size: CGFloat = 44
@@ -16,7 +18,11 @@ struct PackageIconView: View {
     /// Icons grow with the text they sit next to.
     @ScaledMetric(relativeTo: .headline) private var scale = 1
 
+    @Environment(AppModel.self) private var model
     @State private var image: NSImage?
+    /// A real app icon carries its own squircle and shadow — clipping it to the favicon
+    /// rounded rect would double-mask macOS's own shape.
+    @State private var isAppIcon = false
     @State private var isLoading = false
 
     private var side: CGFloat { size * scale }
@@ -37,6 +43,13 @@ struct PackageIconView: View {
         return package.kind == .formula ? "terminal.fill" : "macwindow"
     }
 
+    /// The installed bundle whose icon beats any favicon. Resolved per appearance like the
+    /// pane's Open target, so an app dragged to the Trash falls back to the favicon.
+    private var installedAppPath: String? {
+        guard package.kind == .cask else { return nil }
+        return model.launchableApps(for: package).first?.path
+    }
+
     var body: some View {
         Group {
             if let image {
@@ -44,7 +57,7 @@ struct PackageIconView: View {
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .clipShape(shape)
+                    .clipShape(isAppIcon ? AnyShape(Rectangle()) : AnyShape(shape))
                     .transition(.opacity)
             } else {
                 // Loading: the same fallback symbol, dimmed. No spinners in the grid.
@@ -57,13 +70,23 @@ struct PackageIconView: View {
         // a grid that fills in and a grid that flickers as you scroll through it.
         .animation(.easeOut(duration: 0.2), value: image == nil)
         .accessibilityHidden(true)
-        .task(id: host) {
+        .task(id: "\(installedAppPath ?? "")|\(host ?? "")") {
+            if let path = installedAppPath {
+                // Icon services answers from its own cache; the reps cover retina sizes.
+                let icon = NSWorkspace.shared.icon(forFile: path)
+                icon.size = NSSize(width: 256, height: 256)
+                image = icon
+                isAppIcon = true
+                return
+            }
             guard let host else {
                 image = nil
+                isAppIcon = false
                 return
             }
             isLoading = true
             image = await IconStore.shared.icon(for: host)
+            isAppIcon = false
             isLoading = false
         }
     }
@@ -91,5 +114,6 @@ struct PackageIconView: View {
                                          desc: nil, homepage: "https://github.com/tonsky/FiraCode",
                                          version: "6.2", deprecated: false, disabled: false))
     }
+    .environment(AppModel())
     .padding()
 }
