@@ -113,6 +113,19 @@ private struct DetailPage: View {
     @State private var fontFaces: [FontPreview.Face] = []
     @State private var fontFacesDropped = 0
     @State private var diskBytes: Int64?
+    @State private var sizeFailed = false
+
+    /// Reserved while installed and measurable; collapses only if the measurement genuinely
+    /// fails (a hand-deleted keg) — the rare case pays one reflow rather than every pane
+    /// showing a permanent skeleton.
+    private var showsSizeRow: Bool {
+        model.installed[pkg.id] != nil && model.client.prefix != nil && !sizeFailed
+    }
+
+    /// The cache key: an upgrade changes the version and invalidates naturally.
+    private var sizeKey: String {
+        "\(pkg.id)|\(model.installed[pkg.id]?.versions.last ?? "")"
+    }
     @State private var bannerPhase = BannerPhase.absent
 
     /// v10.1 — the banner slot's lifecycle: reserved while the card is on its way, gone if it
@@ -259,8 +272,10 @@ private struct DetailPage: View {
                                                                       limit: Self.faceLimit)
         }
         .task(id: installedTaskID) {
-            diskBytes = nil
-            guard model.installed[pkg.id] != nil, let prefix = model.client.prefix else { return }
+            sizeFailed = false
+            diskBytes = DiskUsage.cache[sizeKey]
+            guard diskBytes == nil,
+                  model.installed[pkg.id] != nil, let prefix = model.client.prefix else { return }
             var roots: [URL] = []
             switch pkg.kind {
             case .formula:
@@ -273,7 +288,12 @@ private struct DetailPage: View {
                 roots += model.launchableApps(for: pkg)
                 roots += fontNames.compactMap { FontPreview.fontURL(named: $0) }
             }
-            diskBytes = await DiskUsage.bytes(at: roots)
+            if let measured = await DiskUsage.bytes(at: roots) {
+                DiskUsage.cache[sizeKey] = measured
+                diskBytes = measured
+            } else {
+                sizeFailed = true
+            }
         }
         .task(id: pkg.id) {
             guard !pkg.isFont,
@@ -379,10 +399,24 @@ private struct DetailPage: View {
 
                 // v10 — the App Store's Size row, measured rather than promised: what the
                 // installed package occupies, formatted the way Finder would print it.
-                if let diskBytes {
+                // v10.1 — the row is *reserved* from first layout (its presence is knowable
+                // synchronously; only the value is slow) and the number fills in place: a
+                // row inserting itself mid-list pushed everything below it on every card
+                // switch. Redacted text is the system's own skeleton — HIG Loading's "show
+                // something as soon as possible", the banner's reservation rule for a row.
+                if showsSizeRow {
                     statRow("internaldrive") {
-                        Text("\(diskBytes.formatted(.byteCount(style: .file))) on disk")
-                            .foregroundStyle(.secondary)
+                        if let diskBytes {
+                            Text("\(diskBytes.formatted(.byteCount(style: .file))) on disk")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("00.0 MB on disk")
+                                .foregroundStyle(.secondary)
+                                .redacted(reason: .placeholder)
+                                // Scaffolding, not content: VoiceOver hears the row when
+                                // it has a number to say.
+                                .accessibilityHidden(true)
+                        }
                     }
                     .help("Measured from what this package installed on this Mac")
                 }
