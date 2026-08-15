@@ -20,10 +20,17 @@ struct PackageIconView: View {
 
     @Environment(AppModel.self) private var model
     @State private var image: NSImage?
-    /// A real app icon carries its own squircle and shadow — clipping it to the favicon
-    /// rounded rect would double-mask macOS's own shape.
     @State private var isAppIcon = false
     @State private var isLoading = false
+
+    /// macOS app icons pad their squircle inside the canvas (the HIG icon grid: an 824 pt
+    /// squircle centered in a 1024 pt canvas), so drawn at tile size they read visibly
+    /// smaller than the edge-to-edge favicon tiles beside them. Overscanning by the grid
+    /// ratio puts the squircle exactly at the tile bounds, under the same rounded clip both
+    /// species now share; the baked margin shadow falls outside the clip, which favicon
+    /// tiles never had either. Legacy full-bleed icons don't break this: the system masks
+    /// them into the grid before icon services hands them over.
+    private static let appIconOverscan: CGFloat = 1024 / 824
 
     private var side: CGFloat { size * scale }
 
@@ -57,7 +64,8 @@ struct PackageIconView: View {
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .clipShape(isAppIcon ? AnyShape(Rectangle()) : AnyShape(shape))
+                    .scaleEffect(isAppIcon ? Self.appIconOverscan : 1)
+                    .clipShape(shape)
                     .transition(.opacity)
             } else {
                 // Loading: the same fallback symbol, dimmed. No spinners in the grid.
