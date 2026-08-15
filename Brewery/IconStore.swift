@@ -15,7 +15,12 @@ import Foundation
 /// cache and the next appearance is a hit. `AsyncImage` cancelled the load itself, which is why
 /// icons used to appear only after opening the detail sheet.
 actor IconStore {
-    static let shared = IconStore()
+    static let shared = IconStore(directoryName: "Icons")
+
+    /// v10 — repo social-preview cards for the detail pane's hero slot. A separate instance
+    /// with its own directory: a ~300 KB banner in the favicon LRU would evict icons by the
+    /// dozen, and the two caches age on entirely different rhythms.
+    static let banners = IconStore(directoryName: "Banners")
 
     /// Icons rarely change. A file older than this is still served — it is just refreshed behind
     /// the view — and it is also how long a negative marker suppresses re-asking.
@@ -59,8 +64,7 @@ actor IconStore {
         return URLSession(configuration: configuration)
     }()
 
-    private let directory = CatalogStore.supportDirectory
-        .appending(path: "Icons", directoryHint: .isDirectory)
+    private let directory: URL
 
     /// `AsyncImage` threw a scrolled-away load away, which capped how much could ever be in flight.
     /// Not cancelling is what fixes icons-only-load-after-clicking, but it removes that cap, so the
@@ -78,13 +82,20 @@ actor IconStore {
     private var activeFetches = 0
     private var waiting: [CheckedContinuation<Void, Never>] = []
 
-    init() {
+    init(directoryName: String) {
+        directory = CatalogStore.supportDirectory
+            .appending(path: directoryName, directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
-    /// Memory → disk → network. Never throws and never blocks on a refresh.
+    /// The favicon entry point: host in, the shared pipeline underneath.
     func icon(for host: String) async -> NSImage? {
-        let key = Self.fileName(for: host)
+        guard let url = Self.faviconURL(host: host) else { return nil }
+        return await image(key: Self.fileName(for: host), url: url)
+    }
+
+    /// Memory → disk → network for one keyed image. Never throws and never blocks on a refresh.
+    func image(key: String, url: URL) async -> NSImage? {
         guard !key.isEmpty else { return nil }
 
         if let cached = memory[key] { return cached }
@@ -92,7 +103,7 @@ actor IconStore {
         if let entry = read(key) {
             if let image = entry.image { remember(image, key: key) }
             // Stale-while-revalidate: hand back what we have, refresh out of band.
-            if !entry.fresh, !isCoolingDown(key) { _ = fetch(host: host, key: key) }
+            if !entry.fresh, !isCoolingDown(key) { _ = fetch(url: url, key: key) }
             return entry.image
         }
 
@@ -101,7 +112,7 @@ actor IconStore {
         // stall over and over for as long as the user scrolls.
         guard !isCoolingDown(key) else { return nil }
 
-        return await fetch(host: host, key: key).value
+        return await fetch(url: url, key: key).value
     }
 
     private func remember(_ image: NSImage, key: String) {
@@ -171,6 +182,25 @@ actor IconStore {
 
     nonisolated static func faviconURL(host: String) -> URL? {
         URL(string: "https://icons.duckduckgo.com/ip3/\(host).ico")
+    }
+
+    /// v10 — the GitHub social card for a package whose homepage is a repo. GitHub renders one
+    /// for every repo (the custom preview if the author set one, else the generated
+    /// name-avatar-stats card), served from the opengraph assets CDN — no API, no auth. Deep
+    /// homepage paths keep their first two segments; a `.git` suffix folds away.
+    /// ponytail: github.com homepages only — arbitrary hosts would need og:image HTML parsing.
+    nonisolated static func bannerSource(homepage: URL?) -> (key: String, url: URL)? {
+        guard let homepage, let host = homepage.host()?.lowercased(),
+              host == "github.com" || host == "www.github.com" else { return nil }
+
+        let parts = homepage.path().split(separator: "/").prefix(2).map(String.init)
+        guard parts.count == 2 else { return nil }
+        let owner = parts[0]
+        let repo = parts[1].hasSuffix(".git") ? String(parts[1].dropLast(4)) : parts[1]
+        guard !owner.isEmpty, !repo.isEmpty,
+              let url = URL(string: "https://opengraph.githubassets.com/brewery/\(owner)/\(repo)")
+        else { return nil }
+        return (key: fileName(for: "\(owner)_\(repo)"), url: url)
     }
 
     // MARK: - Disk
@@ -250,14 +280,14 @@ actor IconStore {
 
     // MARK: - Network
 
-    /// One task per host, shared by every caller — and deliberately unstructured, so no caller's
+    /// One task per key, shared by every caller — and deliberately unstructured, so no caller's
     /// cancellation can reach it.
-    private func fetch(host: String, key: String) -> Task<NSImage?, Never> {
+    private func fetch(url: URL, key: String) -> Task<NSImage?, Never> {
         if let existing = inFlight[key] { return existing }
 
         let task = Task {
             await self.acquireSlot()
-            let bytes = await Self.download(host: host)
+            let bytes = await Self.download(url: url)
             self.releaseSlot()
             return self.finish(key: key, bytes: bytes)
         }
@@ -282,15 +312,17 @@ actor IconStore {
         return image
     }
 
-    /// Empty data means "the host answered, and the answer is no icon" — an HTTP error or a body
-    /// we cannot decode. That earns a marker; a transport failure (nil) does not.
-    private static func download(host: String) async -> Data? {
-        guard let url = faviconURL(host: host) else { return Data() }
-        // Icons no longer route through URLCache: this store *is* the cache.
+    /// Empty data means "the host answered, and the answer is no image" — a definitive HTTP
+    /// error or a body we cannot decode. That earns a marker; a transport failure (nil) does
+    /// not — and neither do rate limiting or server trouble (v10): a 429 from the banner CDN
+    /// with a week-long marker would hide a real image over a burst of browsing.
+    private static func download(url: URL) async -> Data? {
+        // Images no longer route through URLCache: this store *is* the cache.
         let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         guard let (data, response) = try? await session.data(for: request) else { return nil }
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            return Data()
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 429 || (500..<600).contains(http.statusCode) { return nil }
+            if !(200..<300).contains(http.statusCode) { return Data() }
         }
         return data
     }

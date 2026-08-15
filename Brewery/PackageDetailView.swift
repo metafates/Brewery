@@ -112,6 +112,7 @@ private struct DetailPage: View {
     @State private var showLicenses = false
     @State private var fontFaces: [FontPreview.Face] = []
     @State private var fontFacesDropped = 0
+    @State private var bannerImage: NSImage?
 
     var body: some View {
         // Resolved once per pass: both lists were read three times each (the `isEmpty` guards,
@@ -169,6 +170,12 @@ private struct DetailPage: View {
                     .pointerStyle(.link)
                 }
 
+                // v10 — the repo's social-preview card as hero artwork, in the screenshots
+                // slot. Not for fonts: their Preview section is strictly better artwork.
+                if let bannerImage {
+                    bannerView(bannerImage)
+                }
+
                 if !fontFaces.isEmpty {
                     Divider()
                     fontPreview
@@ -223,6 +230,29 @@ private struct DetailPage: View {
             (fontFaces, fontFacesDropped) = await FontPreview.resolve(names: fontNames,
                                                                       limit: Self.faceLimit)
         }
+        .task(id: pkg.id) {
+            bannerImage = nil
+            guard !pkg.isFont,
+                  let source = IconStore.bannerSource(homepage: pkg.homepageURL) else { return }
+            bannerImage = await IconStore.banners.image(key: source.key, url: source.url)
+        }
+    }
+
+    /// GitHub's cards are 2:1-ish; full pane width, its own corner radius, and a hairline —
+    /// a white-background banner otherwise bleeds into the pane in light mode.
+    private func bannerView(_ image: NSImage) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(.separator, lineWidth: 1)
+            }
+            // Decoration: everything the card says — name, description, author — the pane
+            // already reads out as text.
+            .accessibilityHidden(true)
     }
 
     /// Re-resolve when the page's package changes — and when it becomes installed, which is
