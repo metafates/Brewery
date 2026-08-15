@@ -83,7 +83,7 @@ struct PackageCardView: View {
             if let app = model.launchableApps(for: package).first {
                 Button("Open") { model.openApp(at: app) }
             } else if let font = model.installedFontURL(for: package) {
-                Button("Open") { model.openFont(at: font) }
+                Button("Open") { model.openFile(at: font) }
             }
         default:
             EmptyView()
@@ -222,7 +222,7 @@ struct PackageCardView: View {
                     .help("Open \(app.deletingPathExtension().lastPathComponent)")
             } else if let font = model.installedFontURL(for: package) {
                 // Fonts launch too — into Font Book, the pane's grammar on the card.
-                Button("Open") { model.openFont(at: font) }
+                Button("Open") { model.openFile(at: font) }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .help("Open \(package.title) in Font Book")

@@ -479,7 +479,7 @@ private struct DetailPage: View {
             // Same word, same chrome as an app cask's Open: the payload defines what opening
             // means, and double-clicking a font file in Finder opens Font Book the same way.
             // LaunchServices, no brew, so the safety model is untouched.
-            Button("Open") { model.openFont(at: font) }
+            Button("Open") { model.openFile(at: font) }
                 .help("Open \(pkg.title) in Font Book")
         }
     }
@@ -850,9 +850,32 @@ private struct DetailPage: View {
                     }
                 }
                 if let logPath = service.logPath {
-                    gridRow("Logs", symbol: "text.alignleft") {
-                        Text(Package.substitutingPrefix(logPath, prefix: model.client.prefix))
-                            .fontDesign(.monospaced)
+                    // v10 — a bespoke row, not `gridRow`: its `.combine` would swallow the
+                    // open button (the license row's lesson). Console is the platform's log
+                    // viewer; the button appears once the file exists — the app already has
+                    // a log window, but that one tails *operations*, not service runtime.
+                    GridRow {
+                        Label("Logs", systemImage: "text.alignleft")
+                            .foregroundStyle(.secondary)
+                            .gridColumnAlignment(.leading)
+                        HStack(spacing: 8) {
+                            Text(Package.substitutingPrefix(logPath, prefix: model.client.prefix))
+                                .fontDesign(.monospaced)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let url = model.serviceLogURL(for: pkg) {
+                                Button {
+                                    model.openFile(at: url)
+                                } label: {
+                                    Image(systemName: "arrow.up.forward.app")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Open the log in Console")
+                                .accessibilityLabel("Open the \(pkg.title) log in Console")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }

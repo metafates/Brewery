@@ -770,9 +770,18 @@ final class AppModel {
             .names.lazy.compactMap { FontPreview.fontURL(named: $0) }.first
     }
 
-    /// A font file's default handler is Font Book; LaunchServices does the rest.
-    func openFont(at url: URL) {
+    /// LaunchServices picks the viewer: a font file opens in Font Book, a log in Console —
+    /// the platform's own apps for both, never rebuilt in here.
+    func openFile(at url: URL) {
         NSWorkspace.shared.open(url)
+    }
+
+    /// v10 — the service's log as a real file: `$HOMEBREW_PREFIX` substituted, existence
+    /// checked per call — the affordance appears once the service has actually logged.
+    func serviceLogURL(for package: Package) -> URL? {
+        guard let path = package.service?.logPath else { return nil }
+        let url = URL(filePath: Package.substitutingPrefix(path, prefix: client.prefix))
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     func latestOperation(for package: Package) -> BrewOperation? {

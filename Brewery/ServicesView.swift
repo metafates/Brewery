@@ -106,6 +106,10 @@ private struct ServiceRow: View {
                     Button("Start") { model.startService(package) }
                 }
             }
+            // v10 — present once the service has actually logged; absent, not dimmed.
+            if let url = model.serviceLogURL(for: package) {
+                Button("Open Log") { model.openFile(at: url) }
+            }
         }
     }
 
