@@ -593,6 +593,17 @@ final class AppModel {
         enqueue(.upgradeAll, title: "Updating all packages", targetID: nil)
     }
 
+    /// v10 — the orphan report's action. The caller has shown the confirmation dialog by the
+    /// time this runs (the trust-write rule); brew removes exactly the set the report showed.
+    func autoremove() {
+        enqueue(.autoremove, title: "Removing orphaned dependencies", targetID: nil)
+    }
+
+    /// An autoremove already on the queue makes a second press pure duplication.
+    var autoremovePending: Bool {
+        operations.contains { $0.command == .autoremove && !$0.isFinished }
+    }
+
     // MARK: - Services (v5)
 
     /// The Services section's rows: exactly what brew reports as available, as packages —

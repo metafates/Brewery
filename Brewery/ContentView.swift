@@ -86,40 +86,54 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     }
 }
 
-/// v10 — the Orphans scope's header: the report's totals and the one command that acts on
-/// them. A report with a copyable command, deliberately not a button — the safety whitelist
-/// forbids `uninstall`, so removal stays in Terminal: Brewery shows, Terminal destroys
-/// (Storage Management's grammar: a recommendation with sizes, the destructive act elsewhere).
+/// v10 — the Orphans scope's header: the report's totals and its one action. **Remove All…**
+/// is a native, confirmed operation (the ellipsis promises the dialog — HIG *Buttons*) that
+/// enqueues `brew autoremove`: the deliberate exception to the no-removals whitelist,
+/// admissible because it is argument-less by construction, scoped to what brew itself
+/// computes as unneeded, and confirmed first — `untap`'s precedent for scoped removals.
+/// Bordered, never prominent: destructive actions don't get the filled costume.
 private struct OrphanSummaryBar: View {
     @Environment(AppModel.self) private var model
     @State private var bytes: Int64?
+    @State private var confirming = false
 
     private var ids: [Package.ID] { model.orphanIDs.sorted() }
 
     var body: some View {
         if !ids.isEmpty {
             HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "arrow.3.trianglepath")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
+
                 VStack(alignment: .leading, spacing: 2) {
                     // The size joins the line in place once measured — horizontal growth
                     // only, nothing below moves.
                     Text("^[\(ids.count) orphaned dependencies](inflect: true)\(bytes.map { " · \($0.formatted(.byteCount(style: .file))) reclaimable" } ?? "")")
                         .fontWeight(.semibold)
-                    Text("Installed for packages that are no longer here. Homebrew can remove them all:")
+                    Text("Installed for packages that are no longer here.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
+
                 Spacer(minLength: 12)
-                HStack(spacing: 8) {
-                    Text("brew autoremove")
-                        .font(.callout)
-                        .monospaced()
-                        .textSelection(.enabled)
-                    CopyButton(text: "brew autoremove")
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
-                .help("Run in Terminal to remove every orphaned dependency")
+
+                Button("Remove All…") { confirming = true }
+                    .disabled(model.autoremovePending)
+                    .help("Remove every orphaned dependency — Homebrew's autoremove")
+                    // Pluralized by hand: the ^[](inflect:) markdown renders fine in the
+                    // bar's Text but arrives raw in a dialog title, wrapped in Text or not.
+                    .confirmationDialog(
+                        ids.count == 1
+                            ? "Remove 1 orphaned dependency?"
+                            : "Remove \(ids.count) orphaned dependencies?",
+                        isPresented: $confirming, titleVisibility: .visible) {
+                        Button("Remove All", role: .destructive) { model.autoremove() }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Homebrew uninstalls only what nothing installed needs — the same set brew autoremove removes. Anything removed can be installed again.")
+                    }
             }
             .padding(12)
             .background(.background.secondary, in: .rect(cornerRadius: 10))
@@ -127,7 +141,10 @@ private struct OrphanSummaryBar: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(.separator, lineWidth: 1)
             }
-            .accessibilityElement(children: .combine)
+            // The grid pads itself (16); the header slot doesn't, and an edge-to-edge bar
+            // read as a defect. Top only — the grid's own padding provides the gap below.
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
             .task(id: ids) {
                 bytes = nil
                 guard let prefix = model.client.prefix else { return }

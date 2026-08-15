@@ -37,6 +37,11 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     // --tap type flag; per-item trust stays brew's own business.
     case trustTap(name: String)
     case untrustTap(name: String)
+    // v10 — the one removal in the whitelist, and the least destructive one brew has: it
+    // uninstalls only what brew itself computes as an unneeded dependency, takes no arguments
+    // (nothing to aim it with), and the UI puts a confirmation dialog in front. `uninstall`
+    // stays unrepresentable; `untap` set the precedent for scoped, confirmed removals.
+    case autoremove
 
     var arguments: [String] {
         switch self {
@@ -72,6 +77,8 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["trust", "--tap", name]
         case let .untrustTap(name):
             ["untrust", "--tap", name]
+        case .autoremove:
+            ["autoremove"]
         }
     }
 
@@ -83,7 +90,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         case .listFormulae, .listCasks, .outdated, .servicesList:
             false
-        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap:
+        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove:
             true
         }
     }
@@ -92,9 +99,9 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     /// the queue otherwise front-loads before the first mutation.
     var touchesPackages: Bool {
         switch self {
-        // Service toggles change launchd state; tap/untap clone fresh checkouts — none of them
-        // benefit from a `brew update` first.
-        case .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap: false
+        // Service toggles change launchd state; tap/untap clone fresh checkouts; autoremove
+        // acts on local kegs only — none of them benefit from a `brew update` first.
+        case .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove: false
         default: isMutating
         }
     }

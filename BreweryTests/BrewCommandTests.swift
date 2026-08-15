@@ -113,6 +113,7 @@ struct BrewCommandTests {
         .untap(name: "oven-sh/bun"),
         .trustTap(name: "charmbracelet/tap"),
         .untrustTap(name: "charmbracelet/tap"),
+        .autoremove,
     ] }
 
     /// One tag per `BrewCommand` case. The switch is exhaustive on purpose: adding a case to
@@ -121,6 +122,7 @@ struct BrewCommandTests {
     enum CommandKind: CaseIterable {
         case listFormulae, listCasks, outdated, update, install, upgrade, upgradeAll
         case servicesList, serviceStart, serviceStop, tap, untap, trustTap, untrustTap
+        case autoremove
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -139,6 +141,7 @@ struct BrewCommandTests {
         case .untap: .untap
         case .trustTap: .trustTap
         case .untrustTap: .untrustTap
+        case .autoremove: .autoremove
         }
     }
 
@@ -149,11 +152,19 @@ struct BrewCommandTests {
 
     @Test("first argv token is on the whitelist")
     func firstTokenIsWhitelisted() {
-        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust"]
+        // `autoremove` is the deliberate exception to no-removals: argument-less by
+        // construction (nothing to aim it with), scoped to what brew itself computes as
+        // unneeded, and confirmed in the UI before it is ever enqueued.
+        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove"]
         for command in Self.everyCommand {
             let first = command.arguments.first ?? ""
             #expect(allowed.contains(first), "unexpected subcommand \"\(first)\" in \(command.arguments)")
         }
+    }
+
+    @Test("autoremove is exactly one word — no target can ever ride along")
+    func autoremoveArgv() {
+        #expect(BrewCommand.autoremove.arguments == ["autoremove"])
     }
 
     @Test("no argv element carries a destructive token")
@@ -204,6 +215,9 @@ struct BrewCommandTests {
                 // The explicit --tap type flag is the whole point (brew infers otherwise).
                 #expect(arguments.count == 3)
                 #expect(arguments[1] == "--tap")
+            case .autoremove:
+                // One word, ever: an argument would be a target, and it has none to take.
+                #expect(arguments == ["autoremove"])
             }
         }
     }

@@ -1089,9 +1089,8 @@ nonisolated enum CaveatFormat {
 }
 
 /// Copies and says so: the glyph swaps to a checkmark for a beat — a silent copy button leaves
-/// the user wondering whether anything happened. Shared (v10): the orphan report's
-/// `brew autoremove` chip speaks the same grammar as the caveats' command blocks.
-struct CopyButton: View {
+/// the user wondering whether anything happened.
+private struct CopyButton: View {
     let text: String
 
     @State private var copied = false
