@@ -184,6 +184,26 @@ actor IconStore {
         URL(string: "https://icons.duckduckgo.com/ip3/\(host).ico")
     }
 
+    /// v10 — a tap owner's GitHub avatar: `github.com/<owner>.png` redirects to the avatar
+    /// CDN, so a tap's identity costs one URL and no API. The owner comes from the *remote*,
+    /// never the tap name — a tap name can front a custom remote — and the built-in taps
+    /// (which have no clone and no remote) map to Homebrew's own organization. Anything
+    /// else keeps the spigot glyph: the honest degrade everywhere else uses.
+    nonisolated static func avatarSource(tapName: String, remote: String?) -> (key: String, url: URL)? {
+        var owner: String?
+        if let remote, let url = URL(string: remote),
+           let host = url.host()?.lowercased(),
+           host == "github.com" || host == "www.github.com" {
+            owner = url.path().split(separator: "/").first.map(String.init)
+        } else if remote == nil, TapStore.coreTaps.contains(tapName) {
+            owner = "homebrew"
+        }
+        guard let owner, !owner.isEmpty,
+              let url = URL(string: "https://github.com/\(owner).png?size=128")
+        else { return nil }
+        return (key: fileName(for: "avatar_\(owner)"), url: url)
+    }
+
     /// v10 — the GitHub social card for a package whose homepage is a repo. GitHub renders one
     /// for every repo (the custom preview if the author set one, else the generated
     /// name-avatar-stats card), served from the opengraph assets CDN — no API, no auth. Deep

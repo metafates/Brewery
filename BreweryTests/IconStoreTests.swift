@@ -107,6 +107,28 @@ struct BannerSourceTests {
     }
 }
 
+@Suite("Tap avatar sources (v10)")
+struct AvatarSourceTests {
+    @Test("owner comes from the remote; built-ins map to Homebrew; anything else is nothing")
+    func avatarSource() throws {
+        let charm = try #require(IconStore.avatarSource(
+            tapName: "charmbracelet/tap", remote: "https://github.com/charmbracelet/homebrew-tap"))
+        #expect(charm.url.absoluteString == "https://github.com/charmbracelet.png?size=128")
+
+        // A custom remote wins over the name — the name would have said "someone".
+        let custom = try #require(IconStore.avatarSource(
+            tapName: "someone/tap", remote: "https://github.com/other-org/homebrew-tap"))
+        #expect(custom.url.absoluteString.contains("/other-org.png"))
+
+        // Built-in taps have no clone and no remote; they are Homebrew's own.
+        let core = try #require(IconStore.avatarSource(tapName: "homebrew/core", remote: nil))
+        #expect(core.url.absoluteString.contains("/homebrew.png"))
+
+        #expect(IconStore.avatarSource(tapName: "x/y", remote: "https://gitlab.com/x/homebrew-y") == nil)
+        #expect(IconStore.avatarSource(tapName: "x/y", remote: nil) == nil)
+    }
+}
+
 @Suite("Host file names")
 struct IconFileNameTests {
     @Test("a plain host is its own file name")
