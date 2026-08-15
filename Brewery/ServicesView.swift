@@ -17,8 +17,6 @@ struct ServicesView: View {
     let onSelect: (Package) -> Void
     let onRefresh: () -> Void
 
-    @Environment(AppModel.self) private var model
-
     var body: some View {
         if hits.isEmpty {
             emptyState
@@ -207,7 +205,7 @@ struct ServiceToggle: View {
     }
 
     private var consequence: String {
-        isLoaded.wrappedValue ? "Stops now and won’t start at login"
+        isLoaded.wrappedValue ? "Stops now and won't start at login"
                               : "Starts now and at every login"
     }
 

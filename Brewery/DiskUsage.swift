@@ -14,6 +14,20 @@ nonisolated enum DiskUsage {
     /// *visited* package is noise, and re-measuring a large keg on every card revisit was
     /// the cost worth killing — the redacted row only ever shows on a first visit.
     @MainActor static var cache: [String: Int64] = [:]
+
+    /// The cache key for one package; the version makes an upgrade invalidate naturally.
+    static func cacheKey(for id: Package.ID, version: String?) -> String {
+        "\(id)|\(version ?? "")"
+    }
+
+    /// Cache-or-measure for one package's roots — the one memoized read behind the pane's
+    /// Size row and the orphan bar's total.
+    @MainActor static func measuredBytes(key: String, roots: [URL]) async -> Int64? {
+        if let cached = cache[key] { return cached }
+        guard let measured = await bytes(at: roots) else { return nil }
+        cache[key] = measured
+        return measured
+    }
     /// Logical bytes under the given roots — regular files only, symlinks counted as links and
     /// never followed (a keg's bin links would double-count or escape the root). nil when no
     /// root exists: for an installed package that is a read failure, and "Zero bytes" would be

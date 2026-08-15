@@ -56,7 +56,7 @@ struct PackageDetailView: View {
             // Identity is the stack slot, so revisiting a package deeper down never collides.
             ZStack {
                 ForEach(Array(pages.enumerated()), id: \.offset) { index, item in
-                    DetailPage(pkg: item, onPush: { push($0) })
+                    DetailPage(package: item, onPush: { push($0) })
                         .opacity(index == pages.count - 1 ? 1 : 0)
                         .offset(x: offset(for: index))
                         // Disabled, not just hit-test-blocked: a hidden page's controls must not
@@ -105,7 +105,7 @@ struct PackageDetailView: View {
 /// *its* package — during a slide the outgoing page must keep showing what it showed, and a
 /// parent kept alive underneath must keep its own scroll offset.
 private struct DetailPage: View {
-    let pkg: Package
+    let package: Package
     let onPush: (Package) -> Void
 
     @Environment(AppModel.self) private var model
@@ -119,12 +119,11 @@ private struct DetailPage: View {
     /// fails (a hand-deleted keg) — the rare case pays one reflow rather than every pane
     /// showing a permanent skeleton.
     private var showsSizeRow: Bool {
-        model.installed[pkg.id] != nil && model.client.prefix != nil && !sizeFailed
+        model.installed[package.id] != nil && model.client.prefix != nil && !sizeFailed
     }
 
-    /// The cache key: an upgrade changes the version and invalidates naturally.
     private var sizeKey: String {
-        "\(pkg.id)|\(model.installed[pkg.id]?.versions.last ?? "")"
+        DiskUsage.cacheKey(for: package.id, version: model.installed[package.id]?.versions.last)
     }
     @State private var bannerPhase = BannerPhase.absent
 
@@ -154,29 +153,29 @@ private struct DetailPage: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
 
-                if pkg.disabled || pkg.deprecated {
+                if package.disabled || package.deprecated {
                     banner
                 }
 
-                if let desc = pkg.desc, !desc.isEmpty {
+                if let desc = package.desc, !desc.isEmpty {
                     Text(desc)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if pkg.homepageURL != nil || pkg.rubySourceURL != nil {
+                if package.homepageURL != nil || package.rubySourceURL != nil {
                     HStack(spacing: 16) {
                         // "Homepage", not the bare host: the App Store labels this link
                         // generically too ("Developer Website"), a long domain has no good
                         // wrap at 300 pt, and a lowercase literal beside "Recipe" mixed two
                         // grammars in one row. The destination survives in the tooltip —
                         // and the word matches the card context menu's "Open Homepage".
-                        if let url = pkg.homepageURL {
+                        if let url = package.homepageURL {
                             Link(destination: url) {
                                 Label("Homepage", systemImage: "safari")
                             }
                             .help(url.absoluteString)
-                            .accessibilityLabel("Open the \(pkg.title) homepage")
+                            .accessibilityLabel("Open the \(package.title) homepage")
                         }
                         // The .rb file this package is defined by, on GitHub. Labelled
                         // "Recipe" — brew's own frame (Formula Cookbook, Cask Cookbook):
@@ -187,13 +186,13 @@ private struct DetailPage: View {
                         // as the app's own source code. Same face as the homepage link —
                         // two links in one row speak with one voice, and the </> glyph
                         // already says "code".
-                        if let source = pkg.rubySourceURL,
-                           let file = pkg.rubySourceFileName {
+                        if let source = package.rubySourceURL,
+                           let file = package.rubySourceFileName {
                             Link(destination: source) {
                                 Label("Recipe", systemImage: "chevron.left.forwardslash.chevron.right")
                             }
                             .help("Open \(file) on GitHub")
-                            .accessibilityLabel("Open the \(pkg.title) recipe")
+                            .accessibilityLabel("Open the \(package.title) recipe")
                         }
                     }
                     // Links get the pointing hand; nothing else in the app does.
@@ -222,27 +221,27 @@ private struct DetailPage: View {
                     fontPreview
                 }
 
-                if let text = pkg.resolvedCaveats(prefix: model.client.prefix), !text.isEmpty {
+                if let text = package.resolvedCaveats(prefix: model.client.prefix), !text.isEmpty {
                     Divider()
                     caveats(text)
                 }
 
-                if !pkg.commands.isEmpty {
+                if !package.commands.isEmpty {
                     Divider()
                     commands
                 }
 
-                if !pkg.artifacts.isEmpty {
+                if !package.artifacts.isEmpty {
                     Divider()
                     contents
                 }
 
-                if let service = pkg.service {
+                if let service = package.service {
                     Divider()
                     serviceSection(service)
                 }
 
-                if !pkg.conflicts.isEmpty {
+                if !package.conflicts.isEmpty {
                     Divider()
                     conflicts
                 }
@@ -257,7 +256,7 @@ private struct DetailPage: View {
                     related("Required by", packages: requiredBy)
                 }
 
-                if let operation = model.latestOperation(for: pkg) {
+                if let operation = model.latestOperation(for: package) {
                     Divider()
                     log(operation)
                 }
@@ -267,37 +266,35 @@ private struct DetailPage: View {
         }
         .task(id: installedTaskID) {
             (fontFaces, fontFacesDropped) = ([], 0)
-            guard pkg.isFont, model.installed[pkg.id] != nil else { return }
+            guard package.isFont, model.installed[package.id] != nil else { return }
             (fontFaces, fontFacesDropped) = await FontPreview.resolve(names: fontNames,
                                                                       limit: Self.faceLimit)
         }
         .task(id: installedTaskID) {
             sizeFailed = false
-            diskBytes = DiskUsage.cache[sizeKey]
-            guard diskBytes == nil,
-                  model.installed[pkg.id] != nil, let prefix = model.client.prefix else { return }
+            diskBytes = nil
+            guard model.installed[package.id] != nil, let prefix = model.client.prefix else { return }
             var roots: [URL] = []
-            switch pkg.kind {
+            switch package.kind {
             case .formula:
                 // Every keg of the formula: what is on disk is what the machine is paying.
                 roots.append(prefix.appending(path: "Cellar", directoryHint: .isDirectory)
-                    .appending(path: pkg.name, directoryHint: .isDirectory))
+                    .appending(path: package.name, directoryHint: .isDirectory))
             case .cask:
                 roots.append(prefix.appending(path: "Caskroom", directoryHint: .isDirectory)
-                    .appending(path: pkg.name, directoryHint: .isDirectory))
-                roots += model.launchableApps(for: pkg)
+                    .appending(path: package.name, directoryHint: .isDirectory))
+                roots += model.launchableApps(for: package)
                 roots += fontNames.compactMap { FontPreview.fontURL(named: $0) }
             }
-            if let measured = await DiskUsage.bytes(at: roots) {
-                DiskUsage.cache[sizeKey] = measured
+            if let measured = await DiskUsage.measuredBytes(key: sizeKey, roots: roots) {
                 diskBytes = measured
             } else {
                 sizeFailed = true
             }
         }
-        .task(id: pkg.id) {
-            guard !pkg.isFont,
-                  let source = IconStore.bannerSource(homepage: pkg.homepageURL) else {
+        .task(id: package.id) {
+            guard !package.isFont,
+                  let source = IconStore.bannerSource(homepage: package.homepageURL) else {
                 bannerPhase = .absent
                 return
             }
@@ -341,7 +338,7 @@ private struct DetailPage: View {
 
     /// Re-resolve the on-disk lookups (font faces, disk usage) when the page's package
     /// changes — and when it becomes installed, the moment there are files to find.
-    private var installedTaskID: String { "\(pkg.id)|\(model.installed[pkg.id] != nil)" }
+    private var installedTaskID: String { "\(package.id)|\(model.installed[package.id] != nil)" }
 
     // MARK: - Header
 
@@ -352,11 +349,11 @@ private struct DetailPage: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                PackageIconView(package: pkg, size: 64)
+                PackageIconView(package: package, size: 64)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(pkg.title)
+                    Text(package.title)
                         .font(.title3)
                         .fontWeight(.semibold)
                         .lineLimit(2)
@@ -366,8 +363,8 @@ private struct DetailPage: View {
                         kindTag
                         // For casks the title is the display name, so the token is still worth
                         // showing.
-                        if pkg.displayName != nil {
-                            Text(pkg.name)
+                        if package.displayName != nil {
+                            Text(package.name)
                                 .monospaced()
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -418,10 +415,10 @@ private struct DetailPage: View {
                                 .accessibilityHidden(true)
                         }
                     }
-                    .help("Measured from what this package installed on this Mac")
+                    .help("The space this package's files take up on disk")
                 }
 
-                if let installs = pkg.installs90d {
+                if let installs = package.installs90d {
                     statRow("chart.bar") {
                         Text("\(installs.formatted(.number)) installs (90 days)")
                             .foregroundStyle(.secondary)
@@ -429,7 +426,7 @@ private struct DetailPage: View {
                     .accessibilityLabel("\(installs.formatted(.number)) installs in the last 90 days")
                 }
 
-                if let license = pkg.licenseLabel {
+                if let license = package.licenseLabel {
                     statRow("doc.text") {
                         licenseLine(license)
                     }
@@ -449,47 +446,37 @@ private struct DetailPage: View {
         }
     }
 
-    /// The `.app` bundles this cask put on disk and that are still there. Resolved on each pass
-    /// rather than cached: an app dragged to the Trash should stop being offered.
-    private var launchable: [URL] {
-        (model.installed[pkg.id]?.apps ?? []).compactMap(Receipts.appURL(named:))
-    }
-
-    /// Handed to LaunchServices, which starts the app as its own process — nothing is spawned as a
-    /// child of Brewery, so quitting Brewery leaves it running.
-    private func open(_ app: URL) {
-        Task { _ = try? await NSWorkspace.shared.openApplication(at: app, configuration: .init()) }
-    }
-
     @ViewBuilder
     private var openAction: some View {
-        if launchable.count == 1, let app = launchable.first {
-            Button("Open") { open(app) }
+        // The model resolves per pass, so an app dragged to the Trash stops being offered.
+        let apps = model.launchableApps(for: package)
+        if apps.count == 1, let app = apps.first {
+            Button("Open") { model.openApp(at: app) }
                 .help("Open \(app.deletingPathExtension().lastPathComponent)")
-        } else if launchable.count > 1 {
+        } else if apps.count > 1 {
             // A handful of casks ship more than one bundle; let the user say which.
             Menu("Open") {
-                ForEach(launchable, id: \.self) { app in
-                    Button(app.deletingPathExtension().lastPathComponent) { open(app) }
+                ForEach(apps, id: \.self) { app in
+                    Button(app.deletingPathExtension().lastPathComponent) { model.openApp(at: app) }
                 }
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-        } else if let font = model.installedFontURL(for: pkg) {
+        } else if let font = model.installedFontURL(for: package) {
             // Same word, same chrome as an app cask's Open: the payload defines what opening
             // means, and double-clicking a font file in Finder opens Font Book the same way.
             // LaunchServices, no brew, so the safety model is untouched.
             Button("Open") { model.openFile(at: font) }
-                .help("Open \(pkg.title) in Font Book")
+                .help("Open \(package.title) in Font Book")
         }
     }
 
     private var fontNames: [String] {
-        pkg.artifacts.first { $0.kind == .font }?.names ?? []
+        package.artifacts.first { $0.kind == .font }?.names ?? []
     }
 
     private var kindTag: some View {
-        TagLabel(pkg.kindLabel, help: pkg.kindExplanation).font(.caption)
+        TagLabel(package.kindLabel, help: package.kindExplanation).font(.caption)
     }
 
     /// bun's expression is nine licenses long — five wrapped lines that dwarf the header. Past
@@ -497,7 +484,7 @@ private struct DetailPage: View {
     /// whose popover lists them one per row: summary in place, detail on demand, the anchored
     /// spring for free.
     @ViewBuilder private func licenseLine(_ license: String) -> some View {
-        let components = pkg.licenseComponents
+        let components = package.licenseComponents
         if components.count > 1, license.count > 40, let first = components.first {
             HStack(spacing: 4) {
                 Text("License: \(first)")
@@ -546,15 +533,15 @@ private struct DetailPage: View {
     /// Installed and outdated always have a version to show; otherwise only a non-empty
     /// catalog version earns the row.
     private var showsVersionRow: Bool {
-        switch model.status(for: pkg) {
+        switch model.status(for: package) {
         case .installed, .outdated: true
-        case .notInstalled, .busy: !pkg.version.isEmpty
+        case .notInstalled, .busy: !package.version.isEmpty
         }
     }
 
     @ViewBuilder
     private var versionLine: some View {
-        switch model.status(for: pkg) {
+        switch model.status(for: package) {
         case let .outdated(installed, current):
             HStack(spacing: 6) {
                 Text("\(installed.shortVersion) → \(current.shortVersion)")
@@ -569,8 +556,8 @@ private struct DetailPage: View {
             Text("Version \(version.shortVersion) installed")
                 .foregroundStyle(.secondary)
         case .notInstalled, .busy:
-            if !pkg.version.isEmpty {
-                Text("Version \(pkg.version.shortVersion)")
+            if !package.version.isEmpty {
+                Text("Version \(package.version.shortVersion)")
                     .foregroundStyle(.secondary)
             }
         }
@@ -580,63 +567,63 @@ private struct DetailPage: View {
 
     @ViewBuilder
     private var action: some View {
-        switch model.status(for: pkg) {
+        switch model.status(for: package) {
         case .busy:
             ProgressView()
                 .controlSize(.small)
-                .accessibilityLabel("\(pkg.title) is being worked on")
+                .accessibilityLabel("Working on \(package.title)")
         case .installed:
             Label {
                 Text("Installed").foregroundStyle(.secondary)
             } icon: {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             }
-            .accessibilityLabel("\(pkg.title) is installed")
+            .accessibilityLabel("\(package.title) is installed")
         case .outdated:
-            Button("Update") { model.upgrade(pkg) }
+            Button("Update") { model.upgrade(package) }
                 .buttonStyle(.borderedProminent)
                 .disabled(isPinned)
                 .help(isPinned
-                      ? "This package is pinned in Homebrew. Brewery never changes pins."
-                      : "Update \(pkg.title)")
-                .accessibilityLabel("Update \(pkg.title)")
+                      ? "\(package.title) is pinned, so Brewery leaves it alone."
+                      : "Update \(package.title)")
+                .accessibilityLabel("Update \(package.title)")
         case .notInstalled:
             // v10 — no caption under Install: the trust disclosure moved into the consent
             // dialog, which appears only when installing would actually grant new trust.
             // The old always-on "Trusts user/tap" line named the wrong scope (the grant is
             // per-item) and kept showing for taps already trusted, where it disclosed nothing.
-            Button("Install") { model.install(pkg) }
+            Button("Install") { model.install(package) }
                 .buttonStyle(.borderedProminent)
-                .disabled(pkg.disabled)
+                .disabled(package.disabled)
                 .help(installHelp)
-                .accessibilityLabel("Install \(pkg.title)")
+                .accessibilityLabel("Install \(package.title)")
         }
     }
 
     private var installHelp: String {
-        if pkg.disabled {
+        if package.disabled {
             return "Homebrew has disabled this package, so it can no longer be installed."
         }
-        if model.installNeedsTrustConsent(pkg), let tap = model.effectiveTap(for: pkg) {
-            return "Install \(pkg.title) — Brewery asks about trusting \(tap) first."
+        if model.installNeedsTrustConsent(package), let tap = model.effectiveTap(for: package) {
+            return "Install \(package.title) — you'll be asked to trust \(tap) first."
         }
-        return "Install \(pkg.title)"
+        return "Install \(package.title)"
     }
 
     private var isPinned: Bool {
-        model.outdated[pkg.id]?.pinned == true
+        model.outdated[package.id]?.pinned == true
     }
 
     /// The effective tap (receipt over catalog), falling back to the core tap the kind implies.
     private var tapLabel: String {
-        model.effectiveTap(for: pkg) ?? pkg.tapLabel
+        model.effectiveTap(for: package) ?? package.tapLabel
     }
 
     // MARK: - Banner
 
     /// A disabled package's button is greyed out; this is where that gets explained.
     private var banner: some View {
-        let isDisabled = pkg.disabled
+        let isDisabled = package.disabled
         return Label {
             VStack(alignment: .leading, spacing: 2) {
                 Text(isDisabled ? "Disabled" : "Deprecated")
@@ -708,7 +695,7 @@ private struct DetailPage: View {
         VStack(alignment: .leading, spacing: 4) {
             sectionTitle("Commands")
 
-            Text(pkg.commands.joined(separator: " · "))
+            Text(package.commands.joined(separator: " · "))
                 .font(.callout)
                 .monospaced()
                 .textSelection(.enabled)
@@ -725,7 +712,7 @@ private struct DetailPage: View {
             sectionTitle("Contents")
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 5) {
-                ForEach(pkg.artifacts, id: \.kind) { artifact in
+                ForEach(package.artifacts, id: \.kind) { artifact in
                     gridRow(label(for: artifact), symbol: artifact.kind.symbol) {
                         Text(names(for: artifact))
                             .fontDesign(artifact.kind.isMonospaced ? .monospaced : nil)
@@ -821,12 +808,12 @@ private struct DetailPage: View {
             // A switch must terminate a labeled row (System Settings' grammar) — floating beside
             // the section title it reads as decoration. The label is the live state, so the row
             // says exactly what the switch flips.
-            if model.installed[pkg.id] != nil {
+            if model.installed[package.id] != nil {
                 HStack(spacing: 8) {
-                    ServiceStatusLabel(package: pkg, quietLabel: "Not running")
+                    ServiceStatusLabel(package: package, quietLabel: "Not running")
                         .font(.callout)
                     Spacer()
-                    ServiceToggle(package: pkg)
+                    ServiceToggle(package: package)
                 }
                 .padding(.bottom, 4)
             }
@@ -863,7 +850,7 @@ private struct DetailPage: View {
                                 .fontDesign(.monospaced)
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
-                            if let url = model.serviceLogURL(for: pkg) {
+                            if let url = model.serviceLogURL(for: package) {
                                 Button {
                                     model.openFile(at: url)
                                 } label: {
@@ -872,7 +859,7 @@ private struct DetailPage: View {
                                 }
                                 .buttonStyle(.borderless)
                                 .help("Open the log in Console")
-                                .accessibilityLabel("Open the \(pkg.title) log in Console")
+                                .accessibilityLabel("Open the \(package.title) log in Console")
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -905,7 +892,7 @@ private struct DetailPage: View {
         VStack(alignment: .leading, spacing: 2) {
             sectionTitle("Conflicts with")
 
-            ForEach(pkg.conflicts, id: \.name) { conflict in
+            ForEach(package.conflicts, id: \.name) { conflict in
                 if let package = model.package(for: Package.packageID(kind: conflict.kind ?? .formula, name: conflict.name)) {
                     RelatedRow(package: package,
                                version: model.installed[package.id]?.versions.last,
@@ -945,7 +932,7 @@ private struct DetailPage: View {
     /// that ordering is information, so it is never re-sorted. Receipts list formulae only, and an
     /// entry that resolves to nothing (uninstalled since, or a tap the catalog misses) is dropped.
     private var dependencies: [Package] {
-        guard let info = model.installed[pkg.id] else { return [] }
+        guard let info = model.installed[package.id] else { return [] }
         return info.dependencies.compactMap {
             model.package(for: Package.packageID(kind: .formula, name: $0))
         }
@@ -954,8 +941,8 @@ private struct DetailPage: View {
     /// The other side of the same map: for a keg that is only on disk as somebody else's
     /// dependency, this is the explanation.
     private var dependents: [Package] {
-        guard model.installed[pkg.id] != nil else { return [] }
-        return (model.dependents[pkg.id] ?? []).compactMap(model.package(for:))
+        guard model.installed[package.id] != nil else { return [] }
+        return (model.dependents[package.id] ?? []).compactMap(model.package(for:))
     }
 
     private func related(_ title: String, packages: [Package]) -> some View {
@@ -980,7 +967,7 @@ private struct DetailPage: View {
                 Text(operation.title)
                     .fontWeight(.medium)
                 Spacer()
-                Text(Self.description(of: operation.state))
+                Text(operation.state.label)
                     .foregroundStyle(.secondary)
             }
             .font(.subheadline)
@@ -988,16 +975,6 @@ private struct DetailPage: View {
 
             OperationLogView(operation: operation)
                 .frame(height: 180)
-        }
-    }
-
-    private static func description(of state: BrewOperation.State) -> String {
-        switch state {
-        case .queued: "Queued"
-        case .running: "Running"
-        case .succeeded: "Finished"
-        case .failed: "Failed"
-        case .cancelled: "Cancelled"
         }
     }
 }

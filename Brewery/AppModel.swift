@@ -30,7 +30,7 @@ final class AppModel {
     /// "Which packages provide this executable", from the catalog's command lists. Search consults
     /// it so `convert` finds imagemagick; the detail sheet just reads `package.commands`.
     private(set) var commandIndex: [String: [Package.ID]] = [:]
-    var catalogLoading = false
+    private var catalogLoading = false
     var catalogFailed = false
 
     /// Overlays are keyed by `Package.ID` (`kind:shortname`) and never persisted — they are
@@ -417,7 +417,7 @@ final class AppModel {
 
     /// Catalog entries that are installed, plus synthesized ones for anything installed from a tap
     /// the catalog does not cover.
-    var installedPackages: [Package] {
+    private var installedPackages: [Package] {
         merged(catalog.filter { installed[$0.id] != nil },
                with: installed.mapValues { $0.versions })
     }
@@ -434,7 +434,7 @@ final class AppModel {
                 caskDependencies[id] = deps
             }
         }
-        return Receipts.orphans(installed: installed, caskDependencies: caskDependencies)
+        return Receipts.orphans(in: installed, caskDependencies: caskDependencies)
     }
 
     /// The Installed section under the scope picker. `.all` is the full list; `.onRequest` drops the
@@ -476,16 +476,13 @@ final class AppModel {
             guard let package = Self.synthesize(id: id, versions: installedVersions) else { continue }
             result.append(package)
         }
-        return result.sorted { lhs, rhs in
-            lhs.name == rhs.name ? lhs.kind.rawValue < rhs.kind.rawValue : lhs.name < rhs.name
-        }
+        return result.sorted(by: Package.displayOrder)
     }
 
     private static func synthesize(id: Package.ID, versions: [String]) -> Package? {
-        guard let separator = id.firstIndex(of: ":"),
-              let kind = PackageKind(rawValue: String(id[id.startIndex..<separator])) else { return nil }
+        guard let (kind, name) = Package.components(of: id) else { return nil }
         return Package(kind: kind,
-                       name: String(id[id.index(after: separator)...]),
+                       name: name,
                        displayName: nil,
                        desc: nil,
                        homepage: nil,
@@ -602,6 +599,11 @@ final class AppModel {
     /// An autoremove already on the queue makes a second press pure duplication.
     var autoremovePending: Bool {
         operations.contains { $0.command == .autoremove && !$0.isFinished }
+    }
+
+    /// Same rule for Update All — it lived in the view, spelled longhand.
+    var upgradeAllPending: Bool {
+        operations.contains { $0.command == .upgradeAll && !$0.isFinished }
     }
 
     // MARK: - Services (v5)

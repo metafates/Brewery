@@ -28,7 +28,7 @@ struct OperationLogWindow: View {
                 .toolbar {
                     if !operation.isFinished {
                         Button("Cancel") { model.cancel(operation) }
-                            .help("Stop this operation")
+                            .help("Cancels the running operation")
                     }
                 }
         } else {
@@ -37,7 +37,7 @@ struct OperationLogWindow: View {
             ContentUnavailableView {
                 Label("No Operation", systemImage: "list.bullet.rectangle")
             } description: {
-                Text("This operation is no longer in this session's list.")
+                Text("This operation was cleared from the list.")
             }
             .frame(minWidth: 480, minHeight: 320)
             .navigationTitle("Log")

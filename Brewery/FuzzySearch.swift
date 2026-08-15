@@ -61,7 +61,7 @@ nonisolated enum FuzzySearch {
                                  commands: [String: [Package.ID]] = [:]) async -> [SearchHit] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return packages.sorted(by: isOrderedBefore).map { SearchHit(package: $0, matchedCommand: nil) }
+            return packages.sorted(by: Package.displayOrder).map { SearchHit(package: $0, matchedCommand: nil) }
         }
 
         var q: [UInt8] = []
@@ -88,7 +88,7 @@ nonisolated enum FuzzySearch {
             if lhs.package.name.count != rhs.package.name.count {
                 return lhs.package.name.count < rhs.package.name.count
             }
-            return isOrderedBefore(lhs.package, rhs.package)
+            return Package.displayOrder(lhs.package, rhs.package)
         }
         return scored.prefix(resultLimit).map { SearchHit(package: $0.package, matchedCommand: $0.command) }
     }
@@ -236,8 +236,4 @@ nonisolated enum FuzzySearch {
         buffer.append(contentsOf: string.lowercased().utf8)
     }
 
-    private static func isOrderedBefore(_ lhs: Package, _ rhs: Package) -> Bool {
-        if lhs.name != rhs.name { return lhs.name < rhs.name }
-        return lhs.kind.rawValue < rhs.kind.rawValue
-    }
 }

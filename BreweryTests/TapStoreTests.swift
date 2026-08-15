@@ -192,7 +192,7 @@ struct TapStoreTests {
     @Test("consent asked exactly when installing would grant new trust (v10)")
     func trustConsent() {
         let state = TrustState(taps: ["oven-sh/bun"],
-                               itemPrefixes: ["charmbracelet/tap/gum"])
+                               trustedItems: ["charmbracelet/tap/gum"])
 
         #expect(!state.needsConsent(tap: "oven-sh/bun", name: "bun"))         // tap trusted
         #expect(!state.needsConsent(tap: "charmbracelet/tap", name: "gum"))   // item trusted

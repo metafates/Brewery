@@ -49,8 +49,9 @@ nonisolated struct CatalogStore {
     /// Bumped whenever `Package`'s shape changes; a mismatch discards the cache and re-downloads.
     static let cacheVersion = 9   // v10: cask conflicts, then cask `depends_on` formulae
 
-    /// Application Support/Brewery, created on demand.
-    static var supportDirectory: URL {
+    /// Application Support/Brewery, created once on first use — a computed property re-ran
+    /// `createDirectory` on every cache path and icon-store access.
+    static let supportDirectory: URL = {
         let base = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                  in: .userDomainMask,
                                                  appropriateFor: nil,
@@ -58,7 +59,7 @@ nonisolated struct CatalogStore {
         let directory = base.appending(path: "Brewery", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
-    }
+    }()
 
     static var cacheURL: URL {
         supportDirectory.appending(path: "catalog.json", directoryHint: .notDirectory)
@@ -99,9 +100,7 @@ nonisolated struct CatalogStore {
 
         var packages = try await decodeFormulae(formulaData, commands: commands, installs: formulaInstalls)
         packages += try await decodeCasks(caskData, installs: caskInstalls)
-        packages.sort { lhs, rhs in
-            lhs.name == rhs.name ? lhs.kind.rawValue < rhs.kind.rawValue : lhs.name < rhs.name
-        }
+        packages.sort(by: Package.displayOrder)
 
         // The catalog join below is by short name, so qualified analytics keys would drop out;
         // kept aside instead, they give scanned tap packages their install counts.

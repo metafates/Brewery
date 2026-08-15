@@ -215,6 +215,21 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         "\(kind.rawValue):\(name)"
     }
 
+    /// The join rule's inverse, in the same one home. Neither formula names nor cask tokens
+    /// contain a colon, so the first one is always the separator.
+    static func components(of id: Package.ID) -> (kind: PackageKind, name: String)? {
+        guard let separator = id.firstIndex(of: ":"),
+              let kind = PackageKind(rawValue: String(id[id.startIndex..<separator])) else { return nil }
+        let name = String(id[id.index(after: separator)...])
+        return name.isEmpty ? nil : (kind, name)
+    }
+
+    /// The catalog's canonical order — by name, kind breaking ties. One rule for the compose
+    /// sort, the cache sort and the ranker's tie-break; it used to be spelled three times.
+    static func displayOrder(_ lhs: Package, _ rhs: Package) -> Bool {
+        lhs.name == rhs.name ? lhs.kind.rawValue < rhs.kind.rawValue : lhs.name < rhs.name
+    }
+
     var title: String { displayName ?? name }
 
     /// SPDX identifier, formulae only — casks carry no license in the API.

@@ -64,12 +64,15 @@ final class BrewOperation: Identifiable {
 }
 
 extension BrewOperation.State {
-    /// One vocabulary for the popover row's caption and the log window's subtitle.
+    /// One vocabulary for every surface that names a state — the popover row, the log
+    /// window's subtitle, and the pane's log header. "Queued" pairs with the popover's own
+    /// "Remove from queue"; the pane used to say "Queued"/"Finished" while the popover said
+    /// "Waiting"/"Completed" for the same states.
     var label: String {
         switch self {
-        case .queued: "Waiting"
+        case .queued: "Queued"
         case .running: "Running…"
-        case .succeeded: "Completed"
+        case .succeeded: "Finished"
         case .failed: "Failed"
         case .cancelled: "Cancelled"
         }

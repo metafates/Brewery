@@ -323,7 +323,7 @@ struct CaskAppTests {
             "formula:straylib": Self.dep(),           // orphaned the round after stray falls
             "cask:tool": Self.dep(),                  // casks are never orphans
         ]
-        #expect(Receipts.orphans(installed: installed) == ["formula:stray", "formula:straylib"])
+        #expect(Receipts.orphans(in: installed) == ["formula:stray", "formula:straylib"])
 
         // A cask's depends_on formulae (from the catalog — cask receipts carry no deps)
         // hold formulae alive, transitively: the neovide → neovim → lpeg shape.
@@ -332,22 +332,22 @@ struct CaskAppTests {
             "formula:neovim": Self.dep(["lpeg"]),
             "formula:lpeg": Self.dep(),
         ]
-        #expect(Receipts.orphans(installed: caskHeld,
+        #expect(Receipts.orphans(in: caskHeld,
                                  caskDependencies: ["cask:neovide": ["neovim"]]).isEmpty)
         // Without the cask's claim the whole chain falls.
-        #expect(Receipts.orphans(installed: caskHeld) == ["formula:neovim", "formula:lpeg"])
+        #expect(Receipts.orphans(in: caskHeld) == ["formula:neovim", "formula:lpeg"])
 
         // brew only autoremoves bottles: a from-source build never falls.
         let fromSource: [Package.ID: InstalledInfo] = [
             "formula:handmade": InstalledInfo(versions: ["1.0"], onRequest: false,
                                               builtFromSource: true),
         ]
-        #expect(Receipts.orphans(installed: fromSource).isEmpty)
+        #expect(Receipts.orphans(in: fromSource).isEmpty)
 
         // Nothing installed on request ever falls.
         let requested: [Package.ID: InstalledInfo] = [
             "formula:solo": InstalledInfo(versions: ["1.0"], onRequest: true),
         ]
-        #expect(Receipts.orphans(installed: requested).isEmpty)
+        #expect(Receipts.orphans(in: requested).isEmpty)
     }
 }

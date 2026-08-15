@@ -80,9 +80,12 @@ struct PackageCardView: View {
         case .outdated where model.outdated[package.id]?.pinned != true:
             Button("Update") { model.upgrade(package) }
         case .installed:
-            if let app = model.launchableApps(for: package).first {
+            // Same rule as the action slot: only a single-bundle cask has something
+            // unambiguous to open — the menu offered `first` of several, arbitrarily.
+            let apps = model.launchableApps(for: package)
+            if apps.count == 1, let app = apps.first {
                 Button("Open") { model.openApp(at: app) }
-            } else if let font = model.installedFontURL(for: package) {
+            } else if apps.isEmpty, let font = model.installedFontURL(for: package) {
                 Button("Open") { model.openFile(at: font) }
             }
         default:
@@ -197,7 +200,7 @@ struct PackageCardView: View {
                 .controlSize(.small)
                 .disabled(package.disabled)
                 .help(package.disabled
-                      ? "\(package.title) is disabled and can no longer be installed."
+                      ? "Homebrew has disabled \(package.title), so it can no longer be installed."
                       : "Install \(package.title)")
 
         case .outdated:
@@ -214,13 +217,13 @@ struct PackageCardView: View {
             // casks get it — bordered, so the one filled button on a card stays the
             // state-changing one. Formulae and multi-app casks keep the state label: nothing
             // unambiguous to open (the detail pane's Open menu handles the multi-app few).
-            if let app = model.launchableApps(for: package).first,
-               model.launchableApps(for: package).count == 1 {
+            let apps = model.launchableApps(for: package)
+            if apps.count == 1, let app = apps.first {
                 Button("Open") { model.openApp(at: app) }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .help("Open \(app.deletingPathExtension().lastPathComponent)")
-            } else if let font = model.installedFontURL(for: package) {
+            } else if apps.isEmpty, let font = model.installedFontURL(for: package) {
                 // Fonts launch too — into Font Book, the pane's grammar on the card.
                 Button("Open") { model.openFile(at: font) }
                     .buttonStyle(.bordered)

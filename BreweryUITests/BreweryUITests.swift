@@ -14,6 +14,12 @@ final class BreweryUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        // The app restores its last sidebar section and Installed scope (v9/v10). Tests
+        // assume a Discover launch, so an earlier test's parking spot must not leak into
+        // the next one's — in-suite order made three tests fail that passed solo.
+        let defaults = UserDefaults(suiteName: "one.metafates.Brewery")
+        defaults?.removeObject(forKey: "sidebar.section")
+        defaults?.removeObject(forKey: "installed.scope")
     }
 
     private func launched() -> XCUIApplication {

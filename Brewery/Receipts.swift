@@ -42,7 +42,7 @@ nonisolated enum Receipts {
         // brew's own rule: an absent `installed_on_request` in an existing receipt means false
         // (`tab.rb`) — the keg came in as somebody else's dependency.
         return Receipt(onRequest: payload.installedOnRequest ?? false,
-                       dependencies: order(payload.runtimeDependencies?.entries ?? []),
+                       dependencies: ordered(payload.runtimeDependencies?.entries ?? []),
                        apps: payload.uninstallArtifacts?.flatMap { $0.app ?? [] } ?? [],
                        tap: normalizedTap(payload.source?.tap),
                        builtFromSource: payload.pouredFromBottle != true)
@@ -56,7 +56,7 @@ nonisolated enum Receipts {
     }
 
     /// `declared_directly` first, receipt order preserved within each group, deduplicated.
-    private static func order(_ entries: [Payload.Dependency]) -> [String] {
+    private static func ordered(_ entries: [Payload.Dependency]) -> [String] {
         var seen: Set<String> = []
         var direct: [String] = []
         var indirect: [String] = []
@@ -147,7 +147,7 @@ nonisolated enum Receipts {
         result.reserveCapacity(installed.count)
 
         for (id, info) in installed {
-            guard let (kind, name) = components(of: id) else { continue }
+            guard let (kind, name) = Package.components(of: id) else { continue }
             // The keg we read is the one brew listed last — the version the overlay shows.
             let url = receiptURL(prefix: prefix, kind: kind, name: name, version: info.versions.last ?? "")
             guard let data = try? Data(contentsOf: url) else {
@@ -163,15 +163,6 @@ nonisolated enum Receipts {
         return result
     }
 
-    /// Overlay keys are `kind:shortname`; neither formula names nor cask tokens contain a colon.
-    private static func components(of id: Package.ID) -> (kind: PackageKind, name: String)? {
-        guard let separator = id.firstIndex(of: ":"),
-              let kind = PackageKind(rawValue: String(id[id.startIndex..<separator]))
-        else { return nil }
-        let name = String(id[id.index(after: separator)...])
-        return name.isEmpty ? nil : (kind, name)
-    }
-
     // MARK: - Launching
 
     /// Where a cask's app ended up. brew's `app` artifact targets `/Applications` unless the cask
@@ -180,7 +171,6 @@ nonisolated enum Receipts {
     static func appURL(named name: String) -> URL? {
         let candidates = [
             URL(filePath: "/Applications", directoryHint: .isDirectory),
-            URL.applicationDirectory,
             FileManager.default.homeDirectoryForCurrentUser.appending(path: "Applications", directoryHint: .isDirectory)
         ]
         for directory in candidates {
@@ -199,7 +189,7 @@ nonisolated enum Receipts {
     /// receipts carry no runtime deps, so those come from the catalog's `depends_on` in
     /// `caskDependencies`, and the fixpoint protects their transitive deps for free.
     /// Pure — the same receipt data the Dependencies and Required-by rows trust.
-    static func orphans(installed: [Package.ID: InstalledInfo],
+    static func orphans(in installed: [Package.ID: InstalledInfo],
                         caskDependencies: [Package.ID: [String]] = [:]) -> Set<Package.ID> {
         var alive = installed
         while true {

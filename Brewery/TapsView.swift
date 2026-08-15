@@ -16,7 +16,7 @@ struct TapsTip: Tip {
     }
 
     var message: Text? {
-        Text("Homebrew ships two. Add more published by developers — anything they list installs like any other package.")
+        Text("Homebrew ships two. Developers publish more — and anything they list installs like any other package.")
     }
 
     /// "prefer the filled variant" (HIG *Offering help* → Creating tips) of the glyph the rows wear.
@@ -55,7 +55,7 @@ struct TapsView: View {
                 // A header labels its group. The vocabulary that used to hang under it is the
                 // tip's job now, and formula-vs-cask is already Discover's tip and the tag
                 // tooltips — HIG *Offering help*: "Avoid bloating your help content."
-                Text("Built in")
+                Text("Built-in")
             }
 
             Section {
@@ -93,7 +93,7 @@ struct TapsView: View {
                 if model.installedCount(fromTap: info.name) > 0 {
                     Text("Homebrew refuses to remove a tap while packages from it are installed. Uninstall them first.")
                 } else {
-                    Text("The tap's local copy is removed; it can be added again anytime. If Homebrew trusts it, that trust survives and reapplies on re-adding.")
+                    Text("This removes the tap's local copy — you can add it back anytime. If the tap is trusted, it stays trusted when you re-add it.")
                 }
             }
         }
@@ -204,7 +204,7 @@ private struct BuiltInTapRow: View {
             }
             .buttonStyle(.plain)
 
-            TagLabel("Built in")
+            TagLabel("Built-in")
                 .font(.caption)
         }
         .padding(.vertical, 3)
@@ -302,7 +302,7 @@ struct TapPageHeader: View {
                     .pointerStyle(.link)
                 }
                 if let checked = info?.lastChecked {
-                    Text("Checked \(checked.formatted(.relative(presentation: .named)))")
+                    Text("Last checked \(checked.formatted(.relative(presentation: .named)))")
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -325,7 +325,7 @@ struct TapPageHeader: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Not trusted by Homebrew")
                         .fontWeight(.semibold)
-                    Text("Its services and some listings stay hidden. Installing an item trusts that item; trusting the tap covers everything it ships.")
+                    Text("Its services and some listings stay hidden. Installing a package trusts just that package; trusting the tap covers everything it ships.")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -342,7 +342,7 @@ struct TapPageHeader: View {
                     Button("Trust") { model.trustTap(info.name) }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("Homebrew will run this tap's package definitions when listing and installing. Only trust taps whose authors you trust.")
+                    Text("Homebrew will run this tap's recipes when listing and installing. Only trust taps whose authors you trust.")
                 }
         }
         .warningWash(.orange)
@@ -373,7 +373,7 @@ struct AddTapPopover: View {
                 .frame(width: 240)
                 .onSubmit { if isValid { submit() } }
 
-            Text("Clones github.com/\(namePreview). Formulae from it stay untrusted until you install one.")
+            Text("Clones github.com/\(namePreview). Its packages stay untrusted until you install one.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

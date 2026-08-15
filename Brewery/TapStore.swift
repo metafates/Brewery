@@ -22,7 +22,7 @@ nonisolated struct TapInfo: Equatable, Identifiable {
 /// answer.
 nonisolated struct TrustState: Equatable {
     var taps: Set<String> = []
-    var itemPrefixes: [String] = []
+    var trustedItems: [String] = []
 
     func isTrusted(_ tap: String) -> Bool {
         // Official taps are implicitly trusted and never stored (brew's tap.rb:1489-1491).
@@ -33,14 +33,14 @@ nonisolated struct TrustState: Equatable {
     /// the residue of qualified installs.
     func trustedItemCount(in tap: String) -> Int {
         let prefix = tap.lowercased() + "/"
-        return itemPrefixes.count { $0.hasPrefix(prefix) }
+        return trustedItems.count { $0.hasPrefix(prefix) }
     }
 
     /// v10 — whether installing `name` from `tap` would grant trust brew doesn't already
     /// have: the tap isn't trusted and no per-item entry covers this name. URL-shaped
     /// custom-remote entries fail the exact match and simply re-ask — the conservative side.
     func needsConsent(tap: String, name: String) -> Bool {
-        !isTrusted(tap) && !itemPrefixes.contains("\(tap)/\(name)".lowercased())
+        !isTrusted(tap) && !trustedItems.contains("\(tap)/\(name)".lowercased())
     }
 }
 
@@ -365,7 +365,7 @@ nonisolated enum TapStore {
             }
             return TrustState(
                 taps: Set(strings("trustedtaps")),
-                itemPrefixes: strings("trustedformulae") + strings("trustedcasks") + strings("trustedcommands"))
+                trustedItems: strings("trustedformulae") + strings("trustedcasks") + strings("trustedcommands"))
         }
     }
 

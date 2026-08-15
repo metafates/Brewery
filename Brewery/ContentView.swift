@@ -17,7 +17,7 @@ struct PackageKindsTip: Tip {
     }
 
     var message: Text? {
-        Text("Formulae are command-line tools for the Terminal. Casks are regular Mac apps. Everything installs with one click — use the filter to browse one kind.")
+        Text("Formulae are command-line tools for Terminal. Casks are regular Mac apps. Everything installs with one click — use the filter to browse one kind.")
     }
 
     var image: Image? {
@@ -81,7 +81,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .installed: "No packages installed"
         case .outdated: "Everything is up to date"
         case .services: "No services"
-        case .taps: "This tap provides no packages"
+        case .taps: "This tap has no packages"
         }
     }
 }
@@ -112,7 +112,7 @@ private struct OrphanSummaryBar: View {
                     // only, nothing below moves.
                     Text("^[\(ids.count) orphaned dependencies](inflect: true)\(bytes.map { " · \($0.formatted(.byteCount(style: .file))) reclaimable" } ?? "")")
                         .fontWeight(.semibold)
-                    Text("Installed for packages that are no longer here.")
+                    Text("Installed for packages you've since removed.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -121,7 +121,7 @@ private struct OrphanSummaryBar: View {
 
                 Button("Remove All…") { confirming = true }
                     .disabled(model.autoremovePending)
-                    .help("Remove every orphaned dependency — Homebrew's autoremove")
+                    .help("Removes dependencies nothing needs anymore")
                     // Pluralized by hand: the ^[](inflect:) markdown renders fine in the
                     // bar's Text but arrives raw in a dialog title, wrapped in Text or not.
                     .confirmationDialog(
@@ -132,7 +132,7 @@ private struct OrphanSummaryBar: View {
                         Button("Remove All", role: .destructive) { model.autoremove() }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Homebrew uninstalls only what nothing installed needs — the same set brew autoremove removes. Anything removed can be installed again.")
+                        Text("These are dependencies nothing needs anymore. You can install any of them again later.")
                     }
             }
             .padding(12)
@@ -150,18 +150,11 @@ private struct OrphanSummaryBar: View {
                 guard let prefix = model.client.prefix else { return }
                 var total: Int64 = 0
                 for id in ids {
-                    let name = String(id.dropFirst("formula:".count))
-                    let key = "\(id)|\(model.installed[id]?.versions.last ?? "")"
-                    if let cached = DiskUsage.cache[key] {
-                        total += cached
-                        continue
-                    }
+                    guard let (_, name) = Package.components(of: id) else { continue }
+                    let key = DiskUsage.cacheKey(for: id, version: model.installed[id]?.versions.last)
                     let root = prefix.appending(path: "Cellar", directoryHint: .isDirectory)
                         .appending(path: name, directoryHint: .isDirectory)
-                    if let measured = await DiskUsage.bytes(at: [root]) {
-                        DiskUsage.cache[key] = measured
-                        total += measured
-                    }
+                    total += await DiskUsage.measuredBytes(key: key, roots: [root]) ?? 0
                 }
                 bytes = total
             }
@@ -640,7 +633,7 @@ struct ContentView: View {
             filtersActive ? "No packages match the filters" : nil
         case .installed:
             if installedKindFilter != .all || installedTapsOnly, !model.installed.isEmpty {
-                "No installed packages match the filter"
+                "No installed packages match the filters"
             } else if installedScope == .orphans, !model.installed.isEmpty {
                 "No orphaned dependencies"
             } else if installedScope == .onRequest, !model.installed.isEmpty {
@@ -827,7 +820,7 @@ struct ContentView: View {
                     } label: {
                         Label("Add Tap", systemImage: "plus")
                     }
-                    .help("Add a tap")
+                    .help("Add a package catalog from GitHub")
                     .accessibilityLabel("Add Tap")
                     .popover(isPresented: $showAddTap, arrowEdge: .bottom) {
                         AddTapPopover(onAdd: { model.addTap($0) })
@@ -838,7 +831,7 @@ struct ContentView: View {
         if section == .outdated, !model.outdated.isEmpty {
             ToolbarItem(placement: .primaryAction) {
                 Button("Update All") { model.upgradeAll() }
-                    .disabled(upgradeAllPending)
+                    .disabled(model.upgradeAllPending)
                     .help("Update all outdated packages")
             }
         }
@@ -863,7 +856,7 @@ struct ContentView: View {
                 } label: {
                     filterLabel(active: installedKindFilter != .all || installedTapsOnly)
                 }
-                .help("Filter by kind")
+                .help("Filter by kind or source")
                 .accessibilityLabel("Filter")
             }
             ToolbarItem(placement: .primaryAction) {
@@ -874,7 +867,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .help("Show packages you installed, or everything on disk including dependencies")
+                .help("Show packages you installed, everything on disk, or orphaned dependencies")
                 .accessibilityLabel("Installed Scope")
             }
         }
@@ -915,13 +908,6 @@ struct ContentView: View {
 
     private func refresh() {
         Task { await model.refresh() }
-    }
-
-    /// An Upgrade All already on the queue makes a second press pure duplication.
-    private var upgradeAllPending: Bool {
-        model.operations.contains {
-            $0.command == .upgradeAll && ($0.state == .queued || $0.state == .running)
-        }
     }
 
     /// Not offered on Discover: an empty grid there means a filter is hiding things, and
@@ -1002,7 +988,7 @@ struct ContentView: View {
         ContentUnavailableView {
             Label("Homebrew Not Found", systemImage: "shippingbox")
         } description: {
-            Text("Brewery drives the brew command line tool. Install Homebrew, then refresh.")
+            Text("Brewery needs Homebrew's brew command-line tool. Install Homebrew, then refresh.")
         } actions: {
             Link("Install Homebrew", destination: URL(string: "https://brew.sh")!)
                 .buttonStyle(.borderedProminent)
