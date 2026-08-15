@@ -39,10 +39,23 @@ struct PackageIconView: View {
     }
 
     /// Font casks never reach the store at all: a foundry's favicon says nothing about the
-    /// typeface, so they always render the glyph.
+    /// typeface, so they always render the glyph. GitHub homepages don't either (v10): the
+    /// favicon is one identical dark Octocat repeated across half the catalog — chrome
+    /// pretending to be identity — so they render the GitHub mark as a quiet tinted glyph
+    /// in the fallback family instead, and skip the fetch entirely.
     private var host: String? {
-        guard !package.isFont, let host = package.homepageURL?.host(), !host.isEmpty else { return nil }
+        guard !package.isFont, let host = package.homepageURL?.host()?.lowercased(),
+              !host.isEmpty, !Self.isGitHub(host) else { return nil }
         return host
+    }
+
+    private static func isGitHub(_ host: String) -> Bool {
+        host == "github.com" || host == "www.github.com"
+    }
+
+    private var isGitHubHomepage: Bool {
+        guard let host = package.homepageURL?.host()?.lowercased() else { return false }
+        return Self.isGitHub(host)
     }
 
     private var symbol: String {
@@ -103,9 +116,20 @@ struct PackageIconView: View {
         shape
             .fill(.tint.quaternary)
             .overlay {
-                Image(systemName: symbol)
-                    .font(.system(size: side * 0.45))
-                    .foregroundStyle(.tint)
+                if isGitHubHomepage, !package.isFont {
+                    // The embedded mark, template-rendered: same tint, same tile, one more
+                    // member of the glyph family rather than a repeated dark favicon.
+                    Image("github-mark")
+                        .resizable()
+                        .renderingMode(.template)
+                        .scaledToFit()
+                        .frame(width: side * 0.5, height: side * 0.5)
+                        .foregroundStyle(.tint)
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: side * 0.45))
+                        .foregroundStyle(.tint)
+                }
             }
     }
 }
