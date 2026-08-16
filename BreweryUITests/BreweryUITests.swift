@@ -19,7 +19,7 @@ final class BreweryUITests: XCTestCase {
         // the next one's — in-suite order made three tests fail that passed solo.
         let defaults = UserDefaults(suiteName: "one.metafates.Brewery")
         defaults?.removeObject(forKey: "sidebar.section")
-        defaults?.removeObject(forKey: "installed.scope")
+        defaults?.removeObject(forKey: "installed.showDependencies")
     }
 
     private func launched() -> XCUIApplication {

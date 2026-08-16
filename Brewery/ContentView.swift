@@ -25,9 +25,16 @@ struct PackageKindsTip: Tip {
     }
 }
 
-/// The fixed destinations of the sidebar.
+/// The fixed destinations of the sidebar: the library, then the reports. **(v12)** Orphans and
+/// Attention are destinations, not Installed scopes — they carry their own headers, actions and
+/// empty states, and a titled sidebar group is the platform's container for exactly that (HIG
+/// *Sidebars*: succinct, descriptive labels title each group).
 nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
-    case discover, installed, outdated, services, taps
+    case discover, installed, outdated, services, taps, orphans, attention
+
+    /// The sidebar's two groups, in row order.
+    static let library: [SidebarSection] = [.discover, .installed, .outdated, .services, .taps]
+    static let reports: [SidebarSection] = [.orphans, .attention]
 
     var id: Self { self }
 
@@ -38,6 +45,8 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .outdated: "Outdated"
         case .services: "Services"
         case .taps: "Taps"
+        case .orphans: "Orphans"
+        case .attention: "Attention"
         }
     }
 
@@ -50,6 +59,9 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .services: "server.rack"
         // The same glyph the detail sheet's tap row wears.
         case .taps: "spigot"
+        // Each report wears its own summary bar's glyph — the row and the page say the same thing.
+        case .orphans: "arrow.3.trianglepath"
+        case .attention: "exclamationmark.triangle"
         }
     }
 
@@ -61,6 +73,8 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .outdated: "3"
         case .services: "4"
         case .taps: "5"
+        case .orphans: "6"
+        case .attention: "7"
         }
     }
 
@@ -71,6 +85,8 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .outdated: "Search Outdated"
         case .services: "Search Services"
         case .taps: "Search Taps"
+        case .orphans: "Search Orphans"
+        case .attention: "Search Attention"
         }
     }
 
@@ -82,6 +98,9 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .outdated: "Everything is up to date"
         case .services: "No services"
         case .taps: "This tap has no packages"
+        case .orphans: "No orphaned dependencies"
+        // Software Update's positive-empty grammar: the good outcome, stated plainly.
+        case .attention: "Nothing needs attention"
         }
     }
 }
@@ -232,33 +251,13 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// The Installed section's scope: what the user asked for, everything that is on disk, the
-/// (v10) orphan report — dependencies nothing installed still needs — or the (v11) attention
-/// report — packages Homebrew has deprecated or disabled.
-nonisolated enum InstalledScope: String, CaseIterable, Identifiable {
+/// The model's subsets of what is on disk: what the user asked for, everything, the (v10)
+/// orphan report — dependencies nothing installed still needs — and the (v11) attention
+/// report — packages Homebrew has deprecated or disabled. **(v12)** UI-wise this is no longer
+/// one picker: Installed reaches onRequest/all through the Filter menu's Show Dependencies
+/// toggle, and the reports are sidebar destinations.
+nonisolated enum InstalledScope {
     case onRequest, all, orphans, attention
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .onRequest: "On Request"
-        case .all: "All"
-        case .orphans: "Orphans"
-        case .attention: "Attention"
-        }
-    }
-
-    /// View ▸ Scope key equivalents, ⌥⌘1…4 — the destinations hold plain ⌘1…5 and the sort
-    /// ⌃⌘1…3; the scope completes the family on the remaining standard modifier.
-    var shortcut: KeyEquivalent {
-        switch self {
-        case .onRequest: "1"
-        case .all: "2"
-        case .orphans: "3"
-        case .attention: "4"
-        }
-    }
 }
 
 /// v11 — Installed's sort orders, Finder's *Sort By* vocabulary. Name is the inventory default;
@@ -296,7 +295,10 @@ struct ContentView: View {
 
     @AppStorage("discover.kindFilter") private var kindFilter: KindFilter = .all
     @AppStorage("discover.hideDeprecated") private var hideDeprecated = false
-    @AppStorage("installed.scope") private var installedScope: InstalledScope = .onRequest
+    /// v12 — On Request is the default truth of Installed; dependency-only kegs join it through
+    /// this Filter-menu toggle (each already wears the "dependency" mark). The old four-way
+    /// scope picker is gone: its two report segments are sidebar destinations now.
+    @AppStorage("installed.showDependencies") private var showDependencies = false
     /// A source is not a kind: a tap item IS a formula or cask, so "from taps" is a combinable
     /// toggle like Hide Deprecated, never a kind-picker case — "casks from taps" must be sayable.
     @AppStorage("discover.tapsOnly") private var tapsOnly = false
@@ -367,9 +369,17 @@ struct ContentView: View {
 
         return NavigationSplitView {
             List(selection: $model.selection) {
-                ForEach(SidebarSection.allCases) { item in
+                ForEach(SidebarSection.library) { item in
                     Label(item.title, systemImage: item.symbol)
                         .badge(badgeCount(for: item))
+                }
+                // v12 — the reports, in the source list's own grammar (Mail's Smart Mailboxes,
+                // Finder's groups): always discoverable, never floating over the listing.
+                Section("Reports") {
+                    ForEach(SidebarSection.reports) { item in
+                        Label(item.title, systemImage: item.symbol)
+                            .badge(badgeCount(for: item))
+                    }
                 }
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
@@ -555,9 +565,9 @@ struct ContentView: View {
                                 TapPageHeader(tap: tap)
                             } else if section == .outdated {
                                 freshnessCaption
-                            } else if section == .installed, installedScope == .orphans {
+                            } else if section == .orphans {
                                 OrphanSummaryBar()
-                            } else if section == .installed, installedScope == .attention {
+                            } else if section == .attention {
                                 AttentionSummaryBar()
                             } else if section == .installed {
                                 sizeMeasuringCaption
@@ -743,10 +753,12 @@ struct ContentView: View {
     private var sourcePackages: [Package] {
         switch section {
         case .discover: filtered(model.catalog)
-        case .installed: installedFiltered(model.installedPackages(scope: installedScope))
+        case .installed: installedFiltered(model.installedPackages(scope: showDependencies ? .all : .onRequest))
         case .outdated: model.outdatedPackages
         case .services: model.servicePackages
         case .taps: tapPagePackages(for: selectedTap)
+        case .orphans: model.installedPackages(scope: .orphans)
+        case .attention: model.installedPackages(scope: .attention)
         }
     }
 
@@ -791,7 +803,7 @@ struct ContentView: View {
     private var filtersActive: Bool { kindFilter != .all || hideDeprecated || tapsOnly }
 
     /// Discover has no empty state of its own — by the time it renders, the catalog is loaded — but
-    /// a filter can empty it, and so can the On Request scope on a machine whose kegs are all deps.
+    /// a filter can empty it, and so can On Request on a machine whose kegs are all deps.
     private var emptyMessage: String? {
         switch section {
         case .discover:
@@ -799,17 +811,12 @@ struct ContentView: View {
         case .installed:
             if installedKindFilter != .all || installedTapsOnly, !model.installed.isEmpty {
                 "No installed packages match the filters"
-            } else if installedScope == .orphans, !model.installed.isEmpty {
-                "No orphaned dependencies"
-            } else if installedScope == .attention, !model.installed.isEmpty {
-                // Software Update's positive-empty grammar: the good outcome, stated plainly.
-                "Nothing needs attention"
-            } else if installedScope == .onRequest, !model.installed.isEmpty {
+            } else if !showDependencies, !model.installed.isEmpty {
                 "No packages installed on request"
             } else {
                 section.emptyMessage
             }
-        case .outdated, .services:
+        case .outdated, .services, .orphans, .attention:
             section.emptyMessage
         case .taps:
             tapKindFilter != .all ? "No packages match the filter" : section.emptyMessage
@@ -843,7 +850,7 @@ struct ContentView: View {
         let section: SidebarSection
         let kindFilter: KindFilter
         let hideDeprecated: Bool
-        let installedScope: InstalledScope
+        let showDependencies: Bool
         let installedKindFilter: KindFilter
         let tapsOnly: Bool
         let installedTapsOnly: Bool
@@ -863,7 +870,7 @@ struct ContentView: View {
         BrowseKey(section: section,
                   kindFilter: kindFilter,
                   hideDeprecated: hideDeprecated,
-                  installedScope: installedScope,
+                  showDependencies: showDependencies,
                   installedKindFilter: installedKindFilter,
                   tapsOnly: tapsOnly,
                   installedTapsOnly: installedTapsOnly,
@@ -882,7 +889,7 @@ struct ContentView: View {
                                       query: searchText,
                                       kindFilter: kindFilter,
                                       hideDeprecated: hideDeprecated,
-                                      installedScope: installedScope,
+                                      showDependencies: showDependencies,
                                       installedKindFilter: installedKindFilter,
                                       tapsOnly: tapsOnly,
                                       installedTapsOnly: installedTapsOnly,
@@ -918,7 +925,7 @@ struct ContentView: View {
         let query: String
         let kindFilter: KindFilter
         let hideDeprecated: Bool
-        let installedScope: InstalledScope
+        let showDependencies: Bool
         let installedKindFilter: KindFilter
         let tapsOnly: Bool
         let installedTapsOnly: Bool
@@ -949,15 +956,19 @@ struct ContentView: View {
             if selectedTap != nil { return count == 1 ? "1 package" : "\(formatted) packages" }
             let taps = model.tapInfos.count + 2   // + the two built-in rows
             return "\(taps) taps"
+        case .orphans: return count == 1 ? "1 orphan" : "\(formatted) orphans"
+        case .attention: return count == 1 ? "1 needs attention" : "\(formatted) need attention"
         }
     }
 
-    /// Whether the section is showing something other than its plain default listing.
+    /// Whether the section is showing something other than its plain default listing. Showing
+    /// dependencies deliberately doesn't count: it widens toward the full truth of the disk,
+    /// and "n results" for an unqueried listing would read as a search.
     private var isNarrowed: Bool {
         switch section {
         case .discover: filtersActive
-        case .installed: installedScope != .onRequest || installedKindFilter != .all || installedTapsOnly
-        case .outdated, .services: false
+        case .installed: installedKindFilter != .all || installedTapsOnly
+        case .outdated, .services, .orphans, .attention: false
         case .taps: selectedTap != nil && tapKindFilter != .all
         }
     }
@@ -1026,32 +1037,20 @@ struct ContentView: View {
         }
         // v12 — Filter and Sort share one group: both shape how the listing reads, and one
         // capsule instead of two thins the edge that used to overflow (HIG *Toolbars*: "group
-        // toolbar items logically by function… minimize the number of groups"). The scope
-        // picker is gone from the trailing edge — it lives in the accessory bar below.
+        // toolbar items logically by function… minimize the number of groups").
         if section == .installed {
-            // The scope, in the row macOS reserves for exactly this: `.accessoryBar` is the
-            // API behind Finder's scope bar and Mail's filter row — the system extends the
-            // window chrome by a second row, draws its material and hairline, and sizes the
-            // control small. Its menu-bar twin is View ▸ Scope, ⌥⌘1…4.
-            ToolbarItem(placement: .accessoryBar(id: "installedScope")) {
-                Picker("Scope", selection: $installedScope) {
-                    ForEach(InstalledScope.allCases) { scope in
-                        Text(scope.title).tag(scope)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .help("Show packages you installed, everything on disk, orphaned dependencies, or packages Homebrew has retired")
-                .accessibilityLabel("Installed Scope")
-            }
             ToolbarItemGroup(placement: .primaryAction) {
                 Menu {
                     kindPicker($installedKindFilter)
+                    // v12 — dependency visibility is a filter, so it lives with the filters;
+                    // the filled funnel counts it because the listing differs from the default.
+                    Toggle("Show Dependencies", isOn: $showDependencies)
                     Toggle("From Taps Only", isOn: $installedTapsOnly)
                 } label: {
-                    filterLabel(active: installedKindFilter != .all || installedTapsOnly)
+                    filterLabel(active: installedKindFilter != .all || installedTapsOnly
+                                || showDependencies)
                 }
-                .help("Filter by kind or source")
+                .help("Filter by kind or source, or show dependency-only packages")
                 .accessibilityLabel("Filter")
                 // v11 — the sort, in the Filter menu's own grammar (HIG *Pop-up buttons*: a flat
                 // list of mutually exclusive options). Its menu-bar twin is View ▸ Sort By.
