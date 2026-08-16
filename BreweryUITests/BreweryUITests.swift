@@ -160,6 +160,10 @@ extension BreweryUITests {
         print("CARDS_AFTER_RETURN \(onReturn) vs SEARCHED \(searched)")
         XCTAssertLessThan(onReturn, 40,
                           "Returning to Discover showed the unfiltered listing (\(onReturn) cards).")
+        // The field restores its text asynchronously after the swap, and the per-section browse
+        // cache made the return trip fast enough that an immediate read can land mid-restore.
+        // Only this read settles — the cards assertion above deliberately does not.
+        for _ in 0..<30 where (field.value as? String) != "vim" { usleep(100_000) }
         XCTAssertEqual(field.value as? String, "vim", "The query was not restored.")
     }
 }
@@ -246,6 +250,10 @@ extension BreweryUITests {
             XCTAssertTrue(window.title.hasPrefix(section),
                           "⌘\(key) should reach \(section); the window says “\(window.title)”.")
         }
+
+        // The per-section browse cache: returning to Discover must render its cards — an empty
+        // grid here means the cache skipped a build it owed, or keyed it to the wrong section.
+        XCTAssertFalse(cards(app).isEmpty, "Discover rendered no cards after the ⌘-walk.")
 
         // Every toolbar action needs its menu bar command, so the menus themselves must exist.
         for menu in ["View", "Homebrew", "Help"] {

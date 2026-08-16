@@ -233,11 +233,16 @@ struct ContentView: View {
     /// once. A single array meant visiting a tab with an empty query cleared it, and the return
     /// trip flashed the unfiltered listing until the re-rank landed.
     @State private var results: [SidebarSection: [SearchHit]] = [:]
-    /// The browse listing, built once per change of the underlying array rather than per body pass.
-    /// Rebuilding it inline cost two full walks of the 16k catalog every time the body ran — and,
-    /// worse, handed SwiftUI a fresh array each time, so its cheap CoW identity check for "did this
-    /// change?" degraded into a 16k element-by-element comparison.
-    @State private var browseHits: [SearchHit] = []
+    /// Browse listings per section — the same grammar as `results`, for the same reason. A single
+    /// array meant every ⌘1…⌘5 rebuilt the listing from scratch on the main actor (for Discover, a
+    /// filter + popularity sort + map over the 16k catalog — the tab-switch lag) and rendered the
+    /// *previous* section's cards for a frame until the rebuild landed. Built in a task, never
+    /// inline: rebuilding per body pass handed SwiftUI a fresh array each time, so its cheap CoW
+    /// identity check degraded into a 16k element-by-element comparison.
+    @State private var browseHits: [SidebarSection: [SearchHit]] = [:]
+    /// The inputs each cached listing was built from, so revisiting a tab with nothing changed
+    /// skips the rebuild outright instead of paying it on every switch.
+    @State private var builtKeys: [SidebarSection: BrowseKey] = [:]
     @State private var selectedPackage: Package?
     @State private var showAddTap = false
     @FocusState private var searchFocused: Bool
@@ -336,6 +341,9 @@ struct ContentView: View {
                                                      commands: model.commandIndex)
         }
         .task(id: browseKey) {
+            // A revisit with nothing changed: the cached listing is already right.
+            let key = browseKey
+            guard builtKeys[key.section] != key else { return }
             var packages = sourcePackages
             // Discover browses by popularity, not by name: an alphabetical walk of 16k packages
             // opens on "0 A.D." and never reaches anything anyone installs. Installed and Outdated
@@ -343,7 +351,8 @@ struct ContentView: View {
             if section == .discover || (section == .taps && TapStore.coreTaps.contains(selectedTap ?? "")) {
                 packages.sort(by: Self.byPopularity)
             }
-            browseHits = packages.map { SearchHit(package: $0, matchedCommand: nil) }
+            browseHits[key.section] = packages.map { SearchHit(package: $0, matchedCommand: nil) }
+            builtKeys[key.section] = key
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
         .onChange(of: model.selection) { if section != .taps { selectedTap = nil } }
@@ -510,8 +519,11 @@ struct ContentView: View {
     /// The listing is built synchronously *before* the page swaps in: the browse task rebuilds
     /// it asynchronously, and a page that lands empty and fills a beat later reads as a bug.
     private func openTap(_ tap: String) {
-        browseHits = browseListing(for: tap)
+        browseHits[.taps] = browseListing(for: tap)
         selectedTap = tap
+        // Computed after the assignment, so the key names the new tap: what was just built is
+        // exactly what the browse task would rebuild — record it so the task skips.
+        builtKeys[.taps] = browseKey
     }
 
     /// Discover only, and only while browsing: the tip is a newcomer's explainer, not search
@@ -653,10 +665,10 @@ struct ContentView: View {
     /// another section are equally unusable: during the debounce after a section switch the new
     /// section's own array stands in, never the old section's cards.
     private var displayedHits: [SearchHit] {
-        guard isSearching else { return browseHits }
+        guard isSearching else { return browseHits[section] ?? [] }
         // Falling back to the listing only happens the very first time a section is searched,
         // before its first ranking lands.
-        return results[section] ?? browseHits
+        return results[section] ?? browseHits[section] ?? []
     }
 
     /// What the grid will render.
