@@ -479,6 +479,11 @@ struct ContentView: View {
             selectedTap = nil
             showAddTap = true
         }
+        // v14 — the pane's Browse All escape lands on the tap's own grid. The selection
+        // change has already fired by the time this runs, so the reset guard has passed.
+        .onChange(of: model.openTapRequests) {
+            selectedTap = model.requestedTap
+        }
         .onChange(of: model.failureToPresent?.id) { _, failure in
             guard failure != nil else { return }
             model.showOperations = true

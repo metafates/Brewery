@@ -1244,16 +1244,21 @@ private struct CommandsPage: View {
 }
 
 /// v14 — what a tap provides, one page down (the Commands page's grammar): RelatedRows so any
-/// package is one click deeper, popularity-first for the core catalogs (an alphabetical walk
-/// of 16k opens on "0 A.D."), lazy because homebrew/core is sixteen thousand strong. Only the
-/// tap string crosses the view boundary — the rows build here, into `@State`, per the
+/// package is one click deeper. Bounded, the fonts law: past the shelf limit the page shows
+/// the most-installed slice — the top of homebrew/core is a real answer, row 4 000 is not —
+/// and a Browse All button hands the full walk to the Taps grid, the surface built for it.
+/// Only the tap string crosses the view boundary — rows build here, into `@State`, per the
 /// no-large-arrays-across-boundaries rule.
 private struct TapPage: View {
     let tap: String
     let onPush: (PackageDetailView.Page) -> Void
 
+    /// App Store's shelf grammar: a bounded sample plus See All. ~2.5 pane-screens of rows.
+    private static let shelfLimit = 30
+
     @Environment(AppModel.self) private var model
     @State private var rows: [Package] = []
+    @State private var total = 0
     @State private var loaded = false
 
     var body: some View {
@@ -1270,7 +1275,9 @@ private struct TapPage: View {
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
                 } else if loaded {
-                    Text("^[\(rows.count) packages](inflect: true) this tap provides.")
+                    Text(total > rows.count
+                         ? "^[\(total) packages](inflect: true) this tap provides. Showing the \(rows.count) most installed."
+                         : "^[\(rows.count) packages](inflect: true) this tap provides.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .padding(.bottom, 6)
@@ -1281,6 +1288,14 @@ private struct TapPage: View {
                             onPush(.package(item))
                         }
                     }
+
+                    if total > rows.count {
+                        Button("Browse All in Taps") {
+                            model.requestOpenTap(tap)
+                        }
+                        .padding(.top, 8)
+                        .help("Show everything \(tap) provides in the Taps section")
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1288,8 +1303,15 @@ private struct TapPage: View {
         }
         .task(id: tap) {
             var packages = model.packages(inTap: tap)
-            packages.sort(by: TapStore.coreTaps.contains(tap)
-                          ? Package.popularityOrder : Package.displayOrder)
+            total = packages.count
+            if packages.count > Self.shelfLimit {
+                // A cap is only honest if it keeps the most relevant rows: popularity, any tap.
+                packages.sort(by: Package.popularityOrder)
+                packages.removeSubrange(Self.shelfLimit...)
+            } else {
+                packages.sort(by: TapStore.coreTaps.contains(tap)
+                              ? Package.popularityOrder : Package.displayOrder)
+            }
             rows = packages
             loaded = true
         }

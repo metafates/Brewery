@@ -103,6 +103,10 @@ final class AppModel {
     /// exists on the tap list, so the view has to leave any drill-down before presenting it.
     private(set) var addTapRequests = 0
 
+    /// v14 — the pane's Browse All escape: the Taps section drills into this tap on request.
+    private(set) var openTapRequests = 0
+    private(set) var requestedTap: String?
+
     let client = BrewClient()
 
     private var catalogFetchedAt: Date?
@@ -911,5 +915,11 @@ final class AppModel {
     func requestAddTap() {
         selection = .taps
         addTapRequests += 1
+    }
+
+    func requestOpenTap(_ tap: String) {
+        selection = .taps
+        requestedTap = tap
+        openTapRequests += 1
     }
 }
