@@ -165,6 +165,19 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     /// which is exactly what brew's own autoremove reads (`utils/autoremove.rb`).
     var caskDependencies: [String] = []
     let service: ServiceDefinition? // formulae only; nil = defines no background service
+    /// v11 — the Attention report's facts, straight from the API. Dates stay the API's
+    /// "yyyy-MM-dd" strings (trivially Codable; parsed only for display), reasons stay brew's
+    /// raw values — a preset slug like "unsupported" or maintainer prose — and are humanized
+    /// in `deprecationExplanation`. All optional, so old caches decode them as nil; the cache
+    /// bump is only for immediacy. `var` with defaults, like `caskDependencies`, so the
+    /// memberwise init and its call sites stay untouched.
+    var deprecationDate: String? = nil
+    var deprecationReason: String? = nil
+    var disableDate: String? = nil
+    var disableReason: String? = nil
+    /// The *active* state's replacement, resolved at decode (disable's pair when disabled).
+    var replacementFormula: String? = nil
+    var replacementCask: String? = nil
 
     /// Written out rather than synthesized: a `let` with an inline default drops out of the
     /// implicit memberwise init, which would break every existing `Package(kind:…)` call site.
@@ -338,6 +351,102 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         tap ?? (kind == .formula ? "homebrew/core" : "homebrew/cask")
     }
 
+    // MARK: - Attention (v11)
+
+    /// What the Attention scope lists: brew has marked the package end-of-life, in one of its
+    /// two stages.
+    var needsAttention: Bool { deprecated || disabled }
+
+    /// brew's preset deprecation/disable reasons, in brew's own words — the
+    /// `FORMULA_DEPRECATE_DISABLE_REASONS` table (`deprecate_disable.rb`), each phrase written
+    /// to follow "it". A reason not listed here is maintainer prose and passes through the same
+    /// "it …" frame, which is exactly what brew's `message` does with it.
+    private static let formulaReasonPhrases: [String: String] = [
+        "does_not_build": "does not build",
+        "no_license": "has no license",
+        "repo_archived": "has an archived upstream repository",
+        "repo_removed": "has a removed upstream repository",
+        "unmaintained": "is not maintained upstream",
+        "unreachable": "is no longer reliably reachable upstream",
+        "unsupported": "is not supported upstream",
+        "deprecated_upstream": "is deprecated upstream",
+        "versioned_formula": "is a versioned formula",
+        "checksum_mismatch": "was built with an initially released source file that had "
+            + "a different checksum than the current one. "
+            + "Upstream's repository might have been compromised. "
+            + "We can re-package this once upstream has confirmed that they retagged their release",
+    ]
+
+    /// The cask table (`CASK_DEPRECATE_DISABLE_REASONS`) — casks retire for different reasons.
+    private static let caskReasonPhrases: [String: String] = [
+        "discontinued": "is discontinued upstream",
+        "moved_to_mas": "is now exclusively distributed on the Mac App Store",
+        "no_longer_available": "is no longer available upstream",
+        "no_longer_meets_criteria": "no longer meets the criteria for acceptable casks",
+        "unmaintained": "is not maintained upstream",
+        "fails_gatekeeper_check": "does not pass the macOS Gatekeeper check",
+        "unreachable": "is no longer reliably reachable upstream",
+    ]
+
+    /// The banner's body text — why, since when, and when it stops working — degrading a fact
+    /// at a time down to the pre-v11 generic copy when the API said nothing. Pure, so every
+    /// sentence shape has a test.
+    var deprecationExplanation: String? {
+        guard needsAttention else { return nil }
+        let phrases = kind == .formula ? Self.formulaReasonPhrases : Self.caskReasonPhrases
+        let reason = (disabled ? disableReason ?? deprecationReason : deprecationReason)
+            .map { phrases[$0] ?? $0 }
+        let verb = disabled ? "disabled" : "deprecated"
+        let when = Self.day(disabled ? disableDate : deprecationDate).map { " on \(Self.dayText($0))" }
+
+        var opening = when.map { "Homebrew \(verb) this package\($0)" }
+            ?? "Homebrew has \(verb) this package"
+        if let reason { opening += " — it \(reason)" }
+        opening += "."
+
+        if disabled { return opening + " It can no longer be installed." }
+        // The disable date is usually explicit; when it is not, brew itself projects
+        // deprecation + 12 months (`REMOVE_DISABLED_TIME_WINDOW`), so "around" is honest.
+        if let scheduled = Self.day(disableDate) {
+            return opening + " It still installs today, but is scheduled to stop working on \(Self.dayText(scheduled))."
+        }
+        if let deprecatedOn = Self.day(deprecationDate),
+           let projected = Calendar(identifier: .gregorian).date(byAdding: .month, value: 12, to: deprecatedOn) {
+            return opening + " It still installs today, but will likely stop working around \(Self.monthText(projected))."
+        }
+        return opening + " It still installs today, but it may be disabled in a future release."
+    }
+
+    /// The row the banner offers when brew names a successor. Formula wins over cask — brew's
+    /// own preference (`replacement_with_type`, `deprecate_disable.rb`).
+    var replacementID: Package.ID? {
+        if let replacementFormula { return Package.packageID(kind: .formula, name: replacementFormula) }
+        if let replacementCask { return Package.packageID(kind: .cask, name: replacementCask) }
+        return nil
+    }
+
+    var replacementName: String? { replacementFormula ?? replacementCask }
+
+    private static func day(_ api: String?) -> Date? {
+        api.flatMap { apiDayFormat.date(from: $0) }
+    }
+
+    private static func dayText(_ date: Date) -> String { dayFormat.string(from: date) }
+    private static func monthText(_ date: Date) -> String { monthFormat.string(from: date) }
+
+    /// All three pinned to en_US + UTC: the app's strings are unlocalized English, and a
+    /// calendar date rendered through a local timezone can slip a day.
+    private static let apiDayFormat = fixedFormat("yyyy-MM-dd")
+    private static let dayFormat = fixedFormat("MMMM d, yyyy")
+    private static let monthFormat = fixedFormat("MMMM yyyy")
+
+    private static func fixedFormat(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = format
+        return formatter
+    }
 }
 
 nonisolated struct InstalledInfo: Equatable, Hashable {

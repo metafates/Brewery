@@ -47,7 +47,7 @@ nonisolated struct CatalogStore {
     static let maxCacheAge: TimeInterval = 24 * 60 * 60
 
     /// Bumped whenever `Package`'s shape changes; a mismatch discards the cache and re-downloads.
-    static let cacheVersion = 9   // v10: cask conflicts, then cask `depends_on` formulae
+    static let cacheVersion = 10   // v11: deprecation dates, reasons and replacements
 
     /// Application Support/Brewery, created once on first use — a computed property re-ran
     /// `createDirectory` on every cache path and icon-store access.
@@ -226,12 +226,84 @@ nonisolated struct CatalogStore {
         let conflictsWithReasons: [String?]?
         let rubySourcePath: String?
         let service: Lenient<ServiceEntry>?
+        let deprecation: DeprecationFields?
 
         enum CodingKeys: String, CodingKey {
             case name, desc, homepage, versions, license, deprecated, disabled, caveats, service
             case conflictsWith = "conflicts_with"
             case conflictsWithReasons = "conflicts_with_reasons"
             case rubySourcePath = "ruby_source_path"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            name = try container.decode(String.self, forKey: .name)
+            desc = try container.decodeIfPresent(String.self, forKey: .desc)
+            homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
+            versions = try container.decodeIfPresent(Versions.self, forKey: .versions)
+            license = try container.decodeIfPresent(Lenient<String>.self, forKey: .license)
+            deprecated = try container.decodeIfPresent(Bool.self, forKey: .deprecated)
+            disabled = try container.decodeIfPresent(Bool.self, forKey: .disabled)
+            caveats = try container.decodeIfPresent(String.self, forKey: .caveats)
+            conflictsWith = try container.decodeIfPresent([String].self, forKey: .conflictsWith)
+            conflictsWithReasons = try container.decodeIfPresent([String?].self, forKey: .conflictsWithReasons)
+            rubySourcePath = try container.decodeIfPresent(String.self, forKey: .rubySourcePath)
+            service = try container.decodeIfPresent(Lenient<ServiceEntry>.self, forKey: .service)
+            deprecation = try? DeprecationFields(from: decoder)
+        }
+    }
+
+    /// v11 — the deprecation facts both catalogs serialize under the same flat keys
+    /// (`formula.rb` / `cask.rb` `to_h`), read once here for both entry types. The fields sit
+    /// flat on each entry's JSON object, so each entry's hand-written `init(from:)` passes this
+    /// type the same `decoder` and it opens its own keyed view of the same object — the eight
+    /// keys and their leniency (a surprising shape yields nil, never a lost entry — the
+    /// conflicts lesson) are declared exactly once.
+    struct DeprecationFields: Decodable {
+        let deprecationDate: String?
+        let deprecationReason: String?
+        let disableDate: String?
+        let disableReason: String?
+        let deprecationReplacementFormula: String?
+        let deprecationReplacementCask: String?
+        let disableReplacementFormula: String?
+        let disableReplacementCask: String?
+
+        enum CodingKeys: String, CodingKey {
+            case deprecationDate = "deprecation_date"
+            case deprecationReason = "deprecation_reason"
+            case disableDate = "disable_date"
+            case disableReason = "disable_reason"
+            case deprecationReplacementFormula = "deprecation_replacement_formula"
+            case deprecationReplacementCask = "deprecation_replacement_cask"
+            case disableReplacementFormula = "disable_replacement_formula"
+            case disableReplacementCask = "disable_replacement_cask"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            func lenient(_ key: CodingKeys) -> String? {
+                (try? container.decodeIfPresent(Lenient<String>.self, forKey: key))??.value
+            }
+            deprecationDate = lenient(.deprecationDate)
+            deprecationReason = lenient(.deprecationReason)
+            disableDate = lenient(.disableDate)
+            disableReason = lenient(.disableReason)
+            deprecationReplacementFormula = lenient(.deprecationReplacementFormula)
+            deprecationReplacementCask = lenient(.deprecationReplacementCask)
+            disableReplacementFormula = lenient(.disableReplacementFormula)
+            disableReplacementCask = lenient(.disableReplacementCask)
+        }
+
+        /// The *active* state's replacement pair — disable's when disabled, else deprecation's,
+        /// falling across when the active pair is empty (qt@5 mirrors the same successor into
+        /// both stanzas; others name it only once).
+        func replacement(disabled: Bool) -> (formula: String?, cask: String?) {
+            let deprecation = (deprecationReplacementFormula, deprecationReplacementCask)
+            let disable = (disableReplacementFormula, disableReplacementCask)
+            let primary = disabled ? disable : deprecation
+            let secondary = disabled ? deprecation : disable
+            return primary == (nil, nil) ? secondary : primary
         }
     }
 
@@ -302,12 +374,30 @@ nonisolated struct CatalogStore {
         let artifacts: [ArtifactEntry]?
         let conflictsWith: Lenient<ConflictsEntry>?
         let dependsOn: Lenient<DependsOnEntry>?
+        let deprecation: DeprecationFields?
 
         enum CodingKeys: String, CodingKey {
             case token, name, desc, homepage, version, deprecated, disabled, caveats, artifacts
             case rubySourcePath = "ruby_source_path"
             case conflictsWith = "conflicts_with"
             case dependsOn = "depends_on"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            token = try container.decode(String.self, forKey: .token)
+            name = try container.decodeIfPresent([String].self, forKey: .name)
+            desc = try container.decodeIfPresent(String.self, forKey: .desc)
+            homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
+            version = try container.decodeIfPresent(String.self, forKey: .version)
+            deprecated = try container.decodeIfPresent(Bool.self, forKey: .deprecated)
+            disabled = try container.decodeIfPresent(Bool.self, forKey: .disabled)
+            caveats = try container.decodeIfPresent(String.self, forKey: .caveats)
+            rubySourcePath = try container.decodeIfPresent(String.self, forKey: .rubySourcePath)
+            artifacts = try container.decodeIfPresent([ArtifactEntry].self, forKey: .artifacts)
+            conflictsWith = try container.decodeIfPresent(Lenient<ConflictsEntry>.self, forKey: .conflictsWith)
+            dependsOn = try container.decodeIfPresent(Lenient<DependsOnEntry>.self, forKey: .dependsOn)
+            deprecation = try? DeprecationFields(from: decoder)
         }
     }
 
@@ -407,41 +497,59 @@ nonisolated struct CatalogStore {
                                commands: [String: [String]] = [:],
                                installs: [String: Int] = [:]) throws -> [Package] {
         try JSONDecoder().decode([FormulaEntry].self, from: data).map { entry in
-            Package(kind: .formula,
-                    name: entry.name,
-                    displayName: nil,
-                    desc: entry.desc,
-                    homepage: entry.homepage,
-                    version: entry.versions?.stable ?? "",
-                    deprecated: entry.deprecated ?? false,
-                    disabled: entry.disabled ?? false,
-                    caveats: entry.caveats,
-                    conflicts: zipConflicts(entry.conflictsWith, entry.conflictsWithReasons),
-                    commands: commands[entry.name] ?? [],
-                    installs90d: installs[entry.name],
-                    license: entry.license?.value,
-                    rubySourcePath: entry.rubySourcePath,
-                    service: entry.service?.value?.definition)
+            var package = Package(kind: .formula,
+                                  name: entry.name,
+                                  displayName: nil,
+                                  desc: entry.desc,
+                                  homepage: entry.homepage,
+                                  version: entry.versions?.stable ?? "",
+                                  deprecated: entry.deprecated ?? false,
+                                  disabled: entry.disabled ?? false,
+                                  caveats: entry.caveats,
+                                  conflicts: zipConflicts(entry.conflictsWith, entry.conflictsWithReasons),
+                                  commands: commands[entry.name] ?? [],
+                                  installs90d: installs[entry.name],
+                                  license: entry.license?.value,
+                                  rubySourcePath: entry.rubySourcePath,
+                                  service: entry.service?.value?.definition)
+            applyDeprecation(entry.deprecation, to: &package)
+            return package
         }
     }
 
     static func decodeCasks(_ data: Data, installs: [String: Int] = [:]) throws -> [Package] {
         try JSONDecoder().decode([CaskEntry].self, from: data).map { entry in
-            Package(kind: .cask,
-                    name: entry.token,
-                    displayName: entry.name?.first,
-                    desc: entry.desc,
-                    homepage: entry.homepage,
-                    version: entry.version ?? "",
-                    deprecated: entry.deprecated ?? false,
-                    disabled: entry.disabled ?? false,
-                    caveats: entry.caveats,
-                    conflicts: (entry.conflictsWith?.value?.cask ?? [])
-                        .map { Conflict(name: $0, reason: nil, kind: .cask) },
-                    installs90d: installs[entry.token],
-                    rubySourcePath: entry.rubySourcePath,
-                    artifacts: aggregateArtifacts(entry.artifacts ?? []),
-                    caskDependencies: entry.dependsOn?.value?.formula ?? [])
+            var package = Package(kind: .cask,
+                                  name: entry.token,
+                                  displayName: entry.name?.first,
+                                  desc: entry.desc,
+                                  homepage: entry.homepage,
+                                  version: entry.version ?? "",
+                                  deprecated: entry.deprecated ?? false,
+                                  disabled: entry.disabled ?? false,
+                                  caveats: entry.caveats,
+                                  conflicts: (entry.conflictsWith?.value?.cask ?? [])
+                                      .map { Conflict(name: $0, reason: nil, kind: .cask) },
+                                  installs90d: installs[entry.token],
+                                  rubySourcePath: entry.rubySourcePath,
+                                  artifacts: aggregateArtifacts(entry.artifacts ?? []),
+                                  caskDependencies: entry.dependsOn?.value?.formula ?? [])
+            applyDeprecation(entry.deprecation, to: &package)
+            return package
         }
+    }
+
+    /// The dates and reasons ride only on packages that are actually marked — a fresh package
+    /// with a leftover `deprecation_date` (it happens: stanzas get reverted) must not grow a
+    /// banner sentence.
+    private static func applyDeprecation(_ fields: DeprecationFields?, to package: inout Package) {
+        guard let fields, package.needsAttention else { return }
+        package.deprecationDate = fields.deprecationDate
+        package.deprecationReason = fields.deprecationReason
+        package.disableDate = fields.disableDate
+        package.disableReason = fields.disableReason
+        let replacement = fields.replacement(disabled: package.disabled)
+        package.replacementFormula = replacement.formula
+        package.replacementCask = replacement.cask
     }
 }

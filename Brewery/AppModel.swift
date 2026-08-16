@@ -439,7 +439,7 @@ final class AppModel {
 
     /// The Installed section under the scope picker. `.all` is the full list; `.onRequest` drops the
     /// kegs that are only on disk because something else needed them; `.orphans` (v10) keeps only
-    /// what `brew autoremove` would remove.
+    /// what `brew autoremove` would remove; `.attention` (v11) what Homebrew has retired.
     func installedPackages(scope: InstalledScope) -> [Package] {
         switch scope {
         case .all:
@@ -450,6 +450,8 @@ final class AppModel {
             // Resolved once, not per element — the fixpoint is cheap but not free.
             let orphans = orphanIDs
             return installedPackages.filter { orphans.contains($0.id) }
+        case .attention:
+            return installedPackages.filter(\.needsAttention)
         }
     }
 

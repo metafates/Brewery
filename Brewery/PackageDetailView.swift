@@ -622,24 +622,44 @@ private struct DetailPage: View {
     // MARK: - Banner
 
     /// A disabled package's button is greyed out; this is where that gets explained.
+    /// v11 — specific, not generic: why brew retired it (brew's own reason vocabulary), since
+    /// when, when it stops working, and what replaces it. The replacement is the pane's usual
+    /// tappable row, kept *outside* the texts' `.combine` — folding a button into a combined
+    /// element hides it from VoiceOver (the service Logs row's lesson).
     private var banner: some View {
         let isDisabled = package.disabled
         return Label {
             VStack(alignment: .leading, spacing: 2) {
-                Text(isDisabled ? "Disabled" : "Deprecated")
-                    .fontWeight(.semibold)
-                Text(isDisabled
-                     ? "Homebrew has disabled this package, so it can no longer be installed."
-                     : "Homebrew no longer maintains this package. It still installs today, but it may be disabled in a future release.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isDisabled ? "Disabled" : "Deprecated")
+                        .fontWeight(.semibold)
+                    Text(package.deprecationExplanation
+                         ?? "Homebrew no longer maintains this package.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+
+                if let id = package.replacementID, let replacement = model.package(for: id) {
+                    RelatedRow(package: replacement,
+                               version: model.installed[replacement.id]?.versions.last,
+                               detail: "Recommended replacement") {
+                        onPush(replacement)
+                    }
+                    .padding(.top, 4)
+                } else if let name = package.replacementName {
+                    // brew names a successor the catalog doesn't cover — say it, don't row it.
+                    Text("Recommended replacement: \(name)")
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
             }
         } icon: {
             Image(systemName: isDisabled ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(isDisabled ? .red : .orange)
+                .accessibilityHidden(true)
         }
         .warningWash(isDisabled ? .red : .orange)
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Caveats, commands, conflicts

@@ -162,6 +162,47 @@ private struct OrphanSummaryBar: View {
     }
 }
 
+/// v11 — the Attention scope's header: how many installed packages Homebrew has retired, and
+/// what that means. The orphan bar's chrome, but **no action button, deliberately**: nothing
+/// safe to enqueue exists — uninstalling is a non-goal — and a report is not a task. The
+/// per-package specifics (why, since when, when it stops working, what replaces it) are the
+/// detail pane's job, which the explainer points at.
+private struct AttentionSummaryBar: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let count = model.installedPackages(scope: .attention).count
+        if count > 0 {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.title3)
+                    // The banner's warning colour, not the tint: this bar is the same fact.
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("^[\(count) packages](inflect: true) won't receive updates")
+                        .fontWeight(.semibold)
+                    Text("Homebrew has deprecated or disabled these. Each package's page says why, and what to use instead.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 12)
+            }
+            .padding(12)
+            .background(.background.secondary, in: .rect(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(.separator, lineWidth: 1)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
 /// Discover's kind filter. Applied to the array before it reaches the ranker, which is why it is
 /// plain state and not `.searchScopes`: scopes only surface while a search is active, and the
 /// filter has to govern empty-query browsing just the same.
@@ -191,10 +232,11 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// The Installed section's scope: what the user asked for, everything that is on disk, or
-/// (v10) the orphan report — dependencies nothing installed still needs.
+/// The Installed section's scope: what the user asked for, everything that is on disk, the
+/// (v10) orphan report — dependencies nothing installed still needs — or the (v11) attention
+/// report — packages Homebrew has deprecated or disabled.
 nonisolated enum InstalledScope: String, CaseIterable, Identifiable {
-    case onRequest, all, orphans
+    case onRequest, all, orphans, attention
 
     var id: String { rawValue }
 
@@ -203,6 +245,7 @@ nonisolated enum InstalledScope: String, CaseIterable, Identifiable {
         case .onRequest: "On Request"
         case .all: "All"
         case .orphans: "Orphans"
+        case .attention: "Attention"
         }
     }
 }
@@ -452,6 +495,8 @@ struct ContentView: View {
                                 freshnessCaption
                             } else if section == .installed, installedScope == .orphans {
                                 OrphanSummaryBar()
+                            } else if section == .installed, installedScope == .attention {
+                                AttentionSummaryBar()
                             } else {
                                 discoverTip
                             }
@@ -648,6 +693,9 @@ struct ContentView: View {
                 "No installed packages match the filters"
             } else if installedScope == .orphans, !model.installed.isEmpty {
                 "No orphaned dependencies"
+            } else if installedScope == .attention, !model.installed.isEmpty {
+                // Software Update's positive-empty grammar: the good outcome, stated plainly.
+                "Nothing needs attention"
             } else if installedScope == .onRequest, !model.installed.isEmpty {
                 "No packages installed on request"
             } else {
@@ -879,7 +927,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .help("Show packages you installed, everything on disk, or orphaned dependencies")
+                .help("Show packages you installed, everything on disk, orphaned dependencies, or packages Homebrew has retired")
                 .accessibilityLabel("Installed Scope")
             }
         }

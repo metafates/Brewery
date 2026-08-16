@@ -334,9 +334,9 @@ struct CatalogV3Tests {
     @Test("a cache without the v3 schema stamp is treated as no cache")
     func cacheVersionMismatch() throws {
         // Bumped whenever a field joins Package (4: `license`, 5: `rubySourcePath`,
-        // 6: `artifacts`, 7: `service`): an older file decodes without it and would otherwise be
-        // served as if it were complete.
-        #expect(CatalogStore.cacheVersion == 9)
+        // 6: `artifacts`, 7: `service`, 10: deprecation facts): an older file decodes without it
+        // and would otherwise be served as if it were complete.
+        #expect(CatalogStore.cacheVersion == 10)
         #expect(CatalogCache(fetchedAt: .now, packages: []).version == CatalogStore.cacheVersion)
 
         // What the shipped v2 file looks like: no `version` key at all, so the decode throws — which
