@@ -382,8 +382,76 @@ final class AppModel {
             result[id]?.apps = receipt.apps
             result[id]?.tap = receipt.tap
             result[id]?.builtFromSource = receipt.builtFromSource
+            result[id]?.installedAt = receipt.installedAt
         }
         return result
+    }
+
+    // MARK: - Disk sizes (v11)
+
+    /// Measured bytes per installed package, the Size sort's key. Filled by `measureSizes`
+    /// through the same session cache the pane's Size row uses, so the two share every walk.
+    private(set) var diskSizes: [Package.ID: Int64] = [:]
+    /// Bumped once per sweep that changed something — the browse listing's re-sort signal.
+    private(set) var sizesGeneration = 0
+    /// True while a sweep runs, so the listing can say "Measuring sizes…" instead of silently
+    /// showing an order that is about to change.
+    private(set) var isMeasuringSizes = false
+
+    /// Where an installed package's bytes live — the one home for the answer, shared by the
+    /// pane's Size row and the size sort's sweep. A formula is its whole `Cellar/<name>` (every
+    /// keg on disk is what the machine is paying); a cask is its Caskroom slot plus the moved
+    /// artifacts (apps via the receipt, font files by artifact name).
+    func sizeRoots(for package: Package) -> [URL] {
+        guard let prefix = client.prefix else { return [] }
+        switch package.kind {
+        case .formula:
+            return [prefix.appending(path: "Cellar", directoryHint: .isDirectory)
+                .appending(path: package.name, directoryHint: .isDirectory)]
+        case .cask:
+            var roots = [prefix.appending(path: "Caskroom", directoryHint: .isDirectory)
+                .appending(path: package.name, directoryHint: .isDirectory)]
+            roots += launchableApps(for: package)
+            let fontNames = package.artifacts.first { $0.kind == .font }?.names ?? []
+            roots += fontNames.compactMap { FontPreview.fontURL(named: $0) }
+            return roots
+        }
+    }
+
+    /// Measures every installed package, six keg walks at a time — each walk enumerates tens of
+    /// thousands of files, so unbounded width is fd pressure for nothing. Publishes **once** at
+    /// the end: 350 per-keg assignments would rebuild the sorted listing 350 times. A warm pass
+    /// (session cache) finishes in milliseconds and publishes nothing new.
+    func measureSizes() async {
+        guard !isMeasuringSizes else { return }
+        isMeasuringSizes = true
+        defer { isMeasuringSizes = false }
+
+        let targets: [(Package.ID, String, [URL])] = installed.compactMap { id, info in
+            guard let package = package(for: id) else { return nil }
+            let key = DiskUsage.cacheKey(for: id, version: info.versions.last)
+            return (id, key, sizeRoots(for: package))
+        }
+
+        var result: [Package.ID: Int64] = [:]
+        var iterator = targets.makeIterator()
+        await withTaskGroup(of: (Package.ID, Int64?).self) { group in
+            for _ in 0..<6 {
+                guard let (id, key, roots) = iterator.next() else { break }
+                group.addTask { (id, await DiskUsage.measuredBytes(key: key, roots: roots)) }
+            }
+            while let (id, bytes) = await group.next() {
+                if let bytes { result[id] = bytes }
+                if let (nextID, key, roots) = iterator.next() {
+                    group.addTask { (nextID, await DiskUsage.measuredBytes(key: key, roots: roots)) }
+                }
+            }
+        }
+
+        if result != diskSizes {
+            diskSizes = result
+            sizesGeneration &+= 1
+        }
     }
 
     // MARK: - Derived state

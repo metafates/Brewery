@@ -15,6 +15,9 @@ nonisolated struct Receipt: Equatable {
     /// from source (`utils/autoremove.rb`), so the orphan report must not claim it would.
     /// Absent or unreadable counts as built-from-source — the side that under-reports.
     var builtFromSource: Bool = true
+    /// v11 — the receipt's `time` (unix seconds; formula and cask receipts alike), for the
+    /// Date Installed sort. nil sorts last: a keg with no receipt has no date to claim.
+    var installedAt: Date? = nil
 }
 
 /// Reads Homebrew's per-keg install receipts. They answer both of v2's questions — "did the user
@@ -45,7 +48,8 @@ nonisolated enum Receipts {
                        dependencies: ordered(payload.runtimeDependencies?.entries ?? []),
                        apps: payload.uninstallArtifacts?.flatMap { $0.app ?? [] } ?? [],
                        tap: normalizedTap(payload.source?.tap),
-                       builtFromSource: payload.pouredFromBottle != true)
+                       builtFromSource: payload.pouredFromBottle != true,
+                       installedAt: payload.time.map { Date(timeIntervalSince1970: TimeInterval($0)) })
     }
 
     /// Receipts say `homebrew/core`/`homebrew/cask` for core installs; folding those to nil keeps
@@ -113,6 +117,7 @@ nonisolated enum Receipts {
         let uninstallArtifacts: [Artifact]?
         let source: Source?
         let pouredFromBottle: Bool?
+        let time: Int?
     }
 
     // MARK: - Sweep

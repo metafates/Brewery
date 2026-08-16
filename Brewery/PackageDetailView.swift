@@ -273,20 +273,10 @@ private struct DetailPage: View {
         .task(id: installedTaskID) {
             sizeFailed = false
             diskBytes = nil
-            guard model.installed[package.id] != nil, let prefix = model.client.prefix else { return }
-            var roots: [URL] = []
-            switch package.kind {
-            case .formula:
-                // Every keg of the formula: what is on disk is what the machine is paying.
-                roots.append(prefix.appending(path: "Cellar", directoryHint: .isDirectory)
-                    .appending(path: package.name, directoryHint: .isDirectory))
-            case .cask:
-                roots.append(prefix.appending(path: "Caskroom", directoryHint: .isDirectory)
-                    .appending(path: package.name, directoryHint: .isDirectory))
-                roots += model.launchableApps(for: package)
-                roots += fontNames.compactMap { FontPreview.fontURL(named: $0) }
-            }
-            if let measured = await DiskUsage.measuredBytes(key: sizeKey, roots: roots) {
+            guard model.installed[package.id] != nil else { return }
+            // Roots come from the model — the same answer the size sort's sweep measures.
+            let roots = model.sizeRoots(for: package)
+            if !roots.isEmpty, let measured = await DiskUsage.measuredBytes(key: sizeKey, roots: roots) {
                 diskBytes = measured
             } else {
                 sizeFailed = true

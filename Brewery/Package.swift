@@ -463,6 +463,9 @@ nonisolated struct InstalledInfo: Equatable, Hashable {
     var tap: String? = nil
     /// v10 — `poured_from_bottle` inverted; brew never autoremoves a from-source build.
     var builtFromSource: Bool = false
+    /// v11 — from the receipt's `time`, for the Date Installed sort. Never persisted, so no
+    /// cache versioning applies.
+    var installedAt: Date? = nil
 }
 
 nonisolated struct OutdatedInfo: Equatable, Hashable {

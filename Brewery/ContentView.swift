@@ -250,6 +250,34 @@ nonisolated enum InstalledScope: String, CaseIterable, Identifiable {
     }
 }
 
+/// v11 — Installed's sort orders, Finder's *Sort By* vocabulary. Name is the inventory default;
+/// dates and sizes read newest- and largest-first, which is the question each answers ("what
+/// did I just install", "what is costing me space"). Installed only: Discover browses by
+/// popularity, and Outdated/Services are a dozen rows.
+nonisolated enum InstalledSort: String, CaseIterable, Identifiable {
+    case name, dateInstalled, size
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .name: "Name"
+        case .dateInstalled: "Date Installed"
+        case .size: "Size"
+        }
+    }
+
+    /// View ▸ Sort By key equivalents, ⌃⌘1…3 — Finder's own sort-by modifier family, clear of
+    /// the destinations' plain ⌘1…5.
+    var shortcut: KeyEquivalent {
+        switch self {
+        case .name: "1"
+        case .dateInstalled: "2"
+        case .size: "3"
+        }
+    }
+}
+
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     /// Every x-axis slide and sustained rotation below has a crossfade or a still glyph behind this.
@@ -265,6 +293,9 @@ struct ContentView: View {
     /// must not carry one tab's filter into the other.
     @AppStorage("installed.kindFilter") private var installedKindFilter: KindFilter = .all
     @AppStorage("installed.tapsOnly") private var installedTapsOnly = false
+    /// v11 — Installed's sort. `@AppStorage`, not model state, for the same reason as the
+    /// filters: it is a view preference, and the View ▸ Sort By commands share it by key.
+    @AppStorage("installed.sort") private var installedSort: InstalledSort = .name
 
     /// The Taps section's in-column drill-down: nil shows the tap list, a name shows that tap's
     /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs.
@@ -394,8 +425,28 @@ struct ContentView: View {
             if section == .discover || (section == .taps && TapStore.coreTaps.contains(selectedTap ?? "")) {
                 packages.sort(by: Self.byPopularity)
             }
+            // v11 — Installed's chosen order, every scope. Search results stay relevance-ranked
+            // (Finder's own behavior), which is why this lives on the browse path only.
+            if section == .installed {
+                switch installedSort {
+                case .name:
+                    break   // the compose order is already the canonical alphabetical
+                case .dateInstalled:
+                    let dates = model.installed.compactMapValues(\.installedAt)
+                    packages.sort { Self.byInstallDate($0, $1, dates: dates) }
+                case .size:
+                    let sizes = model.diskSizes
+                    packages.sort { Self.bySize($0, $1, sizes: sizes) }
+                }
+            }
             browseHits[key.section] = packages.map { SearchHit(package: $0, matchedCommand: nil) }
             builtKeys[key.section] = key
+        }
+        // v11 — the Size sort's data: sweep every installed package when the sort needs it, and
+        // again when the installed set changes. A warm pass is instant and publishes nothing.
+        .task(id: sizeSweepKey) {
+            guard sizeSweepKey.active else { return }
+            await model.measureSizes()
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
         .onChange(of: model.selection) { if section != .taps { selectedTap = nil } }
@@ -497,6 +548,8 @@ struct ContentView: View {
                                 OrphanSummaryBar()
                             } else if section == .installed, installedScope == .attention {
                                 AttentionSummaryBar()
+                            } else if section == .installed {
+                                sizeMeasuringCaption
                             } else {
                                 discoverTip
                             }
@@ -571,6 +624,25 @@ struct ContentView: View {
         builtKeys[.taps] = browseKey
     }
 
+    /// v11 — the cold size sweep, named while it runs (HIG *Progress indicators*: a spinner for
+    /// a background operation, description where helpful) — the Outdated freshness caption's
+    /// grammar. A warm sweep finishes before anyone reads this, so it never flashes.
+    @ViewBuilder private var sizeMeasuringCaption: some View {
+        if installedSort == .size, model.isMeasuringSizes {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Measuring sizes…")
+            }
+            .accessibilityElement(children: .combine)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
     /// Discover only, and only while browsing: the tip is a newcomer's explainer, not search
     /// feedback — and a TipView sharing the tree with `ContentUnavailableView.search` blanks
     /// the split view's sidebar (framework interaction, reproduced and pinned by UI test).
@@ -589,6 +661,31 @@ struct ContentView: View {
     nonisolated private static func byPopularity(_ a: Package, _ b: Package) -> Bool {
         let (x, y) = (a.installs90d ?? 0, b.installs90d ?? 0)
         return x == y ? a.name < b.name : x > y
+    }
+
+    /// Newest first; a keg with no receipt has no date to claim and sorts last; ties fall back
+    /// to the canonical name order. Static and pure so the ordering has tests.
+    nonisolated static func byInstallDate(_ a: Package, _ b: Package, dates: [Package.ID: Date]) -> Bool {
+        let (x, y) = (dates[a.id] ?? .distantPast, dates[b.id] ?? .distantPast)
+        return x == y ? Package.displayOrder(a, b) : x > y
+    }
+
+    /// Largest first; unmeasured packages sort last rather than blocking the listing on the sweep.
+    nonisolated static func bySize(_ a: Package, _ b: Package, sizes: [Package.ID: Int64]) -> Bool {
+        let (x, y) = (sizes[a.id] ?? -1, sizes[b.id] ?? -1)
+        return x == y ? Package.displayOrder(a, b) : x > y
+    }
+
+    /// The Size sort's sweep trigger: active only where the sort is visible, re-keyed by the
+    /// installed count so a new keg gets measured.
+    private struct SizeSweepKey: Equatable {
+        let active: Bool
+        let installedCount: Int
+    }
+
+    private var sizeSweepKey: SizeSweepKey {
+        SizeSweepKey(active: section == .installed && installedSort == .size,
+                     installedCount: model.installed.count)
     }
 
     /// The tap page's listing, same as the browse task would build it — cheap enough for a click
@@ -739,6 +836,7 @@ struct ContentView: View {
         let installedKindFilter: KindFilter
         let tapsOnly: Bool
         let installedTapsOnly: Bool
+        let installedSort: InstalledSort
         let selectedTap: String?
         let tapKindFilter: KindFilter
         /// Not a count: a tap rescan can swap entries while netting zero, which a count cannot see.
@@ -746,6 +844,8 @@ struct ContentView: View {
         let installedCount: Int
         let outdatedCount: Int
         let servicesCount: Int
+        /// The size sweep's publish signal — a finished sweep re-sorts the listing it ordered.
+        let sizesGeneration: Int
     }
 
     private var browseKey: BrowseKey {
@@ -756,12 +856,14 @@ struct ContentView: View {
                   installedKindFilter: installedKindFilter,
                   tapsOnly: tapsOnly,
                   installedTapsOnly: installedTapsOnly,
+                  installedSort: installedSort,
                   selectedTap: selectedTap,
                   tapKindFilter: tapKindFilter,
                   catalogGeneration: model.catalogGeneration,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
-                  servicesCount: model.serviceStatuses.count)
+                  servicesCount: model.serviceStatuses.count,
+                  sizesGeneration: model.sizesGeneration)
     }
 
     private var searchKey: SearchKey {
@@ -773,6 +875,7 @@ struct ContentView: View {
                                       installedKindFilter: installedKindFilter,
                                       tapsOnly: tapsOnly,
                                       installedTapsOnly: installedTapsOnly,
+                                      installedSort: installedSort,
                                       selectedTap: selectedTap,
                                       tapKindFilter: tapKindFilter),
                   catalogGeneration: model.catalogGeneration,
@@ -808,6 +911,8 @@ struct ContentView: View {
         let installedKindFilter: KindFilter
         let tapsOnly: Bool
         let installedTapsOnly: Bool
+        /// A sort change reorders which cards come first, so the window restarts like a filter's.
+        let installedSort: InstalledSort
         let selectedTap: String?
         let tapKindFilter: KindFilter
     }
@@ -918,6 +1023,22 @@ struct ContentView: View {
                 }
                 .help("Filter by kind or source")
                 .accessibilityLabel("Filter")
+            }
+            // v11 — the sort, in the Filter menu's own grammar (HIG *Pop-up buttons*: a flat
+            // list of mutually exclusive options). Its menu-bar twin is View ▸ Sort By.
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Picker("Sort By", selection: $installedSort) {
+                        ForEach(InstalledSort.allCases) { sort in
+                            Text(sort.title).tag(sort)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
+                }
+                .help("Sort by name, date installed, or size")
+                .accessibilityLabel("Sort")
             }
             ToolbarItem(placement: .primaryAction) {
                 Picker("Scope", selection: $installedScope) {
