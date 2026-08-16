@@ -16,6 +16,7 @@ struct BreweryApp: App {
     /// v11 — the same key `ContentView` binds; `@AppStorage` is how a `Commands` builder and a
     /// view share a preference without threading it through the model.
     @AppStorage("installed.sort") private var installedSort: InstalledSort = .name
+    @AppStorage("installed.scope") private var installedScope: InstalledScope = .onRequest
 
     init() {
         // One-time coaching tips (Discover's kinds explainer); dismissal persists.
@@ -61,6 +62,19 @@ struct BreweryApp: App {
             }
             CommandGroup(after: .sidebar) {
                 Divider()
+                // v12 — the scope bar's menu-bar twin, Sort By's exact pattern: always
+                // present, disabled outside Installed, Toggles for the you-are-here
+                // checkmark, ⌥⌘1…4 on the modifier the destinations and sort left free.
+                Menu("Scope") {
+                    ForEach(InstalledScope.allCases) { scope in
+                        Toggle(scope.title, isOn: Binding(
+                            get: { installedScope == scope },
+                            set: { if $0 { installedScope = scope } }
+                        ))
+                        .keyboardShortcut(scope.shortcut, modifiers: [.command, .option])
+                    }
+                }
+                .disabled(model.selection != .installed)
                 // v11 — the sort menu's menu-bar twin. Always present, disabled outside
                 // Installed ("always show the same set of menu items" — the menu bar's rule),
                 // Toggles for the you-are-here checkmark (the destinations' pattern), ⌃⌘1…3 —

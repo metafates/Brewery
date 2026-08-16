@@ -248,6 +248,17 @@ nonisolated enum InstalledScope: String, CaseIterable, Identifiable {
         case .attention: "Attention"
         }
     }
+
+    /// View ▸ Scope key equivalents, ⌥⌘1…4 — the destinations hold plain ⌘1…5 and the sort
+    /// ⌃⌘1…3; the scope completes the family on the remaining standard modifier.
+    var shortcut: KeyEquivalent {
+        switch self {
+        case .onRequest: "1"
+        case .all: "2"
+        case .orphans: "3"
+        case .attention: "4"
+        }
+    }
 }
 
 /// v11 — Installed's sort orders, Finder's *Sort By* vocabulary. Name is the inventory default;
@@ -507,8 +518,33 @@ struct ContentView: View {
                 .refreshVeil(model.isRefreshing)
         } else {
             packageGrid()
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if section == .installed { scopeBar }
+                }
                 .refreshVeil(model.isRefreshing)
         }
+    }
+
+    /// v12 — the four-way view switcher, out of the toolbar (where it overflowed into a
+    /// label-less `»` menu) and into the content area: HIG *Segmented controls* → macOS puts
+    /// view switching in the main window area, and Photos' Years/Months/Days/All draws it
+    /// exactly here. It rides the safe area, so the grid scrolls under it and an empty scope
+    /// keeps it visible for the way back. Its menu-bar twin is View ▸ Scope, ⌥⌘1…4.
+    private var scopeBar: some View {
+        Picker("Scope", selection: $installedScope) {
+            ForEach(InstalledScope.allCases) { scope in
+                Text(scope.title).tag(scope)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+        .help("Show packages you installed, everything on disk, orphaned dependencies, or packages Homebrew has retired")
+        .accessibilityLabel("Installed Scope")
     }
 
     /// `.id` on the package: the pane keeps a drill-down stack, and clicking a different card has
@@ -1013,8 +1049,12 @@ struct ContentView: View {
                 .accessibilityLabel("Filter")
             }
         }
+        // v12 — Filter and Sort share one group: both shape how the listing reads, and one
+        // capsule instead of two thins the edge that used to overflow (HIG *Toolbars*: "group
+        // toolbar items logically by function… minimize the number of groups"). The scope
+        // picker is gone from here — it lives in the scope bar over the listing.
         if section == .installed {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
                 Menu {
                     kindPicker($installedKindFilter)
                     Toggle("From Taps Only", isOn: $installedTapsOnly)
@@ -1023,10 +1063,8 @@ struct ContentView: View {
                 }
                 .help("Filter by kind or source")
                 .accessibilityLabel("Filter")
-            }
-            // v11 — the sort, in the Filter menu's own grammar (HIG *Pop-up buttons*: a flat
-            // list of mutually exclusive options). Its menu-bar twin is View ▸ Sort By.
-            ToolbarItem(placement: .primaryAction) {
+                // v11 — the sort, in the Filter menu's own grammar (HIG *Pop-up buttons*: a flat
+                // list of mutually exclusive options). Its menu-bar twin is View ▸ Sort By.
                 Menu {
                     Picker("Sort By", selection: $installedSort) {
                         ForEach(InstalledSort.allCases) { sort in
@@ -1039,17 +1077,6 @@ struct ContentView: View {
                 }
                 .help("Sort by name, date installed, or size")
                 .accessibilityLabel("Sort")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Picker("Scope", selection: $installedScope) {
-                    ForEach(InstalledScope.allCases) { scope in
-                        Text(scope.title).tag(scope)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .help("Show packages you installed, everything on disk, orphaned dependencies, or packages Homebrew has retired")
-                .accessibilityLabel("Installed Scope")
             }
         }
     }
@@ -1076,14 +1103,19 @@ struct ContentView: View {
     /// as the refresh runs.
     @ToolbarContentBuilder private var refreshToolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
+            // A Label, not a bare Image: the system overflow menu renders a toolbar item's
+            // text, and an icon-only item there is a glyph with no name (v12).
             Button { refresh() } label: {
-                Image(systemName: "arrow.clockwise")
-                    .symbolEffect(.rotate, options: .repeating,
-                                  isActive: model.isRefreshing && !reduceMotion)
+                Label {
+                    Text("Refresh")
+                } icon: {
+                    Image(systemName: "arrow.clockwise")
+                        .symbolEffect(.rotate, options: .repeating,
+                                      isActive: model.isRefreshing && !reduceMotion)
+                }
             }
             .disabled(model.isRefreshing)
             .help("Refresh installed packages and check for updates")
-            .accessibilityLabel("Refresh")
         }
     }
 
@@ -1107,11 +1139,12 @@ struct ContentView: View {
             Button {
                 model.showInspector.toggle()
             } label: {
-                Image(systemName: "sidebar.right")
+                // Names the state it will produce, like its View-menu twin (v12).
+                Label(model.showInspector ? "Hide Info" : "Show Info",
+                      systemImage: "sidebar.right")
             }
             .keyboardShortcut("i")
             .help(model.showInspector ? "Hide the info pane" : "Show the info pane")
-            .accessibilityLabel(model.showInspector ? "Hide Info" : "Show Info")
         }
     }
 
@@ -1141,10 +1174,14 @@ struct ContentView: View {
                     } else if model.lastOperationFailed {
                         // A different glyph, not just a red one: the failure has to survive
                         // dismissing the popover, and it has to survive colour-blindness too.
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
+                        Label {
+                            Text("Operations")
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                        }
                     } else {
-                        Image(systemName: "list.bullet.rectangle")
+                        Label("Operations", systemImage: "list.bullet.rectangle")
                     }
                 }
                 .help(model.lastOperationFailed ? "Operations — the last one failed" : "Operations")
