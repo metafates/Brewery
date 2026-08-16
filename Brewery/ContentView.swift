@@ -518,33 +518,8 @@ struct ContentView: View {
                 .refreshVeil(model.isRefreshing)
         } else {
             packageGrid()
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if section == .installed { scopeBar }
-                }
                 .refreshVeil(model.isRefreshing)
         }
-    }
-
-    /// v12 — the four-way view switcher, out of the toolbar (where it overflowed into a
-    /// label-less `»` menu) and into the content area: HIG *Segmented controls* → macOS puts
-    /// view switching in the main window area, and Photos' Years/Months/Days/All draws it
-    /// exactly here. It rides the safe area, so the grid scrolls under it and an empty scope
-    /// keeps it visible for the way back. Its menu-bar twin is View ▸ Scope, ⌥⌘1…4.
-    private var scopeBar: some View {
-        Picker("Scope", selection: $installedScope) {
-            ForEach(InstalledScope.allCases) { scope in
-                Text(scope.title).tag(scope)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
-        .help("Show packages you installed, everything on disk, orphaned dependencies, or packages Homebrew has retired")
-        .accessibilityLabel("Installed Scope")
     }
 
     /// `.id` on the package: the pane keeps a drill-down stack, and clicking a different card has
@@ -1052,8 +1027,23 @@ struct ContentView: View {
         // v12 — Filter and Sort share one group: both shape how the listing reads, and one
         // capsule instead of two thins the edge that used to overflow (HIG *Toolbars*: "group
         // toolbar items logically by function… minimize the number of groups"). The scope
-        // picker is gone from here — it lives in the scope bar over the listing.
+        // picker is gone from the trailing edge — it lives in the accessory bar below.
         if section == .installed {
+            // The scope, in the row macOS reserves for exactly this: `.accessoryBar` is the
+            // API behind Finder's scope bar and Mail's filter row — the system extends the
+            // window chrome by a second row, draws its material and hairline, and sizes the
+            // control small. Its menu-bar twin is View ▸ Scope, ⌥⌘1…4.
+            ToolbarItem(placement: .accessoryBar(id: "installedScope")) {
+                Picker("Scope", selection: $installedScope) {
+                    ForEach(InstalledScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help("Show packages you installed, everything on disk, orphaned dependencies, or packages Homebrew has retired")
+                .accessibilityLabel("Installed Scope")
+            }
             ToolbarItemGroup(placement: .primaryAction) {
                 Menu {
                     kindPicker($installedKindFilter)
