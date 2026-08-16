@@ -351,6 +351,13 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         tap ?? (kind == .formula ? "homebrew/core" : "homebrew/cask")
     }
 
+    /// v13 — the Commands section's order: case-insensitive, so llvm reads `amdgpu-arch …
+    /// clang … FileCheck` interleaved instead of leading with the ASCII capitals block; the
+    /// raw name breaks ties deterministically.
+    var displayCommands: [String] {
+        commands.sorted { ($0.lowercased(), $0) < ($1.lowercased(), $1) }
+    }
+
     // MARK: - Attention (v11)
 
     /// What the Attention scope lists: brew has marked the package end-of-life, in one of its

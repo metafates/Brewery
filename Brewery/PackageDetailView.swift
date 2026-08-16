@@ -22,22 +22,44 @@ struct PackageDetailView: View {
     /// ambiguous shortcuts). The button itself stays clickable and focusable regardless.
     var ownsBackShortcut = true
 
+    /// One entry in the pane's drill-down: another package's page, or (v13) a package's full
+    /// command list.
+    enum Page {
+        case package(Package)
+        case commands(Package)
+
+        var id: String {
+            switch self {
+            case .package(let package): package.id
+            case .commands(let package): "\(package.id)/commands"
+            }
+        }
+
+        /// What the back bar calls this page when it is the one beneath the top.
+        var title: String {
+            switch self {
+            case .package(let package): package.title
+            case .commands: "Commands"
+            }
+        }
+    }
+
     /// The pages pushed above `package` by dependency/conflict rows. Following the graph is a
     /// drill-down, so it gets real navigation: back returns exactly the way you came, and each
     /// page opens at the top. Manual rather than `NavigationStack`: pages stay mounted so back
     /// restores the parent's scroll offset, and a stack inside a pane has no toolbar for the
     /// framework to hang a back button from anyway.
-    @State private var stack: [Package] = []
+    @State private var stack: [Page] = []
 
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var displayed: Package { stack.last ?? package }
-    private var pages: [Package] { [package] + stack }
+    private var displayed: Page { stack.last ?? .package(package) }
+    private var pages: [Page] { [.package(package)] + stack }
 
-    private func push(_ item: Package) {
-        guard item.id != displayed.id else { return }
-        withAnimation(.smooth(duration: 0.3)) { stack.append(item) }
+    private func push(_ page: Page) {
+        guard page.id != displayed.id else { return }
+        withAnimation(.smooth(duration: 0.3)) { stack.append(page) }
     }
 
     private func pop() {
@@ -56,8 +78,15 @@ struct PackageDetailView: View {
             // Identity is the stack slot, so revisiting a package deeper down never collides.
             ZStack {
                 ForEach(Array(pages.enumerated()), id: \.offset) { index, item in
-                    DetailPage(package: item, onPush: { push($0) })
-                        .opacity(index == pages.count - 1 ? 1 : 0)
+                    Group {
+                        switch item {
+                        case .package(let package):
+                            DetailPage(package: package, onPush: { push($0) })
+                        case .commands(let package):
+                            CommandsPage(package: package)
+                        }
+                    }
+                    .opacity(index == pages.count - 1 ? 1 : 0)
                         .offset(x: offset(for: index))
                         // Disabled, not just hit-test-blocked: a hidden page's controls must not
                         // sit in the Tab order, and focus wandering into one auto-scrolls it.
@@ -106,7 +135,7 @@ struct PackageDetailView: View {
 /// parent kept alive underneath must keep its own scroll offset.
 private struct DetailPage: View {
     let package: Package
-    let onPush: (Package) -> Void
+    let onPush: (PackageDetailView.Page) -> Void
 
     @Environment(AppModel.self) private var model
     @State private var showLicenses = false
@@ -634,7 +663,7 @@ private struct DetailPage: View {
                     RelatedRow(package: replacement,
                                version: model.installed[replacement.id]?.versions.last,
                                detail: "Recommended replacement") {
-                        onPush(replacement)
+                        onPush(.package(replacement))
                     }
                     .padding(.top, 4)
                 } else if let name = package.replacementName {
@@ -700,16 +729,30 @@ private struct DetailPage: View {
         .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
     }
 
+    /// v13 — a handful of commands reads inline as one copyable word list; past this the run
+    /// is a wall (llvm ships 112 — the fonts lesson in prose form), so the section shows the
+    /// count and the full list lives one page down the pane's own stack.
+    private static let inlineCommandLimit = 8
+
     /// The executables the formula puts on `PATH`, as one copyable list — a word list, not chips.
     private var commands: some View {
         VStack(alignment: .leading, spacing: 4) {
             sectionTitle("Commands")
 
-            Text(package.commands.joined(separator: " · "))
-                .font(.callout)
-                .monospaced()
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            let commands = package.displayCommands
+            if commands.count <= Self.inlineCommandLimit {
+                Text(commands.joined(separator: " · "))
+                    .font(.callout)
+                    .monospaced()
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                // The count as the disclosure's descriptive label (HIG *Disclosure controls*),
+                // in RelatedRow's chrome; the Contents section's "12 font files" grammar.
+                CommandsRow(count: commands.count) {
+                    onPush(.commands(package))
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -907,7 +950,7 @@ private struct DetailPage: View {
                     RelatedRow(package: package,
                                version: model.installed[package.id]?.versions.last,
                                detail: conflict.reason) {
-                        onPush(package)
+                        onPush(.package(package))
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 1) {
@@ -961,7 +1004,7 @@ private struct DetailPage: View {
 
             ForEach(packages) { item in
                 RelatedRow(package: item, version: model.installed[item.id]?.versions.last) {
-                    onPush(item)
+                    onPush(.package(item))
                 }
             }
         }
@@ -1104,6 +1147,80 @@ private struct CopyButton: View {
         .buttonStyle(.borderless)
         .help("Copy")
         .accessibilityLabel(copied ? "Copied" : "Copy command")
+    }
+}
+
+/// v13 — the Commands section's summary row when the run would be a wall: the count as the
+/// descriptive label, RelatedRow's chrome, the pane's drill-down as the disclosure. A real
+/// button for the same reason RelatedRow is one.
+private struct CommandsRow: View {
+    let count: Int
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "terminal")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22)
+
+                Text("\(count) commands")
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(shape)
+            .background { shape.fill(.quaternary).opacity(isHovering ? 1 : 0) }
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .accessibilityLabel("\(count) commands")
+        .accessibilityHint("Shows the full command list")
+        .help("Show all commands")
+    }
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+    }
+}
+
+/// v13 — the full command list, one per row: a scannable column where the inline run was a
+/// wall. Lazy because texlive ships hundreds; selectable like the run it replaces.
+private struct CommandsPage: View {
+    let package: Package
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 6) {
+                Text("Commands")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+
+                Text("^[\(package.displayCommands.count) executables](inflect: true) \(package.title) puts on your PATH.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 6)
+
+                ForEach(package.displayCommands, id: \.self) { command in
+                    Text(command)
+                        .font(.callout)
+                        .monospaced()
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+        }
     }
 }
 
