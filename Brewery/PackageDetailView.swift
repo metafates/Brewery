@@ -457,19 +457,27 @@ private struct DetailPage: View {
                 }
 
                 // Every package answers "which tap is this from" — core items included, so the
-                // row is a constant of the pane, not a third-party oddity. v14 — the name is
-                // the license line's own affordance (a tinted plain button, the pane's grammar
-                // for "more here"), pushing the tap's package list. Accessibility rides the
-                // button, not the row: a container label swallows it (the license lesson).
+                // row is a constant of the pane, not a third-party oddity. v14 — the value
+                // stays a quiet selectable stat (a tinted button shipped first and read as the
+                // one loud row in a secondary column); navigation rides a trailing glyph
+                // button, the Logs row's composition, wearing chevron.right — the pane's
+                // push-tell — not the Logs arrow, which claims another app will open.
                 statRow("spigot") {
-                    Button(tapLabel) {
-                        onPush(.tap(tapLabel))
+                    HStack(spacing: 8) {
+                        Text(tapLabel)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .accessibilityLabel("From the \(tapLabel) tap")
+                        Button {
+                            onPush(.tap(tapLabel))
+                        } label: {
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Show the packages \(tapLabel) provides")
+                        .accessibilityLabel("Show \(tapLabel) packages")
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tint)
-                    .help("Show the packages \(tapLabel) provides")
-                    .accessibilityLabel("From the \(tapLabel) tap")
-                    .accessibilityHint("Shows the packages this tap provides")
                 }
             }
             .font(.subheadline)
