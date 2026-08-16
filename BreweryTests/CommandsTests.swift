@@ -28,3 +28,19 @@ struct CommandsTests {
         #expect(package.displayCommands == ["Clang", "clang"])
     }
 }
+
+/// v14 — the popularity comparator, hoisted to Package for the tap page (comparators are pure
+/// statics with tests).
+struct PopularityOrderTests {
+    private func package(_ name: String, installs: Int?) -> Package {
+        Package(kind: .formula, name: name, displayName: nil, desc: nil, homepage: nil,
+                version: "1", deprecated: false, disabled: false, installs90d: installs)
+    }
+
+    @Test func mostInstalledComesFirstAndTiesFallToName() {
+        let sorted = [package("b", installs: 5), package("a", installs: 5),
+                      package("niche", installs: nil), package("hot", installs: 100)]
+            .sorted(by: Package.popularityOrder)
+        #expect(sorted.map(\.name) == ["hot", "a", "b", "niche"])
+    }
+}

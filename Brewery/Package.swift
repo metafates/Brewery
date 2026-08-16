@@ -243,6 +243,14 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         lhs.name == rhs.name ? lhs.kind.rawValue < rhs.kind.rawValue : lhs.name < rhs.name
     }
 
+    /// Browse order for the core catalogs — most-installed first, names breaking ties: an
+    /// alphabetical walk of 16k packages opens on "0 A.D." and never reaches anything anyone
+    /// installs. Lived in `ContentView` until the (v14) tap page needed it too.
+    static func popularityOrder(_ lhs: Package, _ rhs: Package) -> Bool {
+        let (x, y) = (lhs.installs90d ?? 0, rhs.installs90d ?? 0)
+        return x == y ? lhs.name < rhs.name : x > y
+    }
+
     var title: String { displayName ?? name }
 
     /// SPDX identifier, formulae only — casks carry no license in the API.

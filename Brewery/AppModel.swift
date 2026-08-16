@@ -718,6 +718,16 @@ final class AppModel {
         tapScan.packages.filter { $0.tap == tap }
     }
 
+    /// v14 — what a tap provides, core catalogs included: the one membership rule the Taps grid
+    /// and the pane's tap page both read. Unsorted — each surface orders for its own audience.
+    func packages(inTap tap: String) -> [Package] {
+        switch tap {
+        case "homebrew/core": catalog.filter { $0.kind == .formula && $0.tap == nil }
+        case "homebrew/cask": catalog.filter { $0.kind == .cask && $0.tap == nil }
+        default: tapPackages(for: tap)
+        }
+    }
+
     /// Installed packages whose *effective* tap is this one — the receipt outranks the catalog,
     /// so a collided tap install still counts toward its true origin.
     func installedCount(fromTap tap: String) -> Int {

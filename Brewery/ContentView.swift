@@ -444,7 +444,7 @@ struct ContentView: View {
             // opens on "0 A.D." and never reaches anything anyone installs. Installed and Outdated
             // are inventories, where alphabetical is the order you scan.
             if section == .discover || (section == .taps && TapStore.coreTaps.contains(selectedTap ?? "")) {
-                packages.sort(by: Self.byPopularity)
+                packages.sort(by: Package.popularityOrder)
             }
             // v11 — Installed's chosen order, every scope. Search results stay relevance-ranked
             // (Finder's own behavior), which is why this lives on the browse path only.
@@ -679,11 +679,6 @@ struct ContentView: View {
 
     private var section: SidebarSection { model.selection ?? .discover }
 
-    nonisolated private static func byPopularity(_ a: Package, _ b: Package) -> Bool {
-        let (x, y) = (a.installs90d ?? 0, b.installs90d ?? 0)
-        return x == y ? a.name < b.name : x > y
-    }
-
     /// Newest first; a keg with no receipt has no date to claim and sorts last; ties fall back
     /// to the canonical name order. Static and pure so the ordering has tests.
     nonisolated static func byInstallDate(_ a: Package, _ b: Package, dates: [Package.ID: Date]) -> Bool {
@@ -713,7 +708,7 @@ struct ContentView: View {
     /// even on core (one filter, one ~8k sort).
     private func browseListing(for tap: String) -> [SearchHit] {
         var packages = tapPagePackages(for: tap)
-        if TapStore.coreTaps.contains(tap) { packages.sort(by: Self.byPopularity) }
+        if TapStore.coreTaps.contains(tap) { packages.sort(by: Package.popularityOrder) }
         return packages.map { SearchHit(package: $0, matchedCommand: nil) }
     }
 
@@ -762,15 +757,11 @@ struct ContentView: View {
         }
     }
 
-    /// A tap page's contents. Core rows are the API catalog sliced by kind; third-party rows are
-    /// the scan's packages for that tap. The list view (tap == nil) needs no packages.
+    /// A tap page's contents — the model's one membership rule (v14), this page's kind filter
+    /// on top. The list view (tap == nil) needs no packages.
     private func tapPagePackages(for tap: String?) -> [Package] {
-        let packages: [Package] = switch tap {
-        case nil: []
-        case "homebrew/core": model.catalog.filter { $0.kind == .formula && $0.tap == nil }
-        case "homebrew/cask": model.catalog.filter { $0.kind == .cask && $0.tap == nil }
-        case let tap?: model.tapPackages(for: tap)
-        }
+        guard let tap else { return [] }
+        let packages = model.packages(inTap: tap)
         guard tapKindFilter != .all else { return packages }
         return packages.filter(tapKindFilter.matches)
     }

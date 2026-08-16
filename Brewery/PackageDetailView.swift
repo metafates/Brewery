@@ -22,16 +22,18 @@ struct PackageDetailView: View {
     /// ambiguous shortcuts). The button itself stays clickable and focusable regardless.
     var ownsBackShortcut = true
 
-    /// One entry in the pane's drill-down: another package's page, or (v13) a package's full
-    /// command list.
+    /// One entry in the pane's drill-down: another package's page, (v13) a package's full
+    /// command list, or (v14) a tap's package list.
     enum Page {
         case package(Package)
         case commands(Package)
+        case tap(String)
 
         var id: String {
             switch self {
             case .package(let package): package.id
             case .commands(let package): "\(package.id)/commands"
+            case .tap(let tap): "tap:\(tap)"
             }
         }
 
@@ -40,6 +42,7 @@ struct PackageDetailView: View {
             switch self {
             case .package(let package): package.title
             case .commands: "Commands"
+            case .tap(let tap): tap
             }
         }
     }
@@ -84,6 +87,8 @@ struct PackageDetailView: View {
                             DetailPage(package: package, onPush: { push($0) })
                         case .commands(let package):
                             CommandsPage(package: package)
+                        case .tap(let tap):
+                            TapPage(tap: tap, onPush: { push($0) })
                         }
                     }
                     .opacity(index == pages.count - 1 ? 1 : 0)
@@ -452,14 +457,20 @@ private struct DetailPage: View {
                 }
 
                 // Every package answers "which tap is this from" — core items included, so the
-                // row is a constant of the pane, not a third-party oddity.
+                // row is a constant of the pane, not a third-party oddity. v14 — the name is
+                // the license line's own affordance (a tinted plain button, the pane's grammar
+                // for "more here"), pushing the tap's package list. Accessibility rides the
+                // button, not the row: a container label swallows it (the license lesson).
                 statRow("spigot") {
-                    Text(tapLabel)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
+                    Button(tapLabel) {
+                        onPush(.tap(tapLabel))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                    .help("Show the packages \(tapLabel) provides")
+                    .accessibilityLabel("From the \(tapLabel) tap")
+                    .accessibilityHint("Shows the packages this tap provides")
                 }
-                .help("The catalog this package comes from")
-                .accessibilityLabel("From the \(tapLabel) tap")
             }
             .font(.subheadline)
         }
@@ -1220,6 +1231,59 @@ private struct CommandsPage: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
+        }
+    }
+}
+
+/// v14 — what a tap provides, one page down (the Commands page's grammar): RelatedRows so any
+/// package is one click deeper, popularity-first for the core catalogs (an alphabetical walk
+/// of 16k opens on "0 A.D."), lazy because homebrew/core is sixteen thousand strong. Only the
+/// tap string crosses the view boundary — the rows build here, into `@State`, per the
+/// no-large-arrays-across-boundaries rule.
+private struct TapPage: View {
+    let tap: String
+    let onPush: (PackageDetailView.Page) -> Void
+
+    @Environment(AppModel.self) private var model
+    @State private var rows: [Package] = []
+    @State private var loaded = false
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                Text(tap)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+
+                if loaded, rows.isEmpty {
+                    // The Taps section's own sentence for the same fact.
+                    Text("This tap has no packages")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                } else if loaded {
+                    Text("^[\(rows.count) packages](inflect: true) this tap provides.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(.bottom, 6)
+
+                    ForEach(rows) { item in
+                        RelatedRow(package: item,
+                                   version: model.installed[item.id]?.versions.last) {
+                            onPush(.package(item))
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+        }
+        .task(id: tap) {
+            var packages = model.packages(inTap: tap)
+            packages.sort(by: TapStore.coreTaps.contains(tap)
+                          ? Package.popularityOrder : Package.displayOrder)
+            rows = packages
+            loaded = true
         }
     }
 }
