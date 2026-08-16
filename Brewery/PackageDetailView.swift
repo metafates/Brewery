@@ -527,11 +527,20 @@ private struct DetailPage: View {
             HStack(spacing: 4) {
                 Text("License: \(first)")
                     .foregroundStyle(.secondary)
-                Button("and \(components.count - 1) more") {
+                // Quiet like the rest of the column (a tinted button was the one loud row
+                // left); chevron.down is the pull-down tell — discloses below, where the tap
+                // row's chevron.right navigates deeper.
+                Button {
                     showLicenses = true
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("and \(components.count - 1) more")
+                        Image(systemName: "chevron.down")
+                            .font(.caption2)
+                    }
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.tint)
+                .foregroundStyle(.secondary)
                 .popover(isPresented: $showLicenses, arrowEdge: .bottom) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Licenses")
