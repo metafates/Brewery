@@ -205,7 +205,8 @@ final class AppModel {
 
         // v8 — unlike bootstrap, the check runs *before* the probes: the veil is already up, and
         // one landing beats showing stale answers mid-refresh only to swap them seconds later.
-        _ = await checkForUpdatesIfStale()
+        // v8.2 — forced: ⌘R is an explicit request, and explicit requests are never coalesced.
+        _ = await checkForUpdatesIfStale(force: true)
 
         let state = Task { await self.refreshState() }
         if catalogFetchedAt.map(CatalogStore.isStale) ?? true {
@@ -219,12 +220,16 @@ final class AppModel {
     /// `HOMEBREW_NO_AUTO_UPDATE` (only the auto-update path checks it), so it refreshes the API
     /// cache and tap clones even with our env set. Failure is silent by design — the probes fall
     /// back to the cached answer, exactly the pre-v8 behavior. Returns whether an update ran.
-    private func checkForUpdatesIfStale() async -> Bool {
+    /// v8.2 — ⌘R passes `force`: the window is brew's *auto*-update coalescing rule and an
+    /// explicit `brew update` always runs — pressing Refresh at "Last checked 7 minutes ago"
+    /// used to visibly do nothing. The queue and re-entrancy guards stay; only the clocks yield.
+    private func checkForUpdatesIfStale(force: Bool = false) async -> Bool {
         metadataCheckedAt = client.metadataDate()
-        guard client.isAvailable, !isCheckingForUpdates, !isQueueActive, metadataIsStale else {
+        guard client.isAvailable, !isCheckingForUpdates, !isQueueActive,
+              force || metadataIsStale else {
             return false
         }
-        if let attempt = lastMetadataAttempt,
+        if !force, let attempt = lastMetadataAttempt,
            Date.now.timeIntervalSince(attempt) < BrewClient.metadataWindow {
             return false
         }
