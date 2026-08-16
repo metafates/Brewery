@@ -524,34 +524,17 @@ private struct DetailPage: View {
     @ViewBuilder private func licenseLine(_ license: String) -> some View {
         let components = package.licenseComponents
         if components.count > 1, license.count > 40, let first = components.first {
-            HStack(spacing: 4) {
-                Text("License: \(first)")
-                    .foregroundStyle(.secondary)
-                // Quiet like the rest of the column (a tinted button was the one loud row
-                // left); chevron.down is the pull-down tell — discloses below, where the tap
-                // row's chevron.right navigates deeper.
-                Button {
-                    showLicenses = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Text("and \(components.count - 1) more")
-                        Image(systemName: "chevron.down")
-                            .font(.caption2)
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .popover(isPresented: $showLicenses, arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Licenses")
-                            .font(.headline)
-                        ForEach(components, id: \.self) { component in
-                            Text(component)
-                                .textSelection(.enabled)
-                        }
-                    }
-                    .padding(14)
-                    .frame(minWidth: 220, alignment: .leading)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                // A sample is only a summary if it fits one line. An OR-group is one
+                // component and long by construction (zstd's "BSD-3-Clause OR
+                // GPL-2.0-only" wrapped, floating the button mid-air) — past the budget
+                // the row collapses to the Contents section's count grammar instead.
+                if first.count <= 24 {
+                    Text("License: \(first)")
+                        .foregroundStyle(.secondary)
+                    licenseDisclosure("and \(components.count - 1) more", components: components)
+                } else {
+                    licenseDisclosure("\(components.count) licenses", components: components)
                 }
             }
             // No .combine here: merging would swallow the button and VoiceOver could never
@@ -563,6 +546,35 @@ private struct DetailPage: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .accessibilityLabel("License \(license)")
+        }
+    }
+
+    /// The license popover's quiet trigger — secondary like the rest of the column, chevron.down
+    /// as the pull-down tell (discloses below, where the tap row's chevron.right navigates deeper).
+    private func licenseDisclosure(_ title: String, components: [String]) -> some View {
+        Button {
+            showLicenses = true
+        } label: {
+            HStack(spacing: 3) {
+                Text(title)
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("Show all licenses")
+        .popover(isPresented: $showLicenses, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Licenses")
+                    .font(.headline)
+                ForEach(components, id: \.self) { component in
+                    Text(component)
+                        .textSelection(.enabled)
+                }
+            }
+            .padding(14)
+            .frame(minWidth: 220, alignment: .leading)
         }
     }
 
