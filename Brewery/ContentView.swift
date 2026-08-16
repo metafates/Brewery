@@ -941,7 +941,11 @@ struct ContentView: View {
         let count = displayedCount
         let formatted = count.formatted(.number)
         guard !isSearching, !isNarrowed else {
-            return count == 1 ? "1 result" : "\(formatted) results"
+            let results = count == 1 ? "1 result" : "\(formatted) results"
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Finder's grammar (Searching “This Mac”): the count names its query, in curly
+            // quotes. A filter-only narrowing has no query to name.
+            return isSearching ? "\(results) for “\(query)”" : results
         }
         switch section {
         case .discover: return count == 1 ? "1 package" : "\(formatted) packages"
