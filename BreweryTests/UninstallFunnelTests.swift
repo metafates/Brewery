@@ -84,6 +84,18 @@ struct UninstallFunnelTests {
         #expect(model.operations.isEmpty)
     }
 
+    @Test("the dialog's dependents sample stays short")
+    func dependentsSummary() {
+        // Four or fewer list in full…
+        #expect(AppModel.dependentsSummary(["bat"]) == "bat")
+        #expect(AppModel.dependentsSummary(["bat", "curl"]) == "bat and curl")
+        #expect(AppModel.dependentsSummary(["a", "b", "c", "d"]) == "a, b, c, and d")
+        // …more collapse to three and a count — never "and 1 more".
+        #expect(AppModel.dependentsSummary(["a", "b", "c", "d", "e"]) == "a, b, c, and 2 more")
+        #expect(AppModel.dependentsSummary(Array(repeating: "x", count: 52).enumerated().map { "p\($0.offset)" })
+                == "p0, p1, p2, and 49 more")
+    }
+
     @Test("blocking dependents union receipt formulae with installed casks' claims")
     func blockingDependents() {
         let neovim = Package(kind: .formula, name: "neovim", displayName: nil, desc: nil,

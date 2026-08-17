@@ -377,7 +377,7 @@ struct ContentView: View {
     private func uninstallMessage(for package: Package) -> String {
         let blocking = model.blockingDependents(for: package)
         if !blocking.isEmpty {
-            let names = blocking.formatted(.list(type: .and))
+            let names = AppModel.dependentsSummary(blocking)
             return "\(package.title) is required by \(names). Uninstall \(blocking.count == 1 ? "it" : "them") first."
         }
         var message = "Removes \(package.title) from your Mac. You can install it again later."

@@ -758,6 +758,14 @@ final class AppModel {
         return ids
     }
 
+    /// The dialog's sample of the block list — a sample is only a summary if it stays short
+    /// (the license row's law): four or fewer list in full, more collapse to three and a count.
+    /// The full list stays one click away in the pane's Required By section.
+    nonisolated static func dependentsSummary(_ names: [String]) -> String {
+        guard names.count > 4 else { return names.formatted(.list(type: .and)) }
+        return names.prefix(3).joined(separator: ", ") + ", and \(names.count - 3) more"
+    }
+
     /// v11's read-only pin state, hoisted from the pane (v15) so the pane, the card's context
     /// menu and the menu bar all read one rule.
     func isPinned(_ package: Package) -> Bool {
