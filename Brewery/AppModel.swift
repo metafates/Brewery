@@ -94,6 +94,11 @@ final class AppModel {
     var showInspector = UserDefaults.standard.object(forKey: "inspector.shown") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showInspector, forKey: "inspector.shown") }
     }
+    /// v15 — the package the pane is describing. In the model, not the view, for `selection`'s
+    /// own reason: the menu bar's Uninstall command needs a target, and a `Commands` builder can
+    /// only reach app-level state. Session state, never persisted — unlike the pane's
+    /// visibility, *what* was being read is not personalization.
+    var selectedPackage: Package?
 
     /// Bumped by the ⌘F menu command. `ContentView` observes it and moves focus to the search
     /// field — the automatic ⌘F binding has historically been unreliable on macOS.
@@ -392,6 +397,7 @@ final class AppModel {
             result[id]?.tap = receipt.tap
             result[id]?.builtFromSource = receipt.builtFromSource
             result[id]?.installedAt = receipt.installedAt
+            result[id]?.hasZap = receipt.hasZap
         }
         return result
     }
@@ -505,13 +511,20 @@ final class AppModel {
     /// DSL, not tabs). Recomputed per access; ~350 kegs and a few rounds are well under a
     /// millisecond.
     var orphanIDs: Set<Package.ID> {
-        var caskDependencies: [Package.ID: [String]] = [:]
+        Receipts.orphans(in: installed, caskDependencies: installedCaskDependencies)
+    }
+
+    /// Each installed cask's catalog `depends_on` formulae — cask receipts carry no runtime
+    /// deps, so the claim comes from the catalog, which is how brew itself protects them.
+    /// Shared by the orphan fixpoint and the uninstall block list (v15).
+    private var installedCaskDependencies: [Package.ID: [String]] {
+        var result: [Package.ID: [String]] = [:]
         for id in installed.keys where id.hasPrefix("cask:") {
             if let deps = package(for: id)?.caskDependencies, !deps.isEmpty {
-                caskDependencies[id] = deps
+                result[id] = deps
             }
         }
-        return Receipts.orphans(in: installed, caskDependencies: caskDependencies)
+        return result
     }
 
     /// The Installed section under the scope picker. `.all` is the full list; `.onRequest` drops the
@@ -580,9 +593,12 @@ final class AppModel {
         switch command {
         case let .install(name, _), let .upgrade(name, _),
              let .serviceStart(name), let .serviceStop(name),
-             let .tap(name), let .untap(name), let .trustTap(name), let .untrustTap(name):
+             let .tap(name), let .untap(name), let .trustTap(name), let .untrustTap(name),
+             let .uninstall(name, _), let .zap(name):
             guard !name.isEmpty, !name.hasPrefix("-") else { return }
         default:
+            // Argument-less commands only. A new case that carries a name MUST join the list
+            // above — this default would otherwise exempt it from the guard silently.
             break
         }
 
@@ -683,6 +699,77 @@ final class AppModel {
     /// Same rule for Update All — it lived in the view, spelled longhand.
     var upgradeAllPending: Bool {
         operations.contains { $0.command == .upgradeAll && !$0.isFinished }
+    }
+
+    // MARK: - Uninstall (v15)
+
+    /// The package whose Uninstall awaits the confirmation dialog; nil = no dialog.
+    var pendingUninstall: Package?
+
+    var uninstallConfirmationPresented: Bool {
+        get { pendingUninstall != nil }
+        set { if !newValue { pendingUninstall = nil } }
+    }
+
+    /// Every Uninstall surface funnels through here — pane button, card context menu, menu bar —
+    /// and it only sets the pending package: the confirmation dialog runs before anything
+    /// enqueues (the trust-write rule). Pinned packages never pass — brew's pinned refusal
+    /// exits 0 having removed nothing (`uninstall.rb:46-48`), and a lying success in the
+    /// operations popover is worse than a disabled button.
+    func uninstall(_ package: Package) {
+        guard installed[package.id] != nil || outdated[package.id] != nil,
+              !isPinned(package) else { return }
+        pendingUninstall = package
+    }
+
+    /// The dialog's affirmative paths. `zap` holds only for a cask whose receipt records a zap
+    /// stanza — the one case where `--zap` does more than plain uninstall.
+    func confirmedUninstall(_ package: Package, zap: Bool = false) {
+        let command: BrewCommand = if zap, package.kind == .cask, installed[package.id]?.hasZap == true {
+            .zap(name: qualifiedName(for: package))
+        } else {
+            .uninstall(name: qualifiedName(for: package), cask: package.kind == .cask)
+        }
+        enqueue(command, title: "Uninstalling \(package.title)", targetID: package.id)
+    }
+
+    /// Who would make brew refuse this uninstall: formulae listing it as a runtime dependency
+    /// (the receipts' inverted map) plus installed casks whose catalog `depends_on` claims it —
+    /// brew counts cask dependents too (`installed_dependents.rb:45`), but cask receipts carry
+    /// no runtime deps, so the claim comes from the catalog like the orphan fixpoint's does.
+    /// Display titles, sorted; non-empty means the dialog omits its destructive buttons.
+    func blockingDependents(for package: Package) -> [String] {
+        AppModel.blockingDependentIDs(of: package,
+                                      dependents: dependents,
+                                      caskDependencies: installedCaskDependencies)
+            .map { self.package(for: $0)?.title ?? (Package.components(of: $0)?.name ?? $0) }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    /// Pure core of the block list, `Receipts.orphans`'s shape: testable without a catalog.
+    nonisolated static func blockingDependentIDs(of package: Package,
+                                                 dependents: [Package.ID: [Package.ID]],
+                                                 caskDependencies: [Package.ID: [String]]) -> Set<Package.ID> {
+        guard package.kind == .formula else { return [] }  // the catalog decodes no cask→cask deps
+        var ids = Set(dependents[package.id] ?? [])
+        for (id, claims) in caskDependencies where claims.contains(package.name) {
+            ids.insert(id)
+        }
+        return ids
+    }
+
+    /// v11's read-only pin state, hoisted from the pane (v15) so the pane, the card's context
+    /// menu and the menu bar all read one rule.
+    func isPinned(_ package: Package) -> Bool {
+        outdated[package.id]?.pinned == true
+    }
+
+    /// The menu bar command's target: the selected package, if uninstalling it would work.
+    var uninstallableSelection: Package? {
+        guard let package = selectedPackage,
+              installed[package.id] != nil || outdated[package.id] != nil,
+              !isPinned(package) else { return nil }
+        return package
     }
 
     // MARK: - Services (v5)

@@ -330,7 +330,6 @@ struct ContentView: View {
     /// The inputs each cached listing was built from, so revisiting a tab with nothing changed
     /// skips the rebuild outright instead of paying it on every switch.
     @State private var builtKeys: [SidebarSection: BrowseKey] = [:]
-    @State private var selectedPackage: Package?
     @State private var showAddTap = false
     @FocusState private var searchFocused: Bool
 
@@ -351,7 +350,8 @@ struct ContentView: View {
     /// Opening a package means selecting it, not interrupting: the pane follows the selection, so
     /// clicking through card after card is one continuous act rather than open-read-dismiss.
     private func select(_ package: Package) {
-        selectedPackage = package
+        // v15 — selection lives in the model: the menu bar's Uninstall command needs a target.
+        model.selectedPackage = package
         model.showInspector = true
     }
 
@@ -362,6 +362,34 @@ struct ContentView: View {
         guard let package = model.pendingInstall,
               let tap = model.effectiveTap(for: package) else { return Text(verbatim: "") }
         return Text("Install \(package.title) from \(tap)?")
+    }
+
+    /// v15 — the uninstall dialog's title, same grammar.
+    private var uninstallTitle: Text {
+        guard let package = model.pendingUninstall else { return Text(verbatim: "") }
+        return Text("Uninstall \(package.title)?")
+    }
+
+    /// The consequence and the way back, per state: blocked names the dependents (Remove Tap's
+    /// grammar); multi-keg formulae disclose the leftover — `--force` is unrepresentable, and a
+    /// repeat uninstall peels it; the zap tier carries brew's shared-files warning
+    /// (Cask-Cookbook.md:1312-1315).
+    private func uninstallMessage(for package: Package) -> String {
+        let blocking = model.blockingDependents(for: package)
+        if !blocking.isEmpty {
+            let names = blocking.formatted(.list(type: .and))
+            return "\(package.title) is required by \(names). Uninstall \(blocking.count == 1 ? "it" : "them") first."
+        }
+        var message = "Removes \(package.title) from your Mac. You can install it again later."
+        let versions = model.installed[package.id]?.versions ?? []
+        if package.kind == .formula, versions.count > 1, let current = versions.last {
+            let older = versions.dropLast().formatted(.list(type: .and))
+            message += " This removes version \(current); older versions (\(older)) stay on disk until you uninstall again."
+        }
+        if model.installed[package.id]?.hasZap == true {
+            message += " “Uninstall and Remove App Data” also deletes its settings and support files; files shared with other apps may be removed."
+        }
+        return message
     }
 
     private var splitView: some View {
@@ -419,6 +447,26 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {}
         } message: { package in
             Text("This tap isn't trusted yet. Installing trusts only \(package.name)'s recipe; trusting the tap covers everything it ships.")
+        }
+        // v15 — uninstall consent: every Uninstall surface funnels through AppModel.uninstall,
+        // and the dialog runs before anything enqueues (the trust-write rule). A formula
+        // something still needs loses the destructive buttons and the message explains —
+        // Remove Tap's exact shape. The zap tier appears only when the receipt earned it.
+        .confirmationDialog(uninstallTitle,
+                            isPresented: $model.uninstallConfirmationPresented,
+                            titleVisibility: .visible,
+                            presenting: model.pendingUninstall) { package in
+            if model.blockingDependents(for: package).isEmpty {
+                Button("Uninstall", role: .destructive) { model.confirmedUninstall(package) }
+                if model.installed[package.id]?.hasZap == true {
+                    Button("Uninstall and Remove App Data", role: .destructive) {
+                        model.confirmedUninstall(package, zap: true)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { package in
+            Text(uninstallMessage(for: package))
         }
         .task(id: searchKey) {
             let ranked = section
@@ -540,7 +588,7 @@ struct ContentView: View {
     /// `.id` on the package: the pane keeps a drill-down stack, and clicking a different card has
     /// to start a fresh one rather than leave you inside the previous package's dependencies.
     @ViewBuilder private var inspector: some View {
-        if let package = selectedPackage {
+        if let package = model.selectedPackage {
             // The pane's back yields ⌘[ while a tap page shows its own — one shortcut, one owner.
             PackageDetailView(package: package,
                               ownsBackShortcut: !(section == .taps && selectedTap != nil))
@@ -837,7 +885,7 @@ struct ContentView: View {
     /// current selection visible in the pane that leads to the detail — and nil while the pane is
     /// closed, because nothing is being described. One `String?` across the boundary, not an array.
     private var inspectedID: Package.ID? {
-        model.showInspector ? selectedPackage?.id : nil
+        model.showInspector ? model.selectedPackage?.id : nil
     }
 
     /// What the browse listing is made of. Deliberately excludes the query: while a search is being

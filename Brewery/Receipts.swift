@@ -18,6 +18,9 @@ nonisolated struct Receipt: Equatable {
     /// v11 — the receipt's `time` (unix seconds; formula and cask receipts alike), for the
     /// Date Installed sort. nil sorts last: a keg with no receipt has no date to claim.
     var installedAt: Date? = nil
+    /// v15 — casks only: `uninstall_artifacts` names a `zap` stanza, so `--zap` would do more
+    /// than plain uninstall. Gates the dialog's second destructive tier.
+    var hasZap: Bool = false
 }
 
 /// Reads Homebrew's per-keg install receipts. They answer both of v2's questions — "did the user
@@ -49,7 +52,8 @@ nonisolated enum Receipts {
                        apps: payload.uninstallArtifacts?.flatMap { $0.app ?? [] } ?? [],
                        tap: normalizedTap(payload.source?.tap),
                        builtFromSource: payload.pouredFromBottle != true,
-                       installedAt: payload.time.map { Date(timeIntervalSince1970: TimeInterval($0)) })
+                       installedAt: payload.time.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+                       hasZap: payload.uninstallArtifacts?.contains { $0.zap } ?? false)
     }
 
     /// Receipts say `homebrew/core`/`homebrew/cask` for core installs; folding those to nil keeps
@@ -98,14 +102,19 @@ nonisolated enum Receipts {
         /// bundles the cask actually put on disk. Every other artifact kind decodes to nil `app`.
         struct Artifact: Decodable {
             let app: [String]?
+            /// v15 — presence of a `zap` key, whatever its value shape: the stanza's existence is
+            /// the fact wanted, and its payload mixes strings with objects.
+            let zap: Bool
 
             init(from decoder: any Decoder) throws {
                 // Entries are heterogeneous — `{"app": [...]}`, `{"binary": [...]}`, `{"zap": [...]}`
                 // — and some hold arrays mixing strings with objects. Only the string form is wanted.
-                app = try? decoder.container(keyedBy: CodingKeys.self).decodeIfPresent([String].self, forKey: .app)
+                let container = try? decoder.container(keyedBy: CodingKeys.self)
+                app = try? container?.decodeIfPresent([String].self, forKey: .app)
+                zap = container?.contains(.zap) ?? false
             }
 
-            private enum CodingKeys: String, CodingKey { case app }
+            private enum CodingKeys: String, CodingKey { case app, zap }
         }
 
         struct Source: Decodable {

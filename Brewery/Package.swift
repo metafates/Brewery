@@ -481,6 +481,9 @@ nonisolated struct InstalledInfo: Equatable, Hashable {
     /// v11 — from the receipt's `time`, for the Date Installed sort. Never persisted, so no
     /// cache versioning applies.
     var installedAt: Date? = nil
+    /// v15 — casks only: the receipt's `uninstall_artifacts` names a `zap` stanza. Gates the
+    /// dialog's second destructive tier; a stanza-less zap adds nothing over plain uninstall.
+    var hasZap: Bool = false
 }
 
 nonisolated struct OutdatedInfo: Equatable, Hashable {

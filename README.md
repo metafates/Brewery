@@ -17,19 +17,25 @@ disk.
 - Package pages with install counts, caveats rendered the way brew means them
   (copyable command blocks included), provided commands, cask contents, service
   details, conflicts, licenses, and a navigable dependency graph.
-- Install and update, per package or all at once, with live logs and a
-  cancellable queue.
+- Install, update, and uninstall, per package or all at once, with live logs
+  and a cancellable queue. Uninstalling always confirms first, and a cask that
+  documents its own leftovers offers to remove its app data too.
 - A Services tab in the style of Login Items: see every brew service, its
   status, and a switch to start or stop it.
 
-## Non-destructive by design
+## Destructive only on purpose
 
-Brewery installs, upgrades, and toggles services. It cannot uninstall, clean
-up, pin, or zap. This is enforced by construction rather than by discipline:
-every brew invocation comes from a closed enum of ten commands, nothing execs
-brew with arbitrary arguments, and a test fails the build if a destructive
-token ever shows up. Brew's own periodic cleanup, which install and upgrade
-normally trigger, is switched off on every invocation.
+Brewery installs, upgrades, uninstalls, and toggles services. Every removal is
+confirmed before anything runs, and what brew can be asked to do is enforced
+by construction rather than by discipline: every invocation comes from a
+closed enum of commands, nothing execs brew with arbitrary arguments, and a
+test fails the build if a forbidden token — `--force`,
+`--ignore-dependencies`, `cleanup`, `pin`, and friends — ever shows up in an
+argv. Brew's implicit destruction is switched off on every invocation too:
+the periodic cleanup that install and upgrade normally trigger, and the
+autoremove cascade that follows an uninstall (orphaned dependencies surface
+in the app's own Orphans report instead, where removing them is its own
+confirmed decision).
 
 ## Requirements
 

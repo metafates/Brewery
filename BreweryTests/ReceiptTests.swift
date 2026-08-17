@@ -304,6 +304,26 @@ struct CaskAppTests {
         #expect(!receipt.onRequest)
     }
 
+    // MARK: - Zap availability (v15)
+
+    @Test("a zap stanza in the artifacts sets hasZap")
+    func zapPresence() {
+        // The Firefox-shaped fixture above carries {"zap": [...]} among its artifacts.
+        #expect(Receipts.parse(Data(Self.caskReceipt.utf8)).hasZap)
+
+        // Font casks ship uninstall artifacts but no zap stanza (font-arial, verified live).
+        let font = """
+        {"installed_on_request": true, "uninstall_artifacts": [{"font": ["ttf/Arial.ttf"]}]}
+        """
+        #expect(Receipts.parse(Data(font.utf8)).hasZap == false)
+
+        // No artifact list at all — every formula receipt.
+        let formula = """
+        {"installed_on_request": true, "runtime_dependencies": [{"full_name": "gettext"}]}
+        """
+        #expect(Receipts.parse(Data(formula.utf8)).hasZap == false)
+    }
+
     // MARK: - Orphans (v10)
 
     private static func dep(_ deps: [String] = []) -> InstalledInfo {

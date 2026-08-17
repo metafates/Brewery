@@ -111,6 +111,17 @@ struct BreweryApp: App {
                 .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(model.outdated.isEmpty)
 
+                // v15 — the context menu's twin (a context item must also exist in the main
+                // interface, and the shortcut shows here, not there). ⌘⌫ is the platform's
+                // delete family (Finder, App Store); the dynamic title names the target, like
+                // Finder's "Eject <disk>". Always present, disabled when nothing uninstallable
+                // is selected — HIG The menu bar: the same set of items, always.
+                Button(model.uninstallableSelection.map { "Uninstall \($0.title)…" } ?? "Uninstall…") {
+                    if let package = model.uninstallableSelection { model.uninstall(package) }
+                }
+                .keyboardShortcut(.delete)
+                .disabled(model.uninstallableSelection == nil)
+
                 Divider()
 
                 Button("Add Tap…") { model.requestAddTap() }

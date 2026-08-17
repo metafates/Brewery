@@ -153,6 +153,11 @@ final class BrewClient {
         environment["HOMEBREW_NO_ASK"] = "1"
         environment["HOMEBREW_NO_AUTO_UPDATE"] = "1"
         environment["HOMEBREW_NO_INSTALL_CLEANUP"] = "1"
+        // v15 — `brew uninstall` implicitly autoremoves afterwards (cmd/uninstall.rb:133); a
+        // removal must be exactly what the user chose. Orphans surface in the Orphans report
+        // instead. The explicit `.autoremove` command is unaffected (cmd/autoremove.rb calls
+        // Cleanup.autoremove directly).
+        environment["HOMEBREW_NO_AUTOREMOVE"] = "1"
         // Services-only: silences a stderr domain warning that fires whenever uid ≠ euid.
         environment["HOMEBREW_SERVICES_NO_DOMAIN_WARNING"] = "1"
         if command.isMutating, let askpass = askpassPath() {

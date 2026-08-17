@@ -9,8 +9,10 @@ import Foundation
 
 /// The complete set of brew invocations this app can express.
 ///
-/// Destructive operations are unrepresentable, not merely un-called: there is no `uninstall`,
-/// `cleanup`, `pin`, `zap` or `--force` case, and no way to pass raw arguments. `BrewClient.run`
+/// Destructive operations are narrow and confirmed (v15); everything else stays unrepresentable,
+/// not merely un-called: there is no `cleanup`, `pin`, `--force` or `--ignore-dependencies` case,
+/// and no way to pass raw arguments. Every removal — uninstall, zap, untap, autoremove — reaches
+/// the queue only after its confirmation dialog has run (the trust-write rule). `BrewClient.run`
 /// takes only a `BrewCommand`, so this enum is the app's single source of brew argv.
 nonisolated enum BrewCommand: Equatable, Hashable {
     case listFormulae
@@ -37,11 +39,19 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     // --tap type flag; per-item trust stays brew's own business.
     case trustTap(name: String)
     case untrustTap(name: String)
-    // v10 — the one removal in the whitelist, and the least destructive one brew has: it
+    // v10 — the first removal in the whitelist, and the least destructive one brew has: it
     // uninstalls only what brew itself computes as an unneeded dependency, takes no arguments
-    // (nothing to aim it with), and the UI puts a confirmation dialog in front. `uninstall`
-    // stays unrepresentable; `untap` set the precedent for scoped, confirmed removals.
+    // (nothing to aim it with), and the UI puts a confirmation dialog in front. `untap` set
+    // the precedent for scoped, confirmed removals.
     case autoremove
+    // v15 — uninstall joins under its own narrower bar: named but per-target-confirmed (the
+    // dialog runs before AppModel.confirmedUninstall enqueues), kind-pinned like install, and
+    // force-less — `--force` and `--ignore-dependencies` stay unrepresentable, so brew's own
+    // dependents refusal fires before anything is removed. `zap` hard-codes `--cask` because
+    // brew declares `conflicts "--formula", "--zap"` (cmd/uninstall.rb:38), and the UI offers
+    // it only for casks whose receipt records a zap stanza.
+    case uninstall(name: String, cask: Bool)
+    case zap(name: String)
 
     var arguments: [String] {
         switch self {
@@ -79,6 +89,10 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["untrust", "--tap", name]
         case .autoremove:
             ["autoremove"]
+        case let .uninstall(name, cask):
+            ["uninstall", BrewCommand.kindFlag(cask: cask), name]
+        case let .zap(name):
+            ["uninstall", "--cask", "--zap", name]
         }
     }
 
@@ -90,7 +104,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         case .listFormulae, .listCasks, .outdated, .servicesList:
             false
-        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove:
+        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap:
             true
         }
     }
@@ -101,6 +115,9 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         // Service toggles change launchd state; tap/untap clone fresh checkouts; autoremove
         // acts on local kegs only — none of them benefit from a `brew update` first.
+        // uninstall/zap stay in the default (true), unlike autoremove: cask uninstall and zap
+        // dispatch stanzas from the *current* recipe, so fresh metadata keeps what brew executes
+        // aligned with what the pane showed.
         case .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove: false
         default: isMutating
         }

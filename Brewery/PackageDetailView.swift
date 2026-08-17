@@ -409,6 +409,13 @@ private struct DetailPage: View {
                 // bordered so the one filled button in the pane is always the state-changing one.
                 openAction
                 Spacer(minLength: 0)
+                // v15 — at the trailing edge, the flexible space between it and the
+                // state-changing cluster: destructive controls sit where they won't be hit
+                // reflexively (HIG Alerts). Bordered, never prominent; the ellipsis promises
+                // the dialog. Installed *and* outdated — an outdated package is an installed
+                // one. Pinned disables it up front: brew's pinned refusal exits 0 having
+                // removed nothing.
+                uninstallAction
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -659,6 +666,22 @@ private struct DetailPage: View {
         }
     }
 
+    /// v15 — the Uninstall trigger, shown while the package is on disk and not mid-operation.
+    @ViewBuilder
+    private var uninstallAction: some View {
+        switch model.status(for: package) {
+        case .installed, .outdated:
+            Button("Uninstall…") { model.uninstall(package) }
+                .disabled(isPinned)
+                .help(isPinned
+                      ? "\(package.title) is pinned, so Brewery leaves it alone."
+                      : "Removes \(package.title) from your Mac")
+                .accessibilityLabel("Uninstall \(package.title)")
+        case .busy, .notInstalled:
+            EmptyView()
+        }
+    }
+
     private var installHelp: String {
         if package.disabled {
             return "Homebrew has disabled this package, so it can no longer be installed."
@@ -669,9 +692,8 @@ private struct DetailPage: View {
         return "Install \(package.title)"
     }
 
-    private var isPinned: Bool {
-        model.outdated[package.id]?.pinned == true
-    }
+    // v15 — one rule, hoisted: the card's context menu and the menu bar read the same state.
+    private var isPinned: Bool { model.isPinned(package) }
 
     /// The effective tap (receipt over catalog), falling back to the core tap the kind implies.
     private var tapLabel: String {

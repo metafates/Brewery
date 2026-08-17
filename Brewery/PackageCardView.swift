@@ -100,6 +100,18 @@ struct PackageCardView: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(package.name, forType: .string)
         }
+        // v15 — last, behind its own divider: App Store's Delete-last grammar. Absent while
+        // pinned or mid-operation, not dimmed; no shortcut shown (that lives in the menu bar);
+        // the ellipsis promises the dialog, which runs before anything enqueues.
+        switch model.status(for: package) {
+        case .installed, .outdated:
+            if !model.isPinned(package) {
+                Divider()
+                Button("Uninstall…", role: .destructive) { model.uninstall(package) }
+            }
+        default:
+            EmptyView()
+        }
     }
 
     /// Why this card is here at all: a package matched only because it provides the executable the

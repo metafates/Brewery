@@ -114,6 +114,9 @@ struct BrewCommandTests {
         .trustTap(name: "charmbracelet/tap"),
         .untrustTap(name: "charmbracelet/tap"),
         .autoremove,
+        .uninstall(name: "wget", cask: false),
+        .uninstall(name: "iterm2", cask: true),
+        .zap(name: "iterm2"),
     ] }
 
     /// One tag per `BrewCommand` case. The switch is exhaustive on purpose: adding a case to
@@ -122,7 +125,7 @@ struct BrewCommandTests {
     enum CommandKind: CaseIterable {
         case listFormulae, listCasks, outdated, update, install, upgrade, upgradeAll
         case servicesList, serviceStart, serviceStop, tap, untap, trustTap, untrustTap
-        case autoremove
+        case autoremove, uninstall, zap
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -142,6 +145,8 @@ struct BrewCommandTests {
         case .trustTap: .trustTap
         case .untrustTap: .untrustTap
         case .autoremove: .autoremove
+        case .uninstall: .uninstall
+        case .zap: .zap
         }
     }
 
@@ -152,10 +157,14 @@ struct BrewCommandTests {
 
     @Test("first argv token is on the whitelist")
     func firstTokenIsWhitelisted() {
-        // `autoremove` is the deliberate exception to no-removals: argument-less by
-        // construction (nothing to aim it with), scoped to what brew itself computes as
-        // unneeded, and confirmed in the UI before it is ever enqueued.
-        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove"]
+        // `autoremove` was the first removal admitted: argument-less by construction
+        // (nothing to aim it with), scoped to what brew itself computes as unneeded, and
+        // confirmed in the UI before it is ever enqueued. v15 admits `uninstall` under its
+        // own narrower bar: named but per-target-confirmed (the dialog runs before the
+        // model enqueues), kind-pinned like install, force-less (no `--force`, no
+        // `--ignore-dependencies` — brew's dependents refusal fires before anything is
+        // removed), and its `remove`/`rm` aliases stay banned: one spelling, one case.
+        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall"]
         for command in Self.everyCommand {
             let first = command.arguments.first ?? ""
             #expect(allowed.contains(first), "unexpected subcommand \"\(first)\" in \(command.arguments)")
@@ -169,9 +178,13 @@ struct BrewCommandTests {
 
     @Test("no argv element carries a destructive token")
     func noDestructiveTokens() {
-        let forbidden = ["uninstall", "remove", "rm", "cleanup", "pin", "unpin", "zap", "--force",
-                         "kill", "restart", "--all", "--file", "--sudo-service-user",
-                         "--custom-remote", "--repair", "--eval-all"]
+        // v15: "uninstall" left this list when it joined the whitelist (its shape is pinned in
+        // `explicitKindToken` and `zapArgv` instead); "--ignore-dependencies" joined it. Bare
+        // "zap" stays: the match rule below is exact-or-`zap-`/`zap=`, so the `.zap` case's
+        // `--zap` flag never trips it — the entry bans any argv element *being* the word.
+        let forbidden = ["remove", "rm", "cleanup", "pin", "unpin", "zap", "--force",
+                         "--ignore-dependencies", "kill", "restart", "--all", "--file",
+                         "--sudo-service-user", "--custom-remote", "--repair", "--eval-all"]
         for command in Self.everyCommand {
             for argument in command.arguments {
                 // Whole tokens and their flag variants ("--force-bottle"); a plain substring test
@@ -218,7 +231,46 @@ struct BrewCommandTests {
             case .autoremove:
                 // One word, ever: an argument would be a target, and it has none to take.
                 #expect(arguments == ["autoremove"])
+            case .uninstall:
+                // Exactly like install: explicit kind token, one name, nothing else — no
+                // --force, no --ignore-dependencies, so brew's dependents refusal can fire.
+                #expect(arguments.count == 3, "\(arguments)")
+                #expect(arguments.first == "uninstall")
+                #expect(arguments[1] == "--formula" || arguments[1] == "--cask",
+                        "\(arguments) has no explicit kind token")
+            case .zap:
+                // Order pinned exactly, and never --formula: brew declares
+                // `conflicts "--formula", "--zap"` (cmd/uninstall.rb:38).
+                #expect(arguments.count == 4, "\(arguments)")
+                #expect(Array(arguments.prefix(3)) == ["uninstall", "--cask", "--zap"])
+                #expect(!arguments.contains("--formula"))
             }
         }
+    }
+
+    // MARK: - Uninstall (v15)
+
+    @Test("uninstall/zap: exact argv, kind-pinned, force-less")
+    func uninstallArguments() {
+        #expect(BrewCommand.uninstall(name: "wget", cask: false).arguments == ["uninstall", "--formula", "wget"])
+        #expect(BrewCommand.uninstall(name: "iterm2", cask: true).arguments == ["uninstall", "--cask", "iterm2"])
+        #expect(BrewCommand.zap(name: "iterm2").arguments == ["uninstall", "--cask", "--zap", "iterm2"])
+        #expect(BrewCommand.uninstall(name: "wget", cask: false).isMutating)
+        #expect(BrewCommand.zap(name: "iterm2").isMutating)
+        // Unlike autoremove: cask uninstall/zap dispatch stanzas from the current recipe,
+        // so they take the session brew update.
+        #expect(BrewCommand.uninstall(name: "wget", cask: false).touchesPackages)
+        #expect(BrewCommand.zap(name: "iterm2").touchesPackages)
+    }
+
+    @Test("uninstall names pass through as one argv element, qualified or hostile")
+    func uninstallNameIsOneArgument() {
+        let hostile = "wget; rm -rf /"
+        #expect(BrewCommand.uninstall(name: hostile, cask: false).arguments == ["uninstall", "--formula", hostile])
+        #expect(BrewCommand.zap(name: hostile).arguments == ["uninstall", "--cask", "--zap", hostile])
+
+        let qualified = BrewCommand.uninstall(name: "charmbracelet/tap/gum", cask: false)
+        #expect(qualified.arguments == ["uninstall", "--formula", "charmbracelet/tap/gum"])
+        #expect(qualified.arguments.count == 3)
     }
 }
