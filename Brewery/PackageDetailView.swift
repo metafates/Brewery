@@ -103,6 +103,13 @@ struct PackageDetailView: View {
             }
             .refreshVeil(model.isRefreshing)
         }
+        // v15.2 — re-selecting this package's own card while drilled into a subpage pops the
+        // stack home. The pane's `.id(package.id)` only resets when the selection *changes*;
+        // without this, clicking the shown package's card answered with nothing.
+        .onChange(of: model.selectionRequests) {
+            guard !stack.isEmpty else { return }
+            withAnimation(.smooth(duration: 0.3)) { stack.removeAll() }
+        }
     }
 
     /// Navigation at the leading top edge, which is where macOS puts a way back. It sat in a footer

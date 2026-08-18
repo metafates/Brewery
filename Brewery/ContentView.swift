@@ -350,9 +350,9 @@ struct ContentView: View {
     /// Opening a package means selecting it, not interrupting: the pane follows the selection, so
     /// clicking through card after card is one continuous act rather than open-read-dismiss.
     private func select(_ package: Package) {
-        // v15 — selection lives in the model: the menu bar's Uninstall command needs a target.
-        model.selectedPackage = package
-        model.showInspector = true
+        // v15 — selection lives in the model: the menu bar's Uninstall command needs a target,
+        // and (v15.2) the request counter lets the pane react to re-selecting the same package.
+        model.select(package)
     }
 
     // MARK: - Shell

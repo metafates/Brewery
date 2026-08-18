@@ -100,6 +100,18 @@ final class AppModel {
     /// visibility, *what* was being read is not personalization.
     var selectedPackage: Package?
 
+    /// v15.2 — bumped on every card selection, including of the already-shown package:
+    /// assigning an equal `selectedPackage` re-renders nothing, so the pane listens to this
+    /// counter (the ⌘F channel's shape) to pop its drill-down stack back to the root.
+    private(set) var selectionRequests = 0
+
+    /// The one selection funnel: card click and search's Return both land here.
+    func select(_ package: Package) {
+        selectedPackage = package
+        showInspector = true
+        selectionRequests += 1
+    }
+
     /// Bumped by the ⌘F menu command. `ContentView` observes it and moves focus to the search
     /// field — the automatic ⌘F binding has historically been unreliable on macOS.
     private(set) var findRequests = 0
