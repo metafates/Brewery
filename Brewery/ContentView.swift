@@ -143,7 +143,9 @@ private struct OrphanSummaryBar: View {
                 VStack(alignment: .leading, spacing: 2) {
                     // The size joins the line in place once measured — horizontal growth
                     // only, nothing below moves.
-                    Text("^[\(ids.count) orphaned dependencies](inflect: true)\(bytes.map { " · \($0.formatted(.byteCount(style: .file))) reclaimable" } ?? "")")
+                    // The reclaimable component is non-breaking: a narrow bar wraps only at
+                    // the separator, never inside "1,2 GB reclaimable".
+                    Text("^[\(ids.count) orphaned dependencies](inflect: true)\(bytes.map { " · " + "\($0.formatted(.byteCount(style: .file))) reclaimable".replacingOccurrences(of: " ", with: "\u{00A0}") } ?? "")")
                         .font(.title3)
                         .fontWeight(.semibold)
                     Text("Installed for packages you've since removed.")
@@ -256,66 +258,108 @@ private struct StorageSummaryBar: View {
     @State private var logsBytes: Int64?
     @State private var confirming = false
 
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "internaldrive")
-                .font(.system(size: 26))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
+    /// The gauge's fixed component order: name, color, bytes. Distinct categorical hues —
+    /// the platform storage gauge's grammar (System Settings › General › Storage).
+    private var components: [(name: String, color: Color, bytes: Int64?)] {
+        [("Old versions", .blue, oldKegBytes),
+         ("Cache", .teal, cacheBytes),
+         ("Logs", .orange, logsBytes)]
+    }
 
-            VStack(alignment: .leading, spacing: 2) {
-                // Reserved from first layout (the pane's Size row rule): the redacted stand-in
-                // keeps the line's height while the first measurements land.
-                if let inventory {
-                    Text(inventory)
+    private var totalBytes: Int64? {
+        let measured = components.compactMap(\.bytes)
+        return measured.isEmpty ? nil : measured.reduce(0, +)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                // A short total, never a data dump: metrics wrapped the old headline, and a
+                // wrapping header is a defect. The breakdown belongs to the gauge below.
+                if let totalBytes {
+                    Text("\(totalBytes.formatted(.byteCount(style: .file))) of Homebrew files")
                         .font(.title3)
                         .fontWeight(.semibold)
                 } else {
-                    Text("Old versions 00.0 MB")
+                    // Reserved from first layout (the pane's Size row rule).
+                    Text("00,0 GB of Homebrew files")
                         .font(.title3)
                         .fontWeight(.semibold)
                         .redacted(reason: .placeholder)
                 }
-                Text(explainer)
-                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 12)
+
+                Button("Clean Up…") { confirming = true }
+                    .disabled(model.cleanupPending)
+                    .help("Removes files Homebrew no longer needs")
+                    .confirmationDialog(CleanupDialog.title,
+                                        isPresented: $confirming, titleVisibility: .visible) {
+                        Button(CleanupDialog.confirm, role: .destructive) { model.cleanUp() }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text(CleanupDialog.message)
+                    }
             }
 
-            Spacer(minLength: 12)
+            gauge
+            legend
 
-            Button("Clean Up…") { confirming = true }
-                .disabled(model.cleanupPending)
-                .help("Removes files Homebrew no longer needs")
-                .confirmationDialog(CleanupDialog.title,
-                                    isPresented: $confirming, titleVisibility: .visible) {
-                    Button(CleanupDialog.confirm, role: .destructive) { model.cleanUp() }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text(CleanupDialog.message)
-                }
+            Text(caption)
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
         .reportBarChrome()
         .task(id: measureKey) { await measure() }
     }
 
-    /// The measured components, `·`-joined in a fixed order — only what has landed, so the
-    /// line grows in place (the orphan bar's rule). nil until the first component lands.
-    /// Non-breaking spaces inside each component: a narrow bar may wrap the line, but only
-    /// ever at a separator — "Logs / 244 bytes" split mid-component reads as a defect.
-    private var inventory: String? {
-        let parts: [(String, Int64?)] = [("Old versions", oldKegBytes),
-                                         ("Cache", cacheBytes),
-                                         ("Logs", logsBytes)]
-        let measured = parts.compactMap { name, bytes in
-            bytes.map {
-                "\(name) \($0.formatted(.byteCount(style: .file)))"
-                    .replacingOccurrences(of: " ", with: "\u{00A0}")
+    /// The proportional color bar. Nonzero slivers keep a minimum width (iPhone Storage shows
+    /// slivers); unmeasured, the whole track is a quiet placeholder.
+    private var gauge: some View {
+        GeometryReader { proxy in
+            let measured = components.compactMap { part in
+                part.bytes.map { (color: part.color, bytes: $0) }
+            }
+            let total = max(measured.reduce(Int64(0)) { $0 + $1.bytes }, 1)
+            HStack(spacing: 2) {
+                if measured.isEmpty {
+                    Rectangle().fill(.quaternary)
+                } else {
+                    ForEach(Array(measured.enumerated()), id: \.offset) { _, part in
+                        Rectangle()
+                            .fill(part.color.gradient)
+                            .frame(width: max(3, proxy.size.width
+                                * CGFloat(part.bytes) / CGFloat(total)))
+                    }
+                }
             }
         }
-        return measured.isEmpty ? nil : measured.joined(separator: " · ")
+        .frame(height: 10)
+        .clipShape(Capsule())
+        .accessibilityHidden(true)   // the legend speaks for it
     }
 
-    private var explainer: String {
-        var text = "Homebrew keeps old versions, downloads, and logs. Cleaning up removes what it no longer needs."
+    private var legend: some View {
+        HStack(spacing: 16) {
+            ForEach(components, id: \.name) { part in
+                if let bytes = part.bytes {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(part.color)
+                            .frame(width: 8, height: 8)
+                        Text("\(part.name) \(bytes.formatted(.byteCount(style: .file)))"
+                            .replacingOccurrences(of: " ", with: "\u{00A0}"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var caption: String {
+        var text = "Cleaning up removes what Homebrew no longer needs."
         if let cleaned = model.client.cleanedDate() {
             let ago = cleaned.formatted(.relative(presentation: .named))
             text += " Last cleaned \(ago)."
