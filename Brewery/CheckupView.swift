@@ -62,7 +62,9 @@ struct CheckupView: View {
         } description: {
             Text("Homebrew found no problems.\(lastRanSuffix)")
         } actions: {
+            // The sole action in an unavailable state is prominent, app-wide.
             runButton("Run Again")
+                .buttonStyle(.borderedProminent)
         }
     }
 
@@ -73,6 +75,7 @@ struct CheckupView: View {
             Text("Homebrew couldn't run its checks.")
         } actions: {
             runButton("Try Again")
+                .buttonStyle(.borderedProminent)
         }
     }
 
@@ -214,7 +217,7 @@ struct CheckupView: View {
 
             if offersCleanup || offersTaps {
                 HStack(spacing: 8) {
-                    if offersCleanup { cleanupButton }
+                    if offersCleanup { CleanupButton(isSmall: true) }
                     if offersTaps {
                         Button("Show in Taps") { model.requestShowTapList() }
                             .buttonStyle(.bordered)
@@ -229,16 +232,12 @@ struct CheckupView: View {
                 if let url = URL(string: link) {
                     Link(link, destination: url)
                         .font(.callout)
+                        .pointerStyle(.link)
                 }
             }
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: .rect(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(.separator, lineWidth: 1)
-        }
+        .contentBox()
     }
 
     /// The Link button's three states, read from the queue: idle, busy, done. No dialog —
@@ -266,22 +265,6 @@ struct CheckupView: View {
         }
     }
 
-    @State private var confirmingCleanup = false
-
-    private var cleanupButton: some View {
-        Button("Clean Up…") { confirmingCleanup = true }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(model.cleanupPending)
-            .help("Removes files Homebrew no longer needs")
-            .confirmationDialog(CleanupDialog.title,
-                                isPresented: $confirmingCleanup, titleVisibility: .visible) {
-                Button(CleanupDialog.confirm, role: .destructive) { model.cleanUp() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(CleanupDialog.message)
-            }
-    }
 
     // MARK: - Pieces
 

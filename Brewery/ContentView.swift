@@ -170,7 +170,7 @@ private struct OrphanSummaryBar: View {
                         Text("These are dependencies nothing needs anymore. You can install any of them again later.")
                     }
             }
-            .reportBarChrome()
+            .contentBox()
             .task(id: ids) {
                 bytes = nil
                 guard let prefix = model.client.prefix else { return }
@@ -216,31 +216,15 @@ private struct AttentionSummaryBar: View {
 
                 Spacer(minLength: 12)
             }
-            .reportBarChrome()
+            .contentBox()
             .accessibilityElement(children: .combine)
         }
     }
 }
 
-/// v18 — the report bars' shared chrome, extracted at the third bar as two verbatim copies
-/// became three. v22 — no margins of its own: the bar rides in an ordinary list-row slot, so
-/// the list's insets are the gutter and bar edges agree with row content by construction
-/// (the containers add margins where a list isn't providing them).
-private struct ReportBarChrome: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(14)
-            .background(.background.secondary, in: .rect(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.separator, lineWidth: 1)
-            }
-    }
-}
-
-extension View {
-    fileprivate func reportBarChrome() -> some View { modifier(ReportBarChrome()) }
-}
+// v24 — the report bars' chrome is the shared `.contentBox()` (SharedControls.swift): one
+// page-level box for bars and finding boxes alike. No margins of its own — the bars ride in
+// ordinary list-row slots, so the list's insets are the gutter.
 
 /// v18 — the Storage report's header, System Settings › Storage's grammar: an inventory of
 /// what Homebrew is spending on disk and the one recommendation that reclaims it. The three
@@ -256,7 +240,6 @@ private struct StorageSummaryBar: View {
     @State private var oldKegBytes: Int64?
     @State private var cacheBytes: Int64?
     @State private var logsBytes: Int64?
-    @State private var confirming = false
 
     /// The gauge's fixed component order: name, color, bytes. Distinct categorical hues —
     /// the platform storage gauge's grammar (System Settings › General › Storage).
@@ -290,16 +273,7 @@ private struct StorageSummaryBar: View {
 
                 Spacer(minLength: 12)
 
-                Button("Clean Up…") { confirming = true }
-                    .disabled(model.cleanupPending)
-                    .help("Removes files Homebrew no longer needs")
-                    .confirmationDialog(CleanupDialog.title,
-                                        isPresented: $confirming, titleVisibility: .visible) {
-                        Button(CleanupDialog.confirm, role: .destructive) { model.cleanUp() }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text(CleanupDialog.message)
-                    }
+                CleanupButton()
             }
 
             gauge
@@ -309,7 +283,7 @@ private struct StorageSummaryBar: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
-        .reportBarChrome()
+        .contentBox()
         .task(id: measureKey) { await measure() }
     }
 
@@ -826,6 +800,7 @@ struct ContentView: View {
                         selectedID: inspectedID,
                         onSelect: { select($0) },
                         emptyMessage: emptyMessage,
+                        emptySymbol: section.symbol,
                         onNeedMore: { window += Self.windowStep },
                         onRefresh: emptyStateRefresh,
                         isChecking: section == .outdated && model.isCheckingForUpdates,
@@ -879,7 +854,7 @@ struct ContentView: View {
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
-        .padding(.top, 10)
+        .padding(.top, 12)
     }
 
     /// Under a minute it is "just now" — Finder's word for it: at minute granularity a seconds
@@ -925,7 +900,7 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.top, 12)
         }
     }
 
@@ -936,7 +911,7 @@ struct ContentView: View {
         if section == .discover, !isSearching {
             TipView(PackageKindsTip())
                 .padding(.horizontal, 16)
-                .padding(.top, 10)
+                .padding(.top, 12)
         }
     }
 
@@ -1473,7 +1448,8 @@ struct ContentView: View {
         } actions: {
             Link("Install Homebrew", destination: URL(string: "https://brew.sh")!)
                 .buttonStyle(.borderedProminent)
-            Button("Refresh") { refresh() }
+            // The re-scan verb, app-wide.
+            Button("Check Again") { refresh() }
         }
     }
 
@@ -1483,7 +1459,8 @@ struct ContentView: View {
         } description: {
             Text("Brewery downloads the Homebrew package list from formulae.brew.sh. Check your connection and try again.")
         } actions: {
-            Button("Retry") {
+            // The retry-after-failure verb, app-wide.
+            Button("Try Again") {
                 Task { await model.retryCatalog() }
             }
             .buttonStyle(.borderedProminent)
@@ -1624,7 +1601,10 @@ private struct OperationsPopover: View {
 
             switch operation.state {
             case .running:
+                // The popover's one quiet style (Clear's): a lone bordered control in a row
+                // of borderless ones read as drift, not emphasis.
                 Button("Cancel") { model.cancel(operation) }
+                    .buttonStyle(.borderless)
                     .controlSize(.small)
             case .queued:
                 Button {

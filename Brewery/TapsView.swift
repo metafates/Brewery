@@ -323,7 +323,8 @@ struct TapPageHeader: View {
             Button("Trust This Tap…") { confirmingTrust = true }
                 .confirmationDialog("Trust \(info.name)?", isPresented: $confirmingTrust,
                                     titleVisibility: .visible) {
-                    Button("Trust") { model.trustTap(info.name) }
+                    // Echo the trigger's verb (every other dialog pair does).
+                    Button("Trust Tap") { model.trustTap(info.name) }
                     Button("Cancel", role: .cancel) {}
                 } message: {
                     Text("Homebrew will run this tap's recipes when listing and installing. Only trust taps whose authors you trust.")

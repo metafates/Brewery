@@ -76,7 +76,11 @@ struct PackageCardView: View {
     @ViewBuilder private var contextItems: some View {
         switch model.status(for: package) {
         case .notInstalled where !package.disabled:
-            Button("Install") { model.install(package) }
+            // The ellipsis appears exactly when the trust-consent dialog will (the
+            // dialog-promise rule).
+            Button(model.installNeedsTrustConsent(package) ? "Install…" : "Install") {
+                model.install(package)
+            }
         case .outdated where model.outdated[package.id]?.pinned != true:
             Button("Update") { model.upgrade(package) }
         case .installed:
@@ -91,27 +95,9 @@ struct PackageCardView: View {
         default:
             EmptyView()
         }
-        if let url = package.homepageURL {
-            Link("Open Homepage", destination: url)
-        }
-        Divider()
-        // The brew token — what a terminal command or a bug report wants.
-        Button("Copy Name") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(package.name, forType: .string)
-        }
-        // v15 — last, behind its own divider: App Store's Delete-last grammar. Absent while
-        // pinned or mid-operation, not dimmed; no shortcut shown (that lives in the menu bar);
-        // the ellipsis promises the dialog, which runs before anything enqueues.
-        switch model.status(for: package) {
-        case .installed, .outdated:
-            if !model.isPinned(package) {
-                Divider()
-                Button("Uninstall…", role: .destructive) { model.uninstall(package) }
-            }
-        default:
-            EmptyView()
-        }
+        // v24 — the shared package base: Open Homepage, Copy Name, Uninstall… last (App
+        // Store's Delete-last grammar; absent while pinned, not dimmed).
+        PackageMenuItems(package: package)
     }
 
     /// Why this card is here at all: a package matched only because it provides the executable the
@@ -207,7 +193,11 @@ struct PackageCardView: View {
     private var actionControl: some View {
         switch model.status(for: package) {
         case .notInstalled:
-            Button("Install") { model.install(package) }
+            // "Install…" exactly when the trust-consent dialog will appear first — a button
+            // that opens a dialog promises it (HIG *Buttons*), and this one is knowable.
+            Button(model.installNeedsTrustConsent(package) ? "Install…" : "Install") {
+                model.install(package)
+            }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(package.disabled)

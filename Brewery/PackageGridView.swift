@@ -25,6 +25,8 @@ struct PackageGridView<Header: View>: View {
     let onSelect: (Package) -> Void
     /// Shown when the section is empty for a reason other than the search, e.g. "Everything is up to date".
     var emptyMessage: String?
+    /// The section's own glyph for that state (the Services rule).
+    var emptySymbol = "shippingbox"
     /// Called when the end of the rendered window scrolls into view.
     let onNeedMore: () -> Void
     /// Offered in the empty state where re-checking is the useful next move — "Everything is up to
@@ -42,6 +44,7 @@ struct PackageGridView<Header: View>: View {
     init(hits: [SearchHit], totalCount: Int, isSearching: Bool,
          selectedID: Package.ID? = nil,
          onSelect: @escaping (Package) -> Void, emptyMessage: String? = nil,
+         emptySymbol: String = "shippingbox",
          onNeedMore: @escaping () -> Void, onRefresh: (() -> Void)? = nil,
          isChecking: Bool = false,
          @ViewBuilder header: @escaping () -> Header = { EmptyView() }) {
@@ -51,6 +54,7 @@ struct PackageGridView<Header: View>: View {
         self.selectedID = selectedID
         self.onSelect = onSelect
         self.emptyMessage = emptyMessage
+        self.emptySymbol = emptySymbol
         self.onNeedMore = onNeedMore
         self.onRefresh = onRefresh
         self.isChecking = isChecking
@@ -102,12 +106,15 @@ struct PackageGridView<Header: View>: View {
             WorkingCapsule(text: "Checking for updates…")
         } else if let emptyMessage {
             ContentUnavailableView {
-                Label(emptyMessage, systemImage: "shippingbox")
+                // The section's own glyph (the Services rule) — one shippingbox meant
+                // four different things.
+                Label(emptyMessage, systemImage: emptySymbol)
             } description: {
                 EmptyView()
             } actions: {
                 if let onRefresh {
                     Button("Check Again", action: onRefresh)
+                        .buttonStyle(.borderedProminent)
                 }
             }
         }

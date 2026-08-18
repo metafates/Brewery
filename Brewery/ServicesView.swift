@@ -58,6 +58,7 @@ struct ServicesView: View {
                 Text("Installed formulae that provide background services appear here.")
             } actions: {
                 Button("Check Again", action: onRefresh)
+                    .buttonStyle(.borderedProminent)
             }
         }
     }
@@ -99,6 +100,9 @@ private struct ServiceRow: View {
             if let url = model.serviceLogURL(for: package) {
                 Button("Open Log") { model.openFile(at: url) }
             }
+            Divider()
+            // v24 — the shared package base every package row carries.
+            PackageMenuItems(package: package)
         }
     }
 

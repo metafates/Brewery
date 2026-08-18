@@ -667,7 +667,11 @@ private struct DetailPage: View {
             // dialog, which appears only when installing would actually grant new trust.
             // The old always-on "Trusts user/tap" line named the wrong scope (the grant is
             // per-item) and kept showing for taps already trusted, where it disclosed nothing.
-            Button("Install") { model.install(package) }
+            // The ellipsis appears exactly when the consent dialog will (the dialog-promise
+            // rule); the tooltip already said so, now the label agrees.
+            Button(model.installNeedsTrustConsent(package) ? "Install…" : "Install") {
+                model.install(package)
+            }
                 .buttonStyle(.borderedProminent)
                 .disabled(package.disabled)
                 .help(installHelp)
@@ -1080,10 +1084,7 @@ private struct DetailPage: View {
     }
 
     private func sectionTitle(_ title: String) -> some View {
-        Text(title)
-            .font(.subheadline)
-            .fontWeight(.semibold)
-            .padding(.bottom, 2)
+        SectionTitle(title)
     }
 
     // MARK: - Dependencies
@@ -1274,46 +1275,21 @@ nonisolated enum CaveatFormat {
 }
 
 /// v13 — the Commands section's summary row when the run would be a wall: the count as the
-/// descriptive label, RelatedRow's chrome, the pane's drill-down as the disclosure. A real
-/// button for the same reason RelatedRow is one.
+/// descriptive label, the pane's row chrome (`PaneRow`, shared with `RelatedRow` since v24),
+/// the drill-down as the disclosure.
 private struct CommandsRow: View {
     let count: Int
     let action: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "terminal")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22)
-
-                Text("\(count) commands")
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .font(.subheadline)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(shape)
-            .background { shape.fill(.quaternary).opacity(isHovering ? 1 : 0) }
+        PaneRow(title: "\(count) commands", action: action) {
+            Image(systemName: "terminal")
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovering)
         .accessibilityLabel("\(count) commands")
         .accessibilityHint("Shows the full command list")
         .help("Show all commands")
-    }
-
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
     }
 }
 
@@ -1325,9 +1301,7 @@ private struct CommandsPage: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 6) {
-                Text("Commands")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                SectionTitle("Commands")
 
                 Text("^[\(package.displayCommands.count) executables](inflect: true) \(package.title) puts on your PATH.")
                     .font(.callout)
@@ -1368,9 +1342,7 @@ private struct TapPage: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
-                Text(tap)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                SectionTitle(tap)
 
                 if loaded, rows.isEmpty {
                     // The Taps section's own sentence for the same fact.

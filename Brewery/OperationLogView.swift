@@ -37,9 +37,10 @@ struct OperationLogView: View {
         // a void above three lines in a full-height window.
         .defaultScrollAnchor(.top, for: .alignment)
         .frame(minHeight: 80)
-        .background(.background.secondary, in: .rect(cornerRadius: 8))
+        .background(.background.secondary, in: .rect(cornerRadius: 8, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8).strokeBorder(.separator)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(.separator, lineWidth: 1)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Output of \(operation.title)")

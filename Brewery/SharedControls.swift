@@ -10,34 +10,35 @@
 import AppKit
 import SwiftUI
 
-/// The committed row grammar for "names another package": icon, title, optional secondary
-/// line, trailing installed version, `chevron.right`. A real `Button` — keyboard and
-/// VoiceOver reachable — whose action the host decides (the pane pushes, a report selects).
-struct RelatedRow: View {
-    let package: Package
-    let version: String?
-    /// Secondary line under the name — the conflict reason; nil for dependency rows.
+/// v24 — the pane's row chrome, one home: `.plain` button, subheadline, hover pill, chevron.
+/// `RelatedRow` and the pane's `CommandsRow` were two hand-copies of it.
+struct PaneRow<Leading: View>: View {
+    let title: String
+    /// Secondary line under the title — the conflict reason; caption-sized (a subtitle at the
+    /// title's size read as a second title).
     var detail: String? = nil
-    /// v23.1 — true in wide content columns (the Checkup boxes): no hover pill, no chevron.
-    /// Both are the narrow pane's tells; stretched across a wide column the pill reads as a
-    /// giant card, and the chevron fights any trailing action button for the row's meaning
-    /// (App Store's update rows at this width are static content plus a button).
-    var inline: Bool = false
+    var trailing: String? = nil
+    /// v23.1 — false in wide content columns (the Checkup boxes): the hover pill and chevron
+    /// are the narrow pane's tells; stretched wide the pill reads as a giant card, and the
+    /// chevron fights any trailing action button for the row's meaning.
+    var paneTells: Bool = true
     let action: () -> Void
+    @ViewBuilder let leading: Leading
 
     @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                PackageIconView(package: package, size: 22)
+                leading
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(package.title)
+                    Text(title)
                         .lineLimit(1)
 
                     if let detail, !detail.isEmpty {
                         Text(detail)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -45,12 +46,12 @@ struct RelatedRow: View {
 
                 Spacer(minLength: 8)
 
-                if let version, !version.isEmpty {
-                    Text(version.shortVersion)
+                if let trailing, !trailing.isEmpty {
+                    Text(trailing)
                         .foregroundStyle(.secondary)
                 }
 
-                if !inline {
+                if paneTells {
                     Image(systemName: "chevron.right")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
@@ -61,14 +62,41 @@ struct RelatedRow: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(shape)
-            .background { shape.fill(.quaternary).opacity(isHovering && !inline ? 1 : 0) }
+            .background { shape.fill(.quaternary).opacity(isHovering && paneTells ? 1 : 0) }
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+    }
+}
+
+/// The committed row grammar for "names another package": icon, title, optional secondary
+/// line, trailing installed version. A real `Button` — keyboard and VoiceOver reachable —
+/// whose action the host decides (the pane pushes, a report page selects).
+struct RelatedRow: View {
+    let package: Package
+    let version: String?
+    var detail: String? = nil
+    var inline: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        PaneRow(title: package.title,
+                detail: detail,
+                trailing: version?.isEmpty == false ? version?.shortVersion : nil,
+                paneTells: !inline,
+                action: action) {
+            PackageIconView(package: package, size: 22)
+        }
         .accessibilityLabel(label)
         .accessibilityHint("Shows package details")
         .help("Show \(package.title)")
+        // The v9 rule: every package row supports the same context-menu base.
+        .contextMenu { PackageMenuItems(package: package) }
     }
 
     private var label: String {
@@ -77,9 +105,90 @@ struct RelatedRow: View {
         if let detail, !detail.isEmpty { parts.append(detail) }
         return parts.joined(separator: ", ")
     }
+}
 
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
+/// v24 — the context-menu base every package row shares (v9's consistency rule): homepage,
+/// the brew token, and — for uninstallable installed packages — App Store's Delete-last
+/// grammar. Surfaces prepend their own verbs (a card's Install, a service row's Start).
+struct PackageMenuItems: View {
+    let package: Package
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let url = package.homepageURL {
+            Link("Open Homepage", destination: url)
+        }
+        Button("Copy Name") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(package.name, forType: .string)
+        }
+        switch model.status(for: package) {
+        case .installed, .outdated:
+            if !model.isPinned(package) {
+                Divider()
+                Button("Uninstall…", role: .destructive) { model.uninstall(package) }
+            }
+        default:
+            EmptyView()
+        }
+    }
+}
+
+/// v24 — the page-level box chrome (report bars, finding boxes), one home: continuous
+/// curvature on *both* the fill and the stroke — the layers drifted apart per surface.
+struct ContentBox: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(14)
+            .background(.background.secondary,
+                        in: .rect(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(.separator, lineWidth: 1)
+            }
+    }
+}
+
+extension View {
+    func contentBox() -> some View { modifier(ContentBox()) }
+}
+
+/// v24 — the pane's section heading, one home (it was inlined three times).
+struct SectionTitle: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline)
+            .fontWeight(.semibold)
+            .padding(.bottom, 2)
+    }
+}
+
+/// v24 — the one Clean Up button: trigger, dialog and disabled rule together, so the Storage
+/// bar and the Checkup finding can't drift (the copy already shared via `CleanupDialog`).
+struct CleanupButton: View {
+    var isSmall: Bool = false
+
+    @Environment(AppModel.self) private var model
+    @State private var confirming = false
+
+    var body: some View {
+        Button("Clean Up…") { confirming = true }
+            .buttonStyle(.bordered)
+            .controlSize(isSmall ? .small : .regular)
+            .disabled(model.cleanupPending)
+            .help("Removes files Homebrew no longer needs")
+            .confirmationDialog(CleanupDialog.title,
+                                isPresented: $confirming, titleVisibility: .visible) {
+                Button(CleanupDialog.confirm, role: .destructive) { model.cleanUp() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(CleanupDialog.message)
+            }
     }
 }
 

@@ -133,10 +133,31 @@ struct ReportListView<Header: View>: View {
             ContentUnavailableView.search
         } else {
             ContentUnavailableView {
-                Label(emptyMessage ?? "Nothing to report", systemImage: "shippingbox")
+                // The section's own glyph — one shippingbox meant four things (the Services
+                // rule: the empty state wears its section's symbol).
+                Label(emptyMessage ?? "Nothing to report", systemImage: symbol)
+            } description: {
+                Text(emptyDescription)
             } actions: {
                 Button("Check Again", action: onRefresh)
+                    .buttonStyle(.borderedProminent)
             }
+        }
+    }
+
+    private var symbol: String {
+        switch kind {
+        case .orphans: "arrow.3.trianglepath"
+        case .attention: "exclamationmark.triangle"
+        case .storage: "internaldrive"
+        }
+    }
+
+    private var emptyDescription: String {
+        switch kind {
+        case .orphans: "Dependencies nothing installed still needs appear here."
+        case .attention: "Installed packages Homebrew has deprecated or disabled appear here."
+        case .storage: "Formulae keeping old versions on disk appear here."
         }
     }
 }
@@ -162,20 +183,8 @@ private struct ReportRow: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .contextMenu {
-            if let url = package.homepageURL {
-                Link("Open Homepage", destination: url)
-            }
-            Button("Copy Name") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(package.name, forType: .string)
-            }
-            // Every report row is an installed package; App Store's Delete-last grammar.
-            if !model.isPinned(package), model.status(for: package) != .busy {
-                Divider()
-                Button("Uninstall…", role: .destructive) { model.uninstall(package) }
-            }
-        }
+        // v24 — the shared package base every package row carries.
+        .contextMenu { PackageMenuItems(package: package) }
     }
 
     private var subtitle: String? {
