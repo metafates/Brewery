@@ -119,6 +119,7 @@ struct BrewCommandTests {
         .zap(name: "iterm2"),
         .cleanup,
         .doctor,
+        .link(name: "deno"),
     ] }
 
     /// One tag per `BrewCommand` case. The switch is exhaustive on purpose: adding a case to
@@ -127,7 +128,7 @@ struct BrewCommandTests {
     enum CommandKind: CaseIterable {
         case listFormulae, listCasks, outdated, update, install, upgrade, upgradeAll
         case servicesList, serviceStart, serviceStop, tap, untap, trustTap, untrustTap
-        case autoremove, uninstall, zap, cleanup, doctor
+        case autoremove, uninstall, zap, cleanup, doctor, link
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -151,6 +152,7 @@ struct BrewCommandTests {
         case .zap: .zap
         case .cleanup: .cleanup
         case .doctor: .doctor
+        case .link: .link
         }
     }
 
@@ -175,7 +177,10 @@ struct BrewCommandTests {
         // autoremove cleanup would otherwise run (cleanup.rb:412).
         // v19 admits `doctor` as a read: strictly diagnostic, never queued, exit 1 means
         // findings exist rather than failure.
-        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup", "doctor"]
+        // v21 admits `link`: named but non-destructive — bare link creates symlinks, refuses
+        // conflicts and rolls back (keg.rb:574-576); `--overwrite` (the deleting variant) is
+        // in the forbidden list below; names come verbatim from doctor's own remediation.
+        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup", "doctor", "link"]
         for command in Self.everyCommand {
             let first = command.arguments.first ?? ""
             #expect(allowed.contains(first), "unexpected subcommand \"\(first)\" in \(command.arguments)")
@@ -191,6 +196,15 @@ struct BrewCommandTests {
     func doctorArgv() {
         #expect(BrewCommand.doctor.arguments == ["doctor", "--json"])
         #expect(BrewCommand.doctor.isMutating == false)
+    }
+
+    @Test("link: exact argv, hostile names stay one element, acts on local kegs")
+    func linkArgv() {
+        #expect(BrewCommand.link(name: "deno").arguments == ["link", "deno"])
+        #expect(BrewCommand.link(name: "deno").isMutating)
+        #expect(BrewCommand.link(name: "deno").touchesPackages == false)
+        let hostile = "deno; rm -rf /"
+        #expect(BrewCommand.link(name: hostile).arguments == ["link", hostile])
     }
 
     @Test("cleanup is exactly one word — no prune, no scrub, no names can ever ride along")
@@ -214,7 +228,7 @@ struct BrewCommandTests {
         // join the ban so no future case can widen cleanup's blast radius.
         let forbidden = ["remove", "rm", "pin", "unpin", "zap", "--force",
                          "--ignore-dependencies", "kill", "restart", "--all", "--file",
-                         "--prune", "--scrub", "-s",
+                         "--prune", "--scrub", "-s", "--overwrite", "--dry-run",
                          "--sudo-service-user", "--custom-remote", "--repair", "--eval-all"]
         for command in Self.everyCommand {
             for argument in command.arguments {
@@ -281,6 +295,12 @@ struct BrewCommandTests {
                 #expect(arguments == ["cleanup"])
             case .doctor:
                 #expect(arguments == ["doctor", "--json"])
+            case .link:
+                // Two tokens, no flags — `--overwrite` (deletes files) and `--force`
+                // (keg-only override) must stay unrepresentable.
+                #expect(arguments.count == 2, "\(arguments)")
+                #expect(arguments.first == "link")
+                #expect(!arguments.contains { $0.hasPrefix("-") })
             }
         }
     }

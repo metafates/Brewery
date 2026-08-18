@@ -282,12 +282,12 @@ private struct StorageSummaryBar: View {
             Button("Clean Up…") { confirming = true }
                 .disabled(model.cleanupPending)
                 .help("Removes files Homebrew no longer needs")
-                .confirmationDialog("Clean up Homebrew files?",
+                .confirmationDialog(CleanupDialog.title,
                                     isPresented: $confirming, titleVisibility: .visible) {
-                    Button("Clean Up", role: .destructive) { model.cleanUp() }
+                    Button(CleanupDialog.confirm, role: .destructive) { model.cleanUp() }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("Removes old versions of installed packages, stale downloads, and logs older than 30 days. Pinned and currently linked versions are kept.")
+                    Text(CleanupDialog.message)
                 }
         }
         .reportBarChrome()
@@ -665,6 +665,10 @@ struct ContentView: View {
         // change has already fired by the time this runs, so the reset guard has passed.
         .onChange(of: model.openTapRequests) {
             selectedTap = model.requestedTap
+        }
+        // v21 — Checkup's Show in Taps lands on the *list*: Remove Tap… lives on its rows.
+        .onChange(of: model.showTapListRequests) {
+            selectedTap = nil
         }
         .onChange(of: model.failureToPresent?.id) { _, failure in
             guard failure != nil else { return }

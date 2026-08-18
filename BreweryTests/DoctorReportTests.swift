@@ -95,3 +95,54 @@ struct DoctorReportTests {
         #expect(DoctorReport.parse(pretty) != nil)
     }
 }
+
+@Suite("Remedy classification (v21)")
+struct RemedyTests {
+
+    @Test("brew link with exactly one clean name goes native; anything else stays a chip")
+    func link() {
+        #expect(Remedy.classify("brew link mysql") == .link(formula: "mysql"))
+        #expect(Remedy.classify("brew link lld@19") == .link(formula: "lld@19"))
+        #expect(Remedy.classify("brew link mysql --force") == .chip(command: "brew link mysql --force"))
+        #expect(Remedy.classify("brew link --overwrite mysql") == .chip(command: "brew link --overwrite mysql"))
+        #expect(Remedy.classify("brew link a b") == .chip(command: "brew link a b"))
+        #expect(Remedy.classify("brew link <formula>") == .chip(command: "brew link <formula>"))
+    }
+
+    @Test("bare cleanup goes native; any widening flag stays a chip")
+    func cleanup() {
+        #expect(Remedy.classify("brew cleanup") == .cleanup)
+        #expect(Remedy.classify("brew cleanup -s") == .chip(command: "brew cleanup -s"))
+        #expect(Remedy.classify("brew cleanup wget") == .chip(command: "brew cleanup wget"))
+    }
+
+    @Test("untap accepts one or many owner/repo taps, nothing else")
+    func untap() {
+        #expect(Remedy.classify("brew untap homebrew/core") == .untap(taps: ["homebrew/core"]))
+        #expect(Remedy.classify("brew untap a/b c/d") == .untap(taps: ["a/b", "c/d"]))
+        #expect(Remedy.classify("brew untap --force a/b") == .chip(command: "brew untap --force a/b"))
+        #expect(Remedy.classify("brew untap notatap") == .chip(command: "brew untap notatap"))
+    }
+
+    @Test("install/upgrade tolerate only --cask; names shorten tap qualification")
+    func packages() {
+        #expect(Remedy.classify("brew install git") == .packages(names: ["git"], isCask: false))
+        #expect(Remedy.classify("brew install --cask foo") == .packages(names: ["foo"], isCask: true))
+        #expect(Remedy.classify("brew upgrade foo bar") == .packages(names: ["foo", "bar"], isCask: false))
+        #expect(Remedy.classify("brew install user/tap/gum") == .packages(names: ["gum"], isCask: false))
+        #expect(Remedy.classify("brew install --force foo") == .chip(command: "brew install --force foo"))
+        // The linux gcc check's shape: reinstall is not install — never simplified.
+        #expect(Remedy.classify("brew reinstall --cask --force megacmd") == .chip(command: "brew reinstall --cask --force megacmd"))
+    }
+
+    @Test("shell, sudo, git and redirects never go native")
+    func shell() {
+        for command in ["sudo rm -rf /Library/Developer",
+                        "git -C \"/opt/homebrew\" stash -u && git clean -d -f",
+                        "echo 'export PATH' >> ~/.zshrc",
+                        "sudo xcodebuild -license",
+                        "xcode-select --install"] {
+            #expect(Remedy.classify(command) == .chip(command: command))
+        }
+    }
+}

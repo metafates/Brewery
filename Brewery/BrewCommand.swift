@@ -53,6 +53,15 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     // it only for casks whose receipt records a zap stanza.
     case uninstall(name: String, cask: Bool)
     case zap(name: String)
+    // v21 — the one doctor remediation the app runs itself. Named but non-destructive: bare
+    // `brew link` creates symlinks, refuses on conflicting real files and rolls back what it
+    // made (keg.rb:574-576), and keg-only formulae never reach it — the unlinked-kegs check
+    // excludes them (diagnostic.rb:1137) and brew refuses them anyway without the
+    // unrepresentable `--force`. `--overwrite` (deletes conflicting files) is banned by the
+    // tripwire. Known caveat, recorded: cmd/link.rb runs unlink_link_overwrite_formulae,
+    // which can unlink formulae named in this formula's link_overwrite stanza — reversible
+    // via `brew link`. Names come verbatim from brew's own remediation commands.
+    case link(name: String)
     // v19 — a read-only diagnostic, never queued: it runs inline like the state probes. The
     // hidden --json switch (cmd/doctor.rb:25-27) yields structured findings; the parser keeps
     // a raw-text fallback in case the flag ever changes shape. Exit 1 means findings exist,
@@ -107,6 +116,8 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["uninstall", BrewCommand.kindFlag(cask: cask), name]
         case let .zap(name):
             ["uninstall", "--cask", "--zap", name]
+        case let .link(name):
+            ["link", name]
         case .doctor:
             ["doctor", "--json"]
         case .cleanup:
@@ -122,7 +133,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         case .listFormulae, .listCasks, .outdated, .servicesList, .doctor:
             false
-        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap, .cleanup:
+        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap, .cleanup, .link:
             true
         }
     }
@@ -136,7 +147,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         // `brew update` first. uninstall/zap stay in the default (true), unlike autoremove:
         // cask uninstall and zap dispatch stanzas from the *current* recipe, so fresh metadata
         // keeps what brew executes aligned with what the pane showed.
-        case .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .cleanup: false
+        case .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .cleanup, .link: false
         default: isMutating
         }
     }

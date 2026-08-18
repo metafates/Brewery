@@ -1225,7 +1225,8 @@ nonisolated enum CaveatFormat {
     }
 
     /// The charset real package names use (`lld@19`, `gtk+3`, `python-matplotlib`).
-    private static func isPackageName(_ name: String) -> Bool {
+    /// Non-private since v21: the doctor remediation classifier applies the same rule.
+    static func isPackageName(_ name: String) -> Bool {
         guard let first = name.first, first.isLetter || first.isNumber else { return false }
         return name.allSatisfy { $0.isLetter || $0.isNumber || "@._+-".contains($0) }
     }

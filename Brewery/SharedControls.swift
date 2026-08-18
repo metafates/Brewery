@@ -108,6 +108,14 @@ struct CopyButton: View {
     }
 }
 
+/// v21 — the cleanup confirmation's copy, one home for its two surfaces (the Storage bar and
+/// the Checkup remediation button) so they cannot drift.
+nonisolated enum CleanupDialog {
+    static let title = "Clean up Homebrew files?"
+    static let confirm = "Clean Up"
+    static let message = "Removes old versions of installed packages, stale downloads, and logs older than 30 days. Pinned and currently linked versions are kept."
+}
+
 /// One command run — meant to be executed, so it comes with a copy button. Copyable, never
 /// executable: arbitrary command strings stay outside the whitelist by construction.
 struct CodeChip: View {

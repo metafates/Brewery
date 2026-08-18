@@ -126,6 +126,11 @@ final class AppModel {
     private(set) var openTapRequests = 0
     private(set) var requestedTap: String?
 
+    /// v21 — the Checkup report's "Show in Taps": the tap *list*, not a tap page — Remove
+    /// Tap… lives on the list row's context menu, and stranding the user one level below the
+    /// affordance the finding points at would be a dead end.
+    private(set) var showTapListRequests = 0
+
     let client = BrewClient()
 
     private var catalogFetchedAt: Date?
@@ -658,7 +663,7 @@ final class AppModel {
         case let .install(name, _), let .upgrade(name, _),
              let .serviceStart(name), let .serviceStop(name),
              let .tap(name), let .untap(name), let .trustTap(name), let .untrustTap(name),
-             let .uninstall(name, _), let .zap(name):
+             let .uninstall(name, _), let .zap(name), let .link(name):
             guard !name.isEmpty, !name.hasPrefix("-") else { return }
         default:
             // Argument-less commands only. A new case that carries a name MUST join the list
@@ -820,6 +825,19 @@ final class AppModel {
             checkupOutcome = .failed
         }
         checkupRanAt = .now
+    }
+
+    /// v21 — the one doctor remediation the app runs itself. No dialog: link is non-destructive
+    /// and reversible — the service-toggle rule, not the removal rule. The targetID keeps the
+    /// one busy grammar (card and pane spin while it runs).
+    func link(_ name: String) {
+        enqueue(.link(name: name), title: "Linking \(name)",
+                targetID: Package.packageID(kind: .formula, name: BrewClient.shortName(name)))
+    }
+
+    /// The last link operation for a formula — the Link button's three states read from it.
+    func linkOperation(for name: String) -> BrewOperation? {
+        operations.last { $0.command == .link(name: name) }
     }
 
     /// A finding's `affects` names resolved against the catalog — the v17 caveat-mention rule:
@@ -1166,6 +1184,12 @@ final class AppModel {
         selection = .taps
         requestedTap = tap
         openTapRequests += 1
+    }
+
+    /// v21 — Checkup's "Show in Taps": the list, where Remove Tap… lives.
+    func requestShowTapList() {
+        selection = .taps
+        showTapListRequests += 1
     }
 }
 

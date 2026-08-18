@@ -127,8 +127,37 @@ struct CheckupView: View {
         }
     }
 
+    /// v21 — the box reads top-down as brew wrote it: the problem, the prose that introduces
+    /// any commands, the commands the app can only offer for copying, then everything it can
+    /// do natively — Link rows, package rows, the Clean Up / Show in Taps buttons — and links.
     private func findingBox(_ finding: DoctorReport.Finding) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let remedies = (finding.remediation?.commands ?? []).map(Remedy.classify)
+        let chips = remedies.compactMap { if case .chip(let command) = $0 { command } else { nil } }
+        // A package already shown with a Link button must not repeat as a plain affects row.
+        var seen: Set<Package.ID> = []
+        let linkRows = remedies.compactMap { remedy -> (name: String, package: Package?)? in
+            guard case .link(let formula) = remedy else { return nil }
+            let id = Package.packageID(kind: .formula, name: BrewClient.shortName(formula))
+            seen.insert(id)
+            return (formula, model.package(for: id))
+        }
+        let packageRows = remedies.flatMap { remedy -> [Package] in
+            guard case .packages(let names, let isCask) = remedy else { return [] }
+            return names.compactMap { name in
+                let candidates = isCask
+                    ? [Package.packageID(kind: .cask, name: name)]
+                    : [Package.packageID(kind: .formula, name: name),
+                       Package.packageID(kind: .cask, name: name)]
+                guard let found = candidates.lazy.compactMap(model.package(for:)).first,
+                      seen.insert(found.id).inserted else { return nil }
+                return found
+            }
+        }
+        let offersCleanup = remedies.contains(.cleanup)
+        let offersTaps = remedies.contains { if case .untap = $0 { true } else { false } }
+        let affected = model.resolvedAffected(finding.affects ?? []).filter { !seen.contains($0.id) }
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
                     // The Attention rule: warnings wear the banner's colour, not the tint.
@@ -140,25 +169,67 @@ struct CheckupView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let commands = finding.remediation?.commands, !commands.isEmpty {
-                ForEach(commands, id: \.self) { command in
-                    CodeChip(code: command)
-                }
-            }
-            if let remedy = finding.remediation?.text, !remedy.isEmpty {
+            // The prose introduces the commands, so it hides only when every command went
+            // native — the action rows then say it themselves. A text-only remediation (the
+            // untrusted-taps finding) keeps its prose: the text is all brew offered.
+            if !chips.isEmpty || remedies.isEmpty, let remedy = finding.remediation?.text, !remedy.isEmpty {
                 Text(remedy)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            ForEach(chips, id: \.self) { command in
+                CodeChip(code: command)
+            }
 
-            let affected = model.resolvedAffected(finding.affects ?? [])
+            ForEach(linkRows, id: \.name) { row in
+                if let package = row.package {
+                    HStack(spacing: 8) {
+                        RelatedRow(package: package,
+                                   version: model.installed[package.id]?.versions.last) {
+                            model.select(package)
+                        }
+                        linkControl(row.name)
+                    }
+                } else {
+                    // Not in the catalog or overlays — the button still works; brew is the
+                    // arbiter either way.
+                    HStack(spacing: 8) {
+                        Text(row.name)
+                            .font(.subheadline)
+                        Spacer(minLength: 8)
+                        linkControl(row.name)
+                    }
+                    .padding(.horizontal, 6)
+                }
+            }
+
+            ForEach(packageRows) { package in
+                RelatedRow(package: package,
+                           version: model.installed[package.id]?.versions.last) {
+                    model.select(package)
+                }
+            }
+
             ForEach(affected) { package in
                 RelatedRow(package: package,
                            version: model.installed[package.id]?.versions.last) {
                     model.select(package)
                 }
+            }
+
+            if offersCleanup || offersTaps {
+                HStack(spacing: 8) {
+                    if offersCleanup { cleanupButton }
+                    if offersTaps {
+                        Button("Show in Taps") { model.requestShowTapList() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help("Taps are removed from the Taps list")
+                    }
+                }
+                .padding(.top, 2)
             }
 
             ForEach(finding.links ?? [], id: \.self) { link in
@@ -175,6 +246,47 @@ struct CheckupView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(.separator, lineWidth: 1)
         }
+    }
+
+    /// The Link button's three states, read from the queue: idle, busy, done. No dialog —
+    /// link is non-destructive and reversible, the service-toggle rule.
+    @ViewBuilder private func linkControl(_ name: String) -> some View {
+        let operation = model.linkOperation(for: name)
+        if let operation, !operation.isFinished || operation.awaitingRefresh {
+            ProgressView()
+                .controlSize(.small)
+        } else if operation?.state == .succeeded {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark")
+                Text("Linked")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+        } else {
+            Button("Link") { model.link(name) }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Runs brew link \(name)")
+                .accessibilityLabel("Link \(name)")
+        }
+    }
+
+    @State private var confirmingCleanup = false
+
+    private var cleanupButton: some View {
+        Button("Clean Up…") { confirmingCleanup = true }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(model.cleanupPending)
+            .help("Removes files Homebrew no longer needs")
+            .confirmationDialog(CleanupDialog.title,
+                                isPresented: $confirmingCleanup, titleVisibility: .visible) {
+                Button(CleanupDialog.confirm, role: .destructive) { model.cleanUp() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(CleanupDialog.message)
+            }
     }
 
     // MARK: - Pieces
