@@ -773,10 +773,12 @@ private struct DetailPage: View {
     /// A plain section like Commands and Dependencies, not a `GroupBox`: the box indented its
     /// label off the shared margin, and its container doubled the code blocks' own chips.
     private func caveats(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let blocks = CaveatFormat.blocks(of: text)
+        let mentioned = mentionedPackages(in: blocks)
+        return VStack(alignment: .leading, spacing: 8) {
             sectionTitle("Caveats")
 
-            ForEach(Array(CaveatFormat.blocks(of: text).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 switch block {
                 case .text(let paragraph):
                     // Native Text (v9): it renders the code chips and opens the link runs on
@@ -789,11 +791,47 @@ private struct DetailPage: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 case .code(let code):
-                    codeBlock(code)
+                    // v17 — a `brew install` the caveat asks for is a package this app can show:
+                    // the catalog-resolved mentions ride directly under their block as the same
+                    // navigation rows dependencies use. Install stays on the pushed page, where
+                    // the one prominent Install button (and its consent flow) already lives.
+                    VStack(alignment: .leading, spacing: 2) {
+                        codeBlock(code)
+                        ForEach(mentioned[index] ?? []) { item in
+                            RelatedRow(package: item, version: model.installed[item.id]?.versions.last) {
+                                onPush(.package(item))
+                            }
+                        }
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Catalog resolution for the caveat's `brew install` mentions, keyed by block index.
+    /// A bare name tries formula then cask — brew's own resolution order for `brew install` —
+    /// while `--cask` pins the kind. The page's own package never gets a row (amazon-music's
+    /// caveat reinstalls itself), but the filter is by full ID: the fontforge *formula*
+    /// legitimately points at the fontforge *cask*. Unresolvable names (untapped taps, typos)
+    /// stay plain text in the block, the same rule conflicts follow.
+    private func mentionedPackages(in blocks: [CaveatFormat.Block]) -> [Int: [Package]] {
+        var seen: Set<Package.ID> = [package.id]
+        var result: [Int: [Package]] = [:]
+        for (index, block) in blocks.enumerated() {
+            guard case .code(let code) = block else { continue }
+            let rows = CaveatFormat.installMentions(in: code).compactMap { mention -> Package? in
+                let candidates = mention.isCask
+                    ? [Package.packageID(kind: .cask, name: mention.name)]
+                    : [Package.packageID(kind: .formula, name: mention.name),
+                       Package.packageID(kind: .cask, name: mention.name)]
+                guard let found = candidates.lazy.compactMap(model.package(for:)).first,
+                      seen.insert(found.id).inserted else { return nil }
+                return found
+            }
+            if !rows.isEmpty { result[index] = rows }
+        }
+        return result
     }
 
     /// One indented run — commands meant to be executed, so they come with a copy button.
@@ -1159,6 +1197,53 @@ nonisolated enum CaveatFormat {
         flushText()
         flushCode()
         return blocks
+    }
+
+    /// A package a `brew install` command inside a code block points at. Pure text — resolving
+    /// the name against the catalog (and dropping the page's own package) is the view's job.
+    struct InstallMention: Equatable {
+        let name: String   // short name — a tap-qualified spelling keeps only its last component
+        let isCask: Bool   // an explicit --cask rode the same command
+    }
+
+    /// The `brew install` commands inside one code block, reduced to the packages they mention.
+    /// Line-based like `blocks(of:)`: other brew verbs, non-brew commands and the prose-ish
+    /// labels some blocks embed contribute nothing. `--cask` is honored in any position; other
+    /// flags are skipped, and tokens that aren't plausible package names (placeholders like
+    /// `<formula>`, stray continuations) are dropped.
+    static func installMentions(in code: String) -> [InstallMention] {
+        var mentions: [InstallMention] = []
+        for line in code.split(separator: "\n") {
+            // No real caveat chains commands today, but `&&`/`;`/`|` are cheap to honor.
+            for segment in line.split(whereSeparator: { ";&|".contains($0) }) {
+                var tokens = segment.split(whereSeparator: \.isWhitespace)[...]
+                while let first = tokens.first, first == "$" || first == "sudo" {
+                    tokens = tokens.dropFirst()
+                }
+                guard tokens.first == "brew", tokens.dropFirst().first == "install" else { continue }
+
+                var isCask = false
+                var names: [String] = []
+                for token in tokens.dropFirst(2) {
+                    if token.hasPrefix("-") {
+                        if token == "--cask" { isCask = true }
+                        continue
+                    }
+                    names.append(String(token.split(separator: "/").last ?? token))
+                }
+                for name in names where isPackageName(name) {
+                    let mention = InstallMention(name: name, isCask: isCask)
+                    if !mentions.contains(mention) { mentions.append(mention) }
+                }
+            }
+        }
+        return mentions
+    }
+
+    /// The charset real package names use (`lld@19`, `gtk+3`, `python-matplotlib`).
+    private static func isPackageName(_ name: String) -> Bool {
+        guard let first = name.first, first.isLetter || first.isNumber else { return false }
+        return name.allSatisfy { $0.isLetter || $0.isNumber || "@._+-".contains($0) }
     }
 
     /// A prose paragraph, dressed: inline Markdown (inline-only — full parsing would collapse the
