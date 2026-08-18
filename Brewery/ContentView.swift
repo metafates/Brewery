@@ -219,8 +219,9 @@ private struct AttentionSummaryBar: View {
 }
 
 /// v18 — the report bars' shared chrome, extracted at the third bar as two verbatim copies
-/// became three. v20 — the bars ride as the report lists' first row (inset-stripped), so the
-/// horizontal margin matches the inset list's content edge rather than the old grid's 16.
+/// became three. v22 — no margins of its own: the bar rides in an ordinary list-row slot, so
+/// the list's insets are the gutter and bar edges agree with row content by construction
+/// (the containers add margins where a list isn't providing them).
 private struct ReportBarChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -230,8 +231,6 @@ private struct ReportBarChrome: ViewModifier {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(.separator, lineWidth: 1)
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 12)
     }
 }
 
@@ -1492,12 +1491,7 @@ struct RefreshVeil: ViewModifier {
             .disabled(active)
             .overlay {
                 if active {
-                    Label("Checking for updates…", systemImage: "arrow.triangle.2.circlepath")
-                        .symbolEffect(.rotate, options: .repeating, isActive: !reduceMotion)
-                        .font(.callout.weight(.medium))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .glassEffect()
+                    WorkingCapsule(text: "Checking for updates…")
                         .transition(reduceMotion ? AnyTransition.opacity
                                                 : AnyTransition(.blurReplace))
                 }

@@ -108,6 +108,25 @@ struct CopyButton: View {
     }
 }
 
+/// v22 — the app's one "working" chip: the rotating-arrows label in a glass capsule that the
+/// refresh veil committed. One component, one spinner grammar — the Checkup page briefly grew
+/// a stock starburst spinner beside it, and two working styles read as two apps.
+struct WorkingCapsule: View {
+    let text: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Label(text, systemImage: "arrow.triangle.2.circlepath")
+            .symbolEffect(.rotate, options: .repeating, isActive: !reduceMotion)
+            .font(.callout.weight(.medium))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .glassEffect()
+            .accessibilityElement(children: .combine)
+    }
+}
+
 /// v21 — the cleanup confirmation's copy, one home for its two surfaces (the Storage bar and
 /// the Checkup remediation button) so they cannot drift.
 nonisolated enum CleanupDialog {

@@ -15,7 +15,9 @@ nonisolated enum ReportKind {
 /// this item's state and what does it cost me" — the Services rule generalized — and iPhone
 /// Storage's grammar answers it: size-sorted rows with a per-item value. Cards answered
 /// "should I install this?", the wrong question for packages that are all installed.
-/// Rows select into the inspector; the section's summary bar rides as the list's first row.
+/// v22 — selection is the List's own (`List(selection:)` + `.tag`): the system draws the
+/// rounded inset highlight, arrow keys work, and the rows share one gutter with the summary
+/// bar, which rides in an ordinary row slot with its chrome margin removed.
 struct ReportListView<Header: View>: View {
     @Environment(AppModel.self) private var model
     let hits: [SearchHit]
@@ -36,29 +38,41 @@ struct ReportListView<Header: View>: View {
             if hits.isEmpty {
                 VStack(spacing: 0) {
                     header
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
                     emptyState
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                List {
-                    // The bar carries its own chrome and margins; the row slot contributes none.
+                List(selection: selection) {
+                    // An ordinary row slot: the list's own insets are the shared gutter, so the
+                    // bar's edges and the rows' content agree by construction.
                     header
-                        .listRowInsets(EdgeInsets())
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
+                        .selectionDisabled()
 
                     ForEach(sortedHits) { hit in
                         ReportRow(package: hit.package,
                                   kind: kind,
-                                  bytes: bytes[hit.package.id],
-                                  isSelected: hit.package.id == selectedID,
-                                  onSelect: { onSelect(hit.package) })
+                                  bytes: bytes[hit.package.id])
+                            .tag(hit.package.id)
                     }
                 }
                 .listStyle(.inset)
             }
         }
         .task(id: measureKey) { await measure() }
+    }
+
+    /// The system draws the highlight; selecting routes through the app's one selection funnel.
+    /// Deselection (⎋) is ignored — the inspector, not the list, owns "nothing is selected".
+    private var selection: Binding<Package.ID?> {
+        Binding(get: { selectedID },
+                set: { id in
+                    guard let id, let hit = hits.first(where: { $0.package.id == id }) else { return }
+                    onSelect(hit.package)
+                })
     }
 
     /// Browse order is largest-first — the report's own question is "where are the bytes" —
@@ -124,48 +138,43 @@ struct ReportListView<Header: View>: View {
     }
 }
 
-/// One report row: ServiceRow's chrome — icon, title, a state line, a trailing value — with
-/// the cards' context-menu subset (the v9 rule: support context menus consistently).
+/// One report row: 32 pt icon, title over a one-line state, a trailing value. Selection and
+/// highlight are the List's; the row carries the cards' context-menu subset (the v9 rule:
+/// support context menus consistently).
 private struct ReportRow: View {
     let package: Package
     let kind: ReportKind
     let bytes: Int64?
-    let isSelected: Bool
-    let onSelect: () -> Void
 
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 12) {
-                PackageIconView(package: package, size: 32)
+        HStack(spacing: 12) {
+            PackageIconView(package: package, size: 32)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(package.title)
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                if let trailing {
-                    Text(trailing)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(package.title)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
-            .contentShape(.rect)
+
+            Spacer(minLength: 8)
+
+            if let trailing {
+                Text(trailing)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Shows package details")
-        .padding(.vertical, 3)
-        .listRowBackground(Rectangle().fill(isSelected ? AnyShapeStyle(.tint.quaternary)
-                                                       : AnyShapeStyle(.clear)))
+        .padding(.vertical, 4)
+        // Separators hang from the title, not the icon — the platform's list geometry.
+        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 44 }
+        .accessibilityElement(children: .combine)
         .contextMenu {
             if let url = package.homepageURL {
                 Link("Open Homepage", destination: url)

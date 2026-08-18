@@ -49,15 +49,10 @@ struct CheckupView: View {
         }
     }
 
+    /// The app's one working grammar — the refresh veil's capsule, not a second spinner style.
     private var running: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-                .controlSize(.large)
-            Text("Checking…")
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
+        WorkingCapsule(text: "Checking…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var clean: some View {
