@@ -464,7 +464,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     }
 }
 
-nonisolated struct InstalledInfo: Equatable, Hashable {
+nonisolated struct InstalledInfo: Equatable, Hashable, Codable {
     var versions: [String]
     /// From the install receipt. A missing receipt means `true`: never hide something just
     /// because we could not explain it.
@@ -478,15 +478,15 @@ nonisolated struct InstalledInfo: Equatable, Hashable {
     var tap: String? = nil
     /// v10 — `poured_from_bottle` inverted; brew never autoremoves a from-source build.
     var builtFromSource: Bool = false
-    /// v11 — from the receipt's `time`, for the Date Installed sort. Never persisted, so no
-    /// cache versioning applies.
+    /// v11 — from the receipt's `time`, for the Date Installed sort. Rides the v16 state
+    /// snapshot (`StateSnapshot.currentVersion` governs), never the catalog cache.
     var installedAt: Date? = nil
     /// v15 — casks only: the receipt's `uninstall_artifacts` names a `zap` stanza. Gates the
     /// dialog's second destructive tier; a stanza-less zap adds nothing over plain uninstall.
     var hasZap: Bool = false
 }
 
-nonisolated struct OutdatedInfo: Equatable, Hashable {
+nonisolated struct OutdatedInfo: Equatable, Hashable, Codable {
     var installed: [String]
     var current: String
     var pinned: Bool
@@ -494,7 +494,7 @@ nonisolated struct OutdatedInfo: Equatable, Hashable {
 
 /// v5 — brew's seven service states, verbatim; a string brew invents later lands in `.other`
 /// rather than failing the parse.
-nonisolated enum ServiceHealth: String, Equatable {
+nonisolated enum ServiceHealth: String, Equatable, Codable {
     case started, stopped, none, scheduled, error, unknown, other
 
     /// Loaded in launchd — what the toggle means by "on". `stopped` is loaded-with-exit-0
@@ -507,7 +507,7 @@ nonisolated enum ServiceHealth: String, Equatable {
     }
 }
 
-nonisolated struct ServiceStatus: Equatable {
+nonisolated struct ServiceStatus: Equatable, Codable {
     var health: ServiceHealth
     var exitCode: Int?
 }

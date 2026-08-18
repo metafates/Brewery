@@ -33,8 +33,10 @@ final class AppModel {
     private var catalogLoading = false
     var catalogFailed = false
 
-    /// Overlays are keyed by `Package.ID` (`kind:shortname`) and never persisted — they are
-    /// under a second to re-query.
+    /// Overlays are keyed by `Package.ID` (`kind:shortname`). v16 — persisted as a last-known
+    /// snapshot (`StateSnapshot`) and restored at bootstrap, so launch shows the previous
+    /// session's state for the second the probes take instead of a grid of Install buttons;
+    /// the probes then correct it silently.
     var installed: [Package.ID: InstalledInfo] = [:]
     var outdated: [Package.ID: OutdatedInfo] = [:]
 
@@ -182,6 +184,15 @@ final class AppModel {
     func bootstrap() async {
         guard !didBootstrap else { return }
         didBootstrap = true
+
+        // v16 — last session's overlays before anything else, so the first frame shows
+        // last-known install state instead of Install buttons; the probes below correct it.
+        if let snapshot = StateSnapshot.load() {
+            installed = snapshot.installed
+            outdated = snapshot.outdated
+            serviceStatuses = snapshot.serviceStatuses
+            dependents = Receipts.invertDependents(snapshot.installed)
+        }
 
         let cache = CatalogStore.loadCache()
         if let cache {
@@ -348,6 +359,9 @@ final class AppModel {
             outdated = [:]
             dependents = [:]
             serviceStatuses = [:]
+            // Persisted too: brew gone is a state, not an error — the next launch must not
+            // resurrect a graveyard of Installed badges.
+            persistStateSnapshot()
             return
         }
 
@@ -393,6 +407,17 @@ final class AppModel {
             tapScan = scan
             composeCatalog()
         }
+
+        // v16 — persist what was just published; the next launch's first frame reads it back.
+        persistStateSnapshot()
+    }
+
+    /// Fire-and-forget by design: the write is off the refresh critical path, and a failed one
+    /// only costs the next launch its head start.
+    private func persistStateSnapshot() {
+        let snapshot = StateSnapshot(installed: installed, outdated: outdated,
+                                     serviceStatuses: serviceStatuses)
+        Task { await snapshot.save() }
     }
 
     /// Folds each keg's install receipt into its overlay entry. Nothing to read without a prefix,
