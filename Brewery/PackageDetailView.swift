@@ -409,13 +409,13 @@ private struct DetailPage: View {
                 // bordered so the one filled button in the pane is always the state-changing one.
                 openAction
                 Spacer(minLength: 0)
-                // v15 — at the trailing edge, the flexible space between it and the
-                // state-changing cluster: destructive controls sit where they won't be hit
-                // reflexively (HIG Alerts). Bordered, never prominent; the ellipsis promises
-                // the dialog. Installed *and* outdated — an outdated package is an installed
-                // one. Pinned disables it up front: brew's pinned refusal exits 0 having
-                // removed nothing.
-                uninstallAction
+                // v15.1 — secondary actions behind a quiet ellipsis at the trailing edge
+                // (HIG Pull-down buttons: "a More pull-down button presents items that
+                // don't need prominent positions"). A bordered Uninstall… shipped first
+                // and read as Open's peer — two equal buttons where one destroys is a
+                // hierarchy lie; the App Store product page keeps delete off the row for
+                // the same reason. The menu mirrors the card's context menu.
+                moreMenu
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -666,20 +666,34 @@ private struct DetailPage: View {
         }
     }
 
-    /// v15 — the Uninstall trigger, shown while the package is on disk and not mid-operation.
-    @ViewBuilder
-    private var uninstallAction: some View {
-        switch model.status(for: package) {
-        case .installed, .outdated:
-            Button("Uninstall…") { model.uninstall(package) }
-                .disabled(isPinned)
-                .help(isPinned
-                      ? "\(package.title) is pinned, so Brewery leaves it alone."
-                      : "Removes \(package.title) from your Mac")
-                .accessibilityLabel("Uninstall \(package.title)")
-        case .busy, .notInstalled:
-            EmptyView()
+    /// v15.1 — the card context menu's twin in the pane's main interface: Copy Name for every
+    /// package, Uninstall… while it is on disk and not pinned or mid-operation — destructive
+    /// last, behind a separator (the Delete-last grammar); absent, not dimmed. The dialog the
+    /// item opens is the confirm-intent step HIG Pull-down buttons asks for.
+    private var moreMenu: some View {
+        Menu {
+            Button("Copy Name") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(package.name, forType: .string)
+            }
+            switch model.status(for: package) {
+            case .installed, .outdated:
+                if !isPinned {
+                    Divider()
+                    Button("Uninstall…", role: .destructive) { model.uninstall(package) }
+                }
+            case .busy, .notInstalled:
+                EmptyView()
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis.circle")
+                .labelStyle(.iconOnly)
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More actions")
+        .accessibilityLabel("More actions for \(package.title)")
     }
 
     private var installHelp: String {
