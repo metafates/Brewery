@@ -181,13 +181,35 @@ final class BrewClient {
             home: FileManager.default.homeDirectoryForCurrentUser))
     }
 
-    /// The `api/internal` directory of the cache brew will use for the processes *we* spawn:
-    /// the inherited `HOMEBREW_CACHE` override if the GUI environment carries one, else the
-    /// macOS default (utils/os.sh:55).
-    nonisolated static func apiDirectory(environment: [String: String], home: URL) -> URL {
-        let cache = environment["HOMEBREW_CACHE"].map { URL(filePath: $0) }
+    /// The cache directory brew will use for the processes *we* spawn: the inherited
+    /// `HOMEBREW_CACHE` override if the GUI environment carries one, else the macOS default
+    /// (utils/os.sh:55). What `brew cleanup` sweeps is this directory — measuring anything
+    /// else would inventory files cleanup will never touch.
+    nonisolated static func cacheDirectory(environment: [String: String], home: URL) -> URL {
+        environment["HOMEBREW_CACHE"].map { URL(filePath: $0) }
             ?? home.appending(path: "Library/Caches/Homebrew")
-        return cache.appending(path: "api/internal")
+    }
+
+    /// Same rule for logs (utils/os.sh:56, `HOMEBREW_LOGS` override honored). Cleanup removes
+    /// log subdirectories older than 30 days (cleanup.rb:541 — min(days, 30)).
+    nonisolated static func logsDirectory(environment: [String: String], home: URL) -> URL {
+        environment["HOMEBREW_LOGS"].map { URL(filePath: $0) }
+            ?? home.appending(path: "Library/Logs/Homebrew")
+    }
+
+    /// The `api/internal` directory of the cache brew will use for the processes *we* spawn.
+    nonisolated static func apiDirectory(environment: [String: String], home: URL) -> URL {
+        cacheDirectory(environment: environment, home: home).appending(path: "api/internal")
+    }
+
+    /// When brew last ran a full cleanup: the mtime of the `.cleaned` marker (cleanup.rb:254).
+    /// Both the periodic install-time clean and an explicit no-args `brew cleanup` touch it
+    /// (cleanup.rb:427), so our own Clean Up refreshes this too. nil — never cleaned.
+    func cleanedDate() -> Date? {
+        let marker = Self.cacheDirectory(
+            environment: ProcessInfo.processInfo.environment,
+            home: FileManager.default.homeDirectoryForCurrentUser).appending(path: ".cleaned")
+        return try? marker.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 
     /// brew 6 answers everything from one payload per arch tag (`packages.<tag>.jws.json`,

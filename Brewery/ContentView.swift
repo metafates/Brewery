@@ -30,11 +30,11 @@ struct PackageKindsTip: Tip {
 /// empty states, and a titled sidebar group is the platform's container for exactly that (HIG
 /// *Sidebars*: succinct, descriptive labels title each group).
 nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
-    case discover, installed, outdated, services, taps, orphans, attention
+    case discover, installed, outdated, services, taps, orphans, attention, storage
 
     /// The sidebar's two groups, in row order.
     static let library: [SidebarSection] = [.discover, .installed, .outdated, .services, .taps]
-    static let reports: [SidebarSection] = [.orphans, .attention]
+    static let reports: [SidebarSection] = [.orphans, .attention, .storage]
 
     var id: Self { self }
 
@@ -47,6 +47,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .taps: "Taps"
         case .orphans: "Orphans"
         case .attention: "Attention"
+        case .storage: "Storage"
         }
     }
 
@@ -62,6 +63,8 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         // Each report wears its own summary bar's glyph — the row and the page say the same thing.
         case .orphans: "arrow.3.trianglepath"
         case .attention: "exclamationmark.triangle"
+        // The detail pane's own "on disk" glyph — the row and the stat say the same thing.
+        case .storage: "internaldrive"
         }
     }
 
@@ -75,6 +78,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .taps: "5"
         case .orphans: "6"
         case .attention: "7"
+        case .storage: "8"
         }
     }
 
@@ -87,6 +91,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .taps: "Search Taps"
         case .orphans: "Search Orphans"
         case .attention: "Search Attention"
+        case .storage: "Search Storage"
         }
     }
 
@@ -101,6 +106,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .orphans: "No orphaned dependencies"
         // Software Update's positive-empty grammar: the good outcome, stated plainly.
         case .attention: "Nothing needs attention"
+        case .storage: "No old versions on disk"
         }
     }
 }
@@ -154,16 +160,7 @@ private struct OrphanSummaryBar: View {
                         Text("These are dependencies nothing needs anymore. You can install any of them again later.")
                     }
             }
-            .padding(12)
-            .background(.background.secondary, in: .rect(cornerRadius: 10))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(.separator, lineWidth: 1)
-            }
-            // The grid pads itself (16); the header slot doesn't, and an edge-to-edge bar
-            // read as a defect. Top only — the grid's own padding provides the gap below.
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
+            .reportBarChrome()
             .task(id: ids) {
                 bytes = nil
                 guard let prefix = model.client.prefix else { return }
@@ -209,6 +206,18 @@ private struct AttentionSummaryBar: View {
 
                 Spacer(minLength: 12)
             }
+            .reportBarChrome()
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// v18 — the report bars' shared chrome, extracted at the third bar as two verbatim copies
+/// became three. The grid pads itself (16); the header slot doesn't, and an edge-to-edge bar
+/// read as a defect — top only, the grid's own padding provides the gap below.
+private struct ReportBarChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        content
             .padding(12)
             .background(.background.secondary, in: .rect(cornerRadius: 10))
             .overlay {
@@ -217,8 +226,127 @@ private struct AttentionSummaryBar: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
-            .accessibilityElement(children: .combine)
+    }
+}
+
+extension View {
+    fileprivate func reportBarChrome() -> some View { modifier(ReportBarChrome()) }
+}
+
+/// v18 — the Storage report's header, System Settings › Storage's grammar: an inventory of
+/// what Homebrew is spending on disk and the one recommendation that reclaims it. The three
+/// components are measured locally (the API carries no sizes; `DiskUsage` is the app's one
+/// honest source): old kegs per multi-version formula, the cache directory brew's cleanup
+/// sweeps, and its logs. **Clean Up…** enqueues `brew cleanup` — admitted to the whitelist
+/// under autoremove's bar — and removes files only: the standing HOMEBREW_NO_AUTOREMOVE=1
+/// gates the package removal a bare cleanup would otherwise run, and brew itself keeps
+/// pinned and linked versions. Unlike the orphan bar this one renders even at zero: the
+/// inventory and the last-cleaned date are answers either way.
+private struct StorageSummaryBar: View {
+    @Environment(AppModel.self) private var model
+    @State private var oldKegBytes: Int64?
+    @State private var cacheBytes: Int64?
+    @State private var logsBytes: Int64?
+    @State private var confirming = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "internaldrive")
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                // Reserved from first layout (the pane's Size row rule): the redacted stand-in
+                // keeps the line's height while the first measurements land.
+                if let inventory {
+                    Text(inventory).fontWeight(.semibold)
+                } else {
+                    Text("Old versions 00.0 MB")
+                        .fontWeight(.semibold)
+                        .redacted(reason: .placeholder)
+                }
+                Text(explainer)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button("Clean Up…") { confirming = true }
+                .disabled(model.cleanupPending)
+                .help("Removes files Homebrew no longer needs")
+                .confirmationDialog("Clean up Homebrew files?",
+                                    isPresented: $confirming, titleVisibility: .visible) {
+                    Button("Clean Up", role: .destructive) { model.cleanUp() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Removes old versions of installed packages, stale downloads, and logs older than 30 days. Pinned and currently linked versions are kept.")
+                }
         }
+        .reportBarChrome()
+        .task(id: measureKey) { await measure() }
+    }
+
+    /// The measured components, `·`-joined in a fixed order — only what has landed, so the
+    /// line grows in place (the orphan bar's rule). nil until the first component lands.
+    private var inventory: String? {
+        let parts: [(String, Int64?)] = [("Old versions", oldKegBytes),
+                                         ("Cache", cacheBytes),
+                                         ("Logs", logsBytes)]
+        let measured = parts.compactMap { name, bytes in
+            bytes.map { "\(name) \($0.formatted(.byteCount(style: .file)))" }
+        }
+        return measured.isEmpty ? nil : measured.joined(separator: " · ")
+    }
+
+    private var explainer: String {
+        var text = "Homebrew keeps old versions, downloads, and logs. Cleaning up removes what it no longer needs."
+        if let cleaned = model.client.cleanedDate() {
+            let ago = cleaned.formatted(.relative(presentation: .named))
+            text += " Last cleaned \(ago)."
+        }
+        return text
+    }
+
+    /// Re-measure when the keg population changes or a cleanup finishes — the package count
+    /// the rest of the app keys on cannot see either event.
+    private var measureKey: String {
+        let signature = model.installed
+            .filter { $0.key.hasPrefix("formula:") && $0.value.versions.count > 1 }
+            .map { "\($0.key)=\($0.value.versions.joined(separator: ","))" }
+            .sorted()
+            .joined(separator: ";")
+        return "\(signature)|\(model.finishedCleanupCount)"
+    }
+
+    private func measure() async {
+        // Old kegs ride the session cache under `oldkeg:`-namespaced keys — a keg's bytes
+        // never change, and a removed keg's root measures nil, which is never cached.
+        if let prefix = model.client.prefix {
+            var total: Int64 = 0
+            var found = false
+            for (id, info) in model.installed
+            where id.hasPrefix("formula:") && info.versions.count > 1 {
+                guard let (_, name) = Package.components(of: id) else { continue }
+                for (key, root) in AppModel.oldKegRoots(
+                    prefix: prefix, name: name, versions: info.versions) {
+                    if let bytes = await DiskUsage.measuredBytes(key: key, roots: [root]) {
+                        total += bytes
+                        found = true
+                    }
+                }
+            }
+            oldKegBytes = found ? total : nil
+        }
+        // Cache and logs are mutable directories under stable names — the session cache would
+        // serve stale bytes, so these bypass it.
+        let environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        cacheBytes = await DiskUsage.bytes(
+            at: [BrewClient.cacheDirectory(environment: environment, home: home)])
+        logsBytes = await DiskUsage.bytes(
+            at: [BrewClient.logsDirectory(environment: environment, home: home)])
     }
 }
 
@@ -257,7 +385,7 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
 /// one picker: Installed reaches onRequest/all through the Filter menu's Show Dependencies
 /// toggle, and the reports are sidebar destinations.
 nonisolated enum InstalledScope {
-    case onRequest, all, orphans, attention
+    case onRequest, all, orphans, attention, storage
 }
 
 /// v11 — Installed's sort orders, Finder's *Sort By* vocabulary. Name is the inventory default;
@@ -622,6 +750,8 @@ struct ContentView: View {
                                 OrphanSummaryBar()
                             } else if section == .attention {
                                 AttentionSummaryBar()
+                            } else if section == .storage {
+                                StorageSummaryBar()
                             } else if section == .installed {
                                 sizeMeasuringCaption
                             } else {
@@ -807,6 +937,7 @@ struct ContentView: View {
         case .taps: tapPagePackages(for: selectedTap)
         case .orphans: model.installedPackages(scope: .orphans)
         case .attention: model.installedPackages(scope: .attention)
+        case .storage: model.installedPackages(scope: .storage)
         }
     }
 
@@ -860,7 +991,7 @@ struct ContentView: View {
             } else {
                 section.emptyMessage
             }
-        case .outdated, .services, .orphans, .attention:
+        case .outdated, .services, .orphans, .attention, .storage:
             section.emptyMessage
         case .taps:
             tapKindFilter != .all ? "No packages match the filter" : section.emptyMessage
@@ -908,6 +1039,9 @@ struct ContentView: View {
         let servicesCount: Int
         /// The size sweep's publish signal — a finished sweep re-sorts the listing it ordered.
         let sizesGeneration: Int
+        /// v18 — cleanup removes kegs without changing the package count; the Storage listing
+        /// re-lists on this instead.
+        let multiKegCount: Int
     }
 
     private var browseKey: BrowseKey {
@@ -925,7 +1059,8 @@ struct ContentView: View {
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
                   servicesCount: model.serviceStatuses.count,
-                  sizesGeneration: model.sizesGeneration)
+                  sizesGeneration: model.sizesGeneration,
+                  multiKegCount: model.multiKegCount)
     }
 
     private var searchKey: SearchKey {
@@ -944,7 +1079,8 @@ struct ContentView: View {
                   commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
-                  servicesCount: model.serviceStatuses.count)
+                  servicesCount: model.serviceStatuses.count,
+                  multiKegCount: model.multiKegCount)
     }
 
     /// Re-ranks on a new query, a section switch, a filter change, or any change to the arrays
@@ -960,6 +1096,7 @@ struct ContentView: View {
         let installedCount: Int
         let outdatedCount: Int
         let servicesCount: Int
+        let multiKegCount: Int
     }
 
     /// The part of the key that changes *which* packages are listed — the grid restarts its render
@@ -1006,6 +1143,7 @@ struct ContentView: View {
             return "\(taps) taps"
         case .orphans: return count == 1 ? "1 orphan" : "\(formatted) orphans"
         case .attention: return count == 1 ? "1 needs attention" : "\(formatted) need attention"
+        case .storage: return count == 1 ? "1 with old versions" : "\(formatted) with old versions"
         }
     }
 
@@ -1016,7 +1154,7 @@ struct ContentView: View {
         switch section {
         case .discover: filtersActive
         case .installed: installedKindFilter != .all || installedTapsOnly
-        case .outdated, .services, .orphans, .attention: false
+        case .outdated, .services, .orphans, .attention, .storage: false
         case .taps: selectedTap != nil && tapKindFilter != .all
         }
     }

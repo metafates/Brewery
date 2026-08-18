@@ -117,6 +117,7 @@ struct BrewCommandTests {
         .uninstall(name: "wget", cask: false),
         .uninstall(name: "iterm2", cask: true),
         .zap(name: "iterm2"),
+        .cleanup,
     ] }
 
     /// One tag per `BrewCommand` case. The switch is exhaustive on purpose: adding a case to
@@ -125,7 +126,7 @@ struct BrewCommandTests {
     enum CommandKind: CaseIterable {
         case listFormulae, listCasks, outdated, update, install, upgrade, upgradeAll
         case servicesList, serviceStart, serviceStop, tap, untap, trustTap, untrustTap
-        case autoremove, uninstall, zap
+        case autoremove, uninstall, zap, cleanup
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -147,6 +148,7 @@ struct BrewCommandTests {
         case .autoremove: .autoremove
         case .uninstall: .uninstall
         case .zap: .zap
+        case .cleanup: .cleanup
         }
     }
 
@@ -164,7 +166,12 @@ struct BrewCommandTests {
         // model enqueues), kind-pinned like install, force-less (no `--force`, no
         // `--ignore-dependencies` — brew's dependents refusal fires before anything is
         // removed), and its `remove`/`rm` aliases stay banned: one spelling, one case.
-        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall"]
+        // v18 admits `cleanup` under autoremove's exact bar: argument-less by construction
+        // (no `--prune`, no `-s`, no names representable), scoped to what brew itself computes
+        // as stale (linked/pinned/keepme kegs are kept), confirmed in the UI before enqueue —
+        // and files-only, because the app's standing HOMEBREW_NO_AUTOREMOVE=1 gates the
+        // autoremove cleanup would otherwise run (cleanup.rb:412).
+        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup"]
         for command in Self.everyCommand {
             let first = command.arguments.first ?? ""
             #expect(allowed.contains(first), "unexpected subcommand \"\(first)\" in \(command.arguments)")
@@ -176,14 +183,28 @@ struct BrewCommandTests {
         #expect(BrewCommand.autoremove.arguments == ["autoremove"])
     }
 
+    @Test("cleanup is exactly one word — no prune, no scrub, no names can ever ride along")
+    func cleanupArgv() {
+        #expect(BrewCommand.cleanup.arguments == ["cleanup"])
+        #expect(BrewCommand.cleanup.isMutating)
+        // Acts on local kegs and cache files — no session brew update first (autoremove's rule).
+        #expect(BrewCommand.cleanup.touchesPackages == false)
+    }
+
     @Test("no argv element carries a destructive token")
     func noDestructiveTokens() {
         // v15: "uninstall" left this list when it joined the whitelist (its shape is pinned in
         // `explicitKindToken` and `zapArgv` instead); "--ignore-dependencies" joined it. Bare
         // "zap" stays: the match rule below is exact-or-`zap-`/`zap=`, so the `.zap` case's
         // `--zap` flag never trips it — the entry bans any argv element *being* the word.
-        let forbidden = ["remove", "rm", "cleanup", "pin", "unpin", "zap", "--force",
+        // v18: "cleanup" left the list the same way (argv pinned to exactly ["cleanup"] in
+        // `cleanupArgv`/`explicitKindToken`). The v5 ban on `services cleanup` (deletes plists)
+        // survives structurally: the services argvs are pinned flag-less with canonical verbs,
+        // so "cleanup" can never appear as a services subcommand. "--prune" and "--scrub"/"-s"
+        // join the ban so no future case can widen cleanup's blast radius.
+        let forbidden = ["remove", "rm", "pin", "unpin", "zap", "--force",
                          "--ignore-dependencies", "kill", "restart", "--all", "--file",
+                         "--prune", "--scrub", "-s",
                          "--sudo-service-user", "--custom-remote", "--repair", "--eval-all"]
         for command in Self.everyCommand {
             for argument in command.arguments {
@@ -244,6 +265,10 @@ struct BrewCommandTests {
                 #expect(arguments.count == 4, "\(arguments)")
                 #expect(Array(arguments.prefix(3)) == ["uninstall", "--cask", "--zap"])
                 #expect(!arguments.contains("--formula"))
+            case .cleanup:
+                // One word, ever: a name would narrow it to per-formula mode, a flag would
+                // widen what it deletes (`--prune=all` wipes the whole cache). Neither exists.
+                #expect(arguments == ["cleanup"])
             }
         }
     }

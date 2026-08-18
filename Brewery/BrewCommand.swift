@@ -10,10 +10,11 @@ import Foundation
 /// The complete set of brew invocations this app can express.
 ///
 /// Destructive operations are narrow and confirmed (v15); everything else stays unrepresentable,
-/// not merely un-called: there is no `cleanup`, `pin`, `--force` or `--ignore-dependencies` case,
-/// and no way to pass raw arguments. Every removal — uninstall, zap, untap, autoremove — reaches
-/// the queue only after its confirmation dialog has run (the trust-write rule). `BrewClient.run`
-/// takes only a `BrewCommand`, so this enum is the app's single source of brew argv.
+/// not merely un-called: there is no `pin`, `--force` or `--ignore-dependencies` case, and no
+/// way to pass raw arguments. Every removal — uninstall, zap, untap, autoremove, cleanup —
+/// reaches the queue only after its confirmation dialog has run (the trust-write rule).
+/// `BrewClient.run` takes only a `BrewCommand`, so this enum is the app's single source of
+/// brew argv.
 nonisolated enum BrewCommand: Equatable, Hashable {
     case listFormulae
     case listCasks
@@ -52,6 +53,14 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     // it only for casks whose receipt records a zap stanza.
     case uninstall(name: String, cask: Bool)
     case zap(name: String)
+    // v18 — cleanup joins under autoremove's bar: argument-less by construction (no names, no
+    // `--prune`, no `-s` representable), scoped to what brew itself computes as stale — old
+    // kegs of installed formulae with linked/pinned/keepme versions kept (formula.rb:3657-3662),
+    // version-stale downloads, logs older than 30 days — and confirmed before enqueue. The one
+    // sharp edge is pre-dulled: plain `brew cleanup` would also autoremove packages
+    // (cleanup.rb:412), but the app's standing HOMEBREW_NO_AUTOREMOVE=1 gates exactly that
+    // line, so this command removes files, never packages.
+    case cleanup
 
     var arguments: [String] {
         switch self {
@@ -93,6 +102,8 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["uninstall", BrewCommand.kindFlag(cask: cask), name]
         case let .zap(name):
             ["uninstall", "--cask", "--zap", name]
+        case .cleanup:
+            ["cleanup"]
         }
     }
 
@@ -104,7 +115,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         case .listFormulae, .listCasks, .outdated, .servicesList:
             false
-        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap:
+        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap, .cleanup:
             true
         }
     }
@@ -114,11 +125,11 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     var touchesPackages: Bool {
         switch self {
         // Service toggles change launchd state; tap/untap clone fresh checkouts; autoremove
-        // acts on local kegs only — none of them benefit from a `brew update` first.
-        // uninstall/zap stay in the default (true), unlike autoremove: cask uninstall and zap
-        // dispatch stanzas from the *current* recipe, so fresh metadata keeps what brew executes
-        // aligned with what the pane showed.
-        case .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove: false
+        // and cleanup act on local kegs and cache files only — none of them benefit from a
+        // `brew update` first. uninstall/zap stay in the default (true), unlike autoremove:
+        // cask uninstall and zap dispatch stanzas from the *current* recipe, so fresh metadata
+        // keeps what brew executes aligned with what the pane showed.
+        case .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .cleanup: false
         default: isMutating
         }
     }

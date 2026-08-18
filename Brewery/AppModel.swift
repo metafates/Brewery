@@ -454,6 +454,19 @@ final class AppModel {
     /// pane's Size row and the size sort's sweep. A formula is its whole `Cellar/<name>` (every
     /// keg on disk is what the machine is paying); a cask is its Caskroom slot plus the moved
     /// artifacts (apps via the receipt, font files by artifact name).
+    /// v18 — the old kegs of a multi-version formula: every `Cellar/<name>/<version>` but the
+    /// current one. Keys are namespaced `oldkeg:` because the pane's Size row caches the *whole*
+    /// rack under the same id|version pair — one cache, two meanings would poison each other.
+    nonisolated static func oldKegRoots(prefix: URL, name: String, versions: [String])
+        -> [(key: String, root: URL)] {
+        versions.dropLast().map { version in
+            ("oldkeg:formula:\(name)|\(version)",
+             prefix.appending(path: "Cellar", directoryHint: .isDirectory)
+                 .appending(path: name, directoryHint: .isDirectory)
+                 .appending(path: version, directoryHint: .isDirectory))
+        }
+    }
+
     func sizeRoots(for package: Package) -> [URL] {
         guard let prefix = client.prefix else { return [] }
         switch package.kind {
@@ -551,6 +564,13 @@ final class AppModel {
         Receipts.orphans(in: installed, caskDependencies: installedCaskDependencies)
     }
 
+    /// v18 — how many formulae carry more than one keg. The Storage listing's invalidation
+    /// signal: cleanup removes kegs without changing the *package* count the browse keys
+    /// otherwise watch, so this is the number that has to sit in the keys.
+    var multiKegCount: Int {
+        installed.count { $0.key.hasPrefix("formula:") && $0.value.versions.count > 1 }
+    }
+
     /// Each installed cask's catalog `depends_on` formulae — cask receipts carry no runtime
     /// deps, so the claim comes from the catalog, which is how brew itself protects them.
     /// Shared by the orphan fixpoint and the uninstall block list (v15).
@@ -579,6 +599,13 @@ final class AppModel {
             return installedPackages.filter { orphans.contains($0.id) }
         case .attention:
             return installedPackages.filter(\.needsAttention)
+        case .storage:
+            // v18 — formulae carrying more than one keg: the set `brew cleanup` acts on.
+            // Formula-only because no-args cleanup iterates Formula.installed (cleanup.rb:399);
+            // old Caskroom versions are an upgrade artifact, not a cleanup target.
+            return installedPackages.filter {
+                $0.kind == .formula && (installed[$0.id]?.versions.count ?? 0) > 1
+            }
         }
     }
 
@@ -731,6 +758,23 @@ final class AppModel {
     /// An autoremove already on the queue makes a second press pure duplication.
     var autoremovePending: Bool {
         operations.contains { $0.command == .autoremove && !$0.isFinished }
+    }
+
+    /// v18 — the Storage report's action. The caller has shown the confirmation dialog (the
+    /// trust-write rule). Files only: the standing HOMEBREW_NO_AUTOREMOVE=1 gates the package
+    /// removal plain `brew cleanup` would otherwise run (cleanup.rb:412), and brew itself keeps
+    /// linked, pinned and keepme kegs.
+    func cleanUp() {
+        enqueue(.cleanup, title: "Cleaning up", targetID: nil)
+    }
+
+    var cleanupPending: Bool {
+        operations.contains { $0.command == .cleanup && !$0.isFinished }
+    }
+
+    /// How many finished cleanups this session — the Storage bar's re-measure signal.
+    var finishedCleanupCount: Int {
+        operations.count { $0.command == .cleanup && $0.isFinished && !$0.awaitingRefresh }
     }
 
     /// Same rule for Update All — it lived in the view, spelled longhand.
@@ -953,6 +997,10 @@ final class AppModel {
         // refresh lands, the operation keeps holding its card: dropping busy on completion
         // alone showed the pre-mutation overlays for the second the probes take.
         Task {
+            // v18 — cleanup shrinks Cellar racks under unchanged id|version cache keys, so the
+            // whole session cache goes; it refills lazily. (The size-sort order corrects on the
+            // next sweep — its trigger key is unchanged by cleanup, a documented residual.)
+            if operation.command == .cleanup { DiskUsage.cache.removeAll() }
             await self.refreshState()
             operation.awaitingRefresh = false
         }
