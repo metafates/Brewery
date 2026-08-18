@@ -139,5 +139,26 @@ struct AttentionTests {
         #expect(decoded[1].deprecationDate == nil)
         #expect(decoded[1].deprecationReason == nil)
     }
+
+    // MARK: - Row phrase (v20)
+
+    @Test("the report row's one-liner: verb, slug phrase, disabled wins, prose passes through")
+    func attentionPhrase() {
+        #expect(package().attentionPhrase == nil)
+        #expect(package(deprecated: true, deprecationReason: "unmaintained").attentionPhrase
+            == "Deprecated — is not maintained upstream")
+        #expect(package(deprecated: true).attentionPhrase == "Deprecated")
+        #expect(package(disabled: true).attentionPhrase == "Disabled")
+        // Disabled outranks deprecated, and its own reason wins over the deprecation one.
+        #expect(package(deprecated: true, disabled: true,
+                        deprecationReason: "unmaintained", disableReason: "does_not_build").attentionPhrase
+            == "Disabled — does not build")
+        // Free maintainer prose passes through the same frame.
+        #expect(package(deprecated: true, deprecationReason: "uses a bespoke build").attentionPhrase
+            == "Deprecated — uses a bespoke build")
+        // Casks use their own table.
+        #expect(package(kind: .cask, deprecated: true, deprecationReason: "discontinued").attentionPhrase
+            == "Deprecated — is discontinued upstream")
+    }
 }
 

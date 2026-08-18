@@ -219,8 +219,8 @@ private struct AttentionSummaryBar: View {
 }
 
 /// v18 — the report bars' shared chrome, extracted at the third bar as two verbatim copies
-/// became three. The grid pads itself (16); the header slot doesn't, and an edge-to-edge bar
-/// read as a defect — top only, the grid's own padding provides the gap below.
+/// became three. v20 — the bars ride as the report lists' first row (inset-stripped), so the
+/// horizontal margin matches the inset list's content edge rather than the old grid's 16.
 private struct ReportBarChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -230,8 +230,8 @@ private struct ReportBarChrome: ViewModifier {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(.separator, lineWidth: 1)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
+            .padding(.horizontal, 10)
+            .padding(.top, 12)
     }
 }
 
@@ -639,7 +639,7 @@ struct ContentView: View {
                     packages.sort { Self.byInstallDate($0, $1, dates: dates) }
                 case .size:
                     let sizes = model.diskSizes
-                    packages.sort { Self.bySize($0, $1, sizes: sizes) }
+                    packages.sort { Package.sizeOrder($0, $1, sizes: sizes) }
                 }
             }
             browseHits[key.section] = packages.map { SearchHit(package: $0, matchedCommand: nil) }
@@ -717,6 +717,25 @@ struct ContentView: View {
             // Findings, not packages — the view owns its four states.
             CheckupView(searchText: searchText)
                 .refreshVeil(model.isRefreshing)
+        } else if section == .orphans || section == .attention || section == .storage {
+            // v20 — reports are state rows, not catalog cards (the Services rule generalized).
+            ReportListView(hits: displayedHits,
+                           isSearching: isSearching,
+                           selectedID: inspectedID,
+                           onSelect: { select($0) },
+                           onRefresh: { refresh() },
+                           emptyMessage: emptyMessage,
+                           kind: section == .orphans ? .orphans
+                               : section == .attention ? .attention : .storage) {
+                if section == .orphans {
+                    OrphanSummaryBar()
+                } else if section == .attention {
+                    AttentionSummaryBar()
+                } else {
+                    StorageSummaryBar()
+                }
+            }
+            .refreshVeil(model.isRefreshing)
         } else {
             packageGrid()
                 .refreshVeil(model.isRefreshing)
@@ -756,12 +775,6 @@ struct ContentView: View {
                                 TapPageHeader(tap: tap)
                             } else if section == .outdated {
                                 freshnessCaption
-                            } else if section == .orphans {
-                                OrphanSummaryBar()
-                            } else if section == .attention {
-                                AttentionSummaryBar()
-                            } else if section == .storage {
-                                StorageSummaryBar()
                             } else if section == .installed {
                                 sizeMeasuringCaption
                             } else {
@@ -876,12 +889,6 @@ struct ContentView: View {
     /// to the canonical name order. Static and pure so the ordering has tests.
     nonisolated static func byInstallDate(_ a: Package, _ b: Package, dates: [Package.ID: Date]) -> Bool {
         let (x, y) = (dates[a.id] ?? .distantPast, dates[b.id] ?? .distantPast)
-        return x == y ? Package.displayOrder(a, b) : x > y
-    }
-
-    /// Largest first; unmeasured packages sort last rather than blocking the listing on the sweep.
-    nonisolated static func bySize(_ a: Package, _ b: Package, sizes: [Package.ID: Int64]) -> Bool {
-        let (x, y) = (sizes[a.id] ?? -1, sizes[b.id] ?? -1)
         return x == y ? Package.displayOrder(a, b) : x > y
     }
 

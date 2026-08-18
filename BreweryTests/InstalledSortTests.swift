@@ -33,11 +33,11 @@ struct InstalledSortTests {
     func bySize() {
         let (big, small, unknown) = (package("big"), package("small"), package("unknown"))
         let sizes: [Package.ID: Int64] = ["formula:big": 500, "formula:small": 3]
-        let sorted = [small, unknown, big].sorted { ContentView.bySize($0, $1, sizes: sizes) }
+        let sorted = [small, unknown, big].sorted { Package.sizeOrder($0, $1, sizes: sizes) }
         #expect(sorted.map(\.name) == ["big", "small", "unknown"])
 
         let tied: [Package.ID: Int64] = ["formula:big": 7, "formula:small": 7]
-        #expect([small, big].sorted { ContentView.bySize($0, $1, sizes: tied) }.map(\.name) == ["big", "small"])
+        #expect([small, big].sorted { Package.sizeOrder($0, $1, sizes: tied) }.map(\.name) == ["big", "small"])
     }
 
     @Test("the receipt's time becomes installedAt; an absent time stays nil")

@@ -251,6 +251,13 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         return x == y ? lhs.name < rhs.name : x > y
     }
 
+    /// Largest first; unmeasured packages sort last rather than blocking the listing on the
+    /// sweep. Lived in `ContentView` (v11's Size sort) until the (v20) report lists needed it.
+    static func sizeOrder(_ lhs: Package, _ rhs: Package, sizes: [Package.ID: Int64]) -> Bool {
+        let (x, y) = (sizes[lhs.id] ?? -1, sizes[rhs.id] ?? -1)
+        return x == y ? displayOrder(lhs, rhs) : x > y
+    }
+
     var title: String { displayName ?? name }
 
     /// SPDX identifier, formulae only — casks carry no license in the API.
@@ -430,6 +437,19 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
             return opening + " It still installs today, but will likely stop working around \(Self.monthText(projected))."
         }
         return opening + " It still installs today, but it may be disabled in a future release."
+    }
+
+    /// v20 — the report row's one-line form of the banner's story: "Deprecated — is not
+    /// maintained upstream", bare "Disabled" when brew gave no reason. Free-prose reasons pass
+    /// through (the row clamps to one line); the full sentence stays the pane's job.
+    var attentionPhrase: String? {
+        guard needsAttention else { return nil }
+        let phrases = kind == .formula ? Self.formulaReasonPhrases : Self.caskReasonPhrases
+        let reason = (disabled ? disableReason ?? deprecationReason : deprecationReason)
+            .map { phrases[$0] ?? $0 }
+        let verb = disabled ? "Disabled" : "Deprecated"
+        guard let reason else { return verb }
+        return "\(verb) — \(reason)"
     }
 
     /// The row the banner offers when brew names a successor. Formula wins over cask — brew's
