@@ -134,7 +134,9 @@ private struct OrphanSummaryBar: View {
         if !ids.isEmpty {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "arrow.3.trianglepath")
-                    .font(.title3)
+                    // The Discover tip's scale (TipView's glyph) — the report bars share its
+                    // banner grammar, so they share its metrics.
+                    .font(.system(size: 26))
                     .foregroundStyle(.tint)
                     .accessibilityHidden(true)
 
@@ -142,9 +144,9 @@ private struct OrphanSummaryBar: View {
                     // The size joins the line in place once measured — horizontal growth
                     // only, nothing below moves.
                     Text("^[\(ids.count) orphaned dependencies](inflect: true)\(bytes.map { " · \($0.formatted(.byteCount(style: .file))) reclaimable" } ?? "")")
+                        .font(.title3)
                         .fontWeight(.semibold)
                     Text("Installed for packages you've since removed.")
-                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
 
@@ -197,16 +199,16 @@ private struct AttentionSummaryBar: View {
         if count > 0 {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.title3)
+                    .font(.system(size: 26))
                     // The banner's warning colour, not the tint: this bar is the same fact.
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("^[\(count) packages](inflect: true) won't receive updates")
+                        .font(.title3)
                         .fontWeight(.semibold)
                     Text("Homebrew has deprecated or disabled these. Each package's page says why, and what to use instead.")
-                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
 
@@ -225,10 +227,10 @@ private struct AttentionSummaryBar: View {
 private struct ReportBarChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(12)
-            .background(.background.secondary, in: .rect(cornerRadius: 10))
+            .padding(14)
+            .background(.background.secondary, in: .rect(cornerRadius: 12))
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(.separator, lineWidth: 1)
             }
     }
@@ -257,7 +259,7 @@ private struct StorageSummaryBar: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "internaldrive")
-                .font(.title3)
+                .font(.system(size: 26))
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
 
@@ -265,14 +267,16 @@ private struct StorageSummaryBar: View {
                 // Reserved from first layout (the pane's Size row rule): the redacted stand-in
                 // keeps the line's height while the first measurements land.
                 if let inventory {
-                    Text(inventory).fontWeight(.semibold)
+                    Text(inventory)
+                        .font(.title3)
+                        .fontWeight(.semibold)
                 } else {
                     Text("Old versions 00.0 MB")
+                        .font(.title3)
                         .fontWeight(.semibold)
                         .redacted(reason: .placeholder)
                 }
                 Text(explainer)
-                    .font(.callout)
                     .foregroundStyle(.secondary)
             }
 
@@ -295,12 +299,17 @@ private struct StorageSummaryBar: View {
 
     /// The measured components, `·`-joined in a fixed order — only what has landed, so the
     /// line grows in place (the orphan bar's rule). nil until the first component lands.
+    /// Non-breaking spaces inside each component: a narrow bar may wrap the line, but only
+    /// ever at a separator — "Logs / 244 bytes" split mid-component reads as a defect.
     private var inventory: String? {
         let parts: [(String, Int64?)] = [("Old versions", oldKegBytes),
                                          ("Cache", cacheBytes),
                                          ("Logs", logsBytes)]
         let measured = parts.compactMap { name, bytes in
-            bytes.map { "\(name) \($0.formatted(.byteCount(style: .file)))" }
+            bytes.map {
+                "\(name) \($0.formatted(.byteCount(style: .file)))"
+                    .replacingOccurrences(of: " ", with: "\u{00A0}")
+            }
         }
         return measured.isEmpty ? nil : measured.joined(separator: " · ")
     }

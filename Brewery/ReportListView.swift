@@ -46,8 +46,11 @@ struct ReportListView<Header: View>: View {
             } else {
                 List(selection: selection) {
                     // An ordinary row slot: the list's own insets are the shared gutter, so the
-                    // bar's edges and the rows' content agree by construction.
+                    // bar's edges and the rows' content agree by construction. The bottom gap
+                    // matches the Discover tip's clearance from its cards — a banner needs air
+                    // before the content it summarizes.
                     header
+                        .padding(.bottom, 14)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .selectionDisabled()
