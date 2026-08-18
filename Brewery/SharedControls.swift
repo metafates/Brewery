@@ -18,6 +18,11 @@ struct RelatedRow: View {
     let version: String?
     /// Secondary line under the name — the conflict reason; nil for dependency rows.
     var detail: String? = nil
+    /// v23.1 — true in wide content columns (the Checkup boxes): no hover pill, no chevron.
+    /// Both are the narrow pane's tells; stretched across a wide column the pill reads as a
+    /// giant card, and the chevron fights any trailing action button for the row's meaning
+    /// (App Store's update rows at this width are static content plus a button).
+    var inline: Bool = false
     let action: () -> Void
 
     @State private var isHovering = false
@@ -45,16 +50,18 @@ struct RelatedRow: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                if !inline {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
             .font(.subheadline)
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(shape)
-            .background { shape.fill(.quaternary).opacity(isHovering ? 1 : 0) }
+            .background { shape.fill(.quaternary).opacity(isHovering && !inline ? 1 : 0) }
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }

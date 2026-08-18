@@ -182,7 +182,8 @@ struct CheckupView: View {
                 if let package = row.package {
                     HStack(spacing: 8) {
                         RelatedRow(package: package,
-                                   version: model.installed[package.id]?.versions.last) {
+                                   version: model.installed[package.id]?.versions.last,
+                                   inline: true) {
                             model.select(package)
                         }
                         linkControl(row.name)
@@ -202,14 +203,16 @@ struct CheckupView: View {
 
             ForEach(packageRows) { package in
                 RelatedRow(package: package,
-                           version: model.installed[package.id]?.versions.last) {
+                           version: model.installed[package.id]?.versions.last,
+                           inline: true) {
                     model.select(package)
                 }
             }
 
             ForEach(affected) { package in
                 RelatedRow(package: package,
-                           version: model.installed[package.id]?.versions.last) {
+                           version: model.installed[package.id]?.versions.last,
+                           inline: true) {
                     model.select(package)
                 }
             }
