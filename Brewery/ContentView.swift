@@ -30,11 +30,11 @@ struct PackageKindsTip: Tip {
 /// empty states, and a titled sidebar group is the platform's container for exactly that (HIG
 /// *Sidebars*: succinct, descriptive labels title each group).
 nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
-    case discover, installed, outdated, services, taps, orphans, attention, storage
+    case discover, installed, outdated, services, taps, orphans, attention, storage, checkup
 
     /// The sidebar's two groups, in row order.
     static let library: [SidebarSection] = [.discover, .installed, .outdated, .services, .taps]
-    static let reports: [SidebarSection] = [.orphans, .attention, .storage]
+    static let reports: [SidebarSection] = [.orphans, .attention, .storage, .checkup]
 
     var id: Self { self }
 
@@ -48,6 +48,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .orphans: "Orphans"
         case .attention: "Attention"
         case .storage: "Storage"
+        case .checkup: "Checkup"
         }
     }
 
@@ -65,6 +66,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .attention: "exclamationmark.triangle"
         // The detail pane's own "on disk" glyph — the row and the stat say the same thing.
         case .storage: "internaldrive"
+        case .checkup: "stethoscope"
         }
     }
 
@@ -79,6 +81,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .orphans: "6"
         case .attention: "7"
         case .storage: "8"
+        case .checkup: "9"
         }
     }
 
@@ -92,6 +95,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .orphans: "Search Orphans"
         case .attention: "Search Attention"
         case .storage: "Search Storage"
+        case .checkup: "Search Findings"
         }
     }
 
@@ -107,6 +111,8 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         // Software Update's positive-empty grammar: the good outcome, stated plainly.
         case .attention: "Nothing needs attention"
         case .storage: "No old versions on disk"
+        // The view owns its own states — intro, running, clean, findings (Discover's rule).
+        case .checkup: nil
         }
     }
 }
@@ -707,6 +713,10 @@ struct ContentView: View {
                          onSelect: { select($0) },
                          onRefresh: { refresh() })
                 .refreshVeil(model.isRefreshing)
+        } else if section == .checkup {
+            // Findings, not packages — the view owns its four states.
+            CheckupView(searchText: searchText)
+                .refreshVeil(model.isRefreshing)
         } else {
             packageGrid()
                 .refreshVeil(model.isRefreshing)
@@ -938,6 +948,7 @@ struct ContentView: View {
         case .orphans: model.installedPackages(scope: .orphans)
         case .attention: model.installedPackages(scope: .attention)
         case .storage: model.installedPackages(scope: .storage)
+        case .checkup: []
         }
     }
 
@@ -991,7 +1002,7 @@ struct ContentView: View {
             } else {
                 section.emptyMessage
             }
-        case .outdated, .services, .orphans, .attention, .storage:
+        case .outdated, .services, .orphans, .attention, .storage, .checkup:
             section.emptyMessage
         case .taps:
             tapKindFilter != .all ? "No packages match the filter" : section.emptyMessage
@@ -1123,6 +1134,16 @@ struct ContentView: View {
     private var subtitle: String {
         guard section != .discover || !model.catalog.isEmpty else { return "" }
 
+        // Checkup counts findings, not packages — and its search filters finding boxes, so
+        // the generic "n results" (which counts packages) would lie. Before the search guard.
+        if section == .checkup {
+            if case .report(let report) = model.checkupOutcome, !report.findings.isEmpty {
+                let count = report.findings.count
+                return count == 1 ? "1 finding" : "\(count) findings"
+            }
+            return ""
+        }
+
         let count = displayedCount
         let formatted = count.formatted(.number)
         guard !isSearching, !isNarrowed else {
@@ -1144,6 +1165,7 @@ struct ContentView: View {
         case .orphans: return count == 1 ? "1 orphan" : "\(formatted) orphans"
         case .attention: return count == 1 ? "1 needs attention" : "\(formatted) need attention"
         case .storage: return count == 1 ? "1 with old versions" : "\(formatted) with old versions"
+        case .checkup: return ""   // handled above; unreachable
         }
     }
 
@@ -1154,7 +1176,7 @@ struct ContentView: View {
         switch section {
         case .discover: filtersActive
         case .installed: installedKindFilter != .all || installedTapsOnly
-        case .outdated, .services, .orphans, .attention, .storage: false
+        case .outdated, .services, .orphans, .attention, .storage, .checkup: false
         case .taps: selectedTap != nil && tapKindFilter != .all
         }
     }

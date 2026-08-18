@@ -777,6 +777,66 @@ final class AppModel {
         operations.count { $0.command == .cleanup && $0.isFinished && !$0.awaitingRefresh }
     }
 
+    // MARK: - Checkup (v19)
+
+    enum CheckupOutcome: Equatable {
+        case report(DoctorReport)
+        /// brew produced output the parser couldn't read (the hidden --json flag changed?) —
+        /// the raw text is shown rather than swallowed.
+        case unreadable(raw: String)
+        case failed
+    }
+
+    /// Session-only, deliberately never snapshotted: a checkup describes this boot of the
+    /// machine, and a stale verdict restored at launch would be a lie with a green checkmark.
+    private(set) var checkupOutcome: CheckupOutcome?
+    private(set) var checkupRanAt: Date?
+    private(set) var isRunningCheckup = false
+
+    /// Runs `brew doctor --json` inline — a read, never queued (`enqueue` would refuse it
+    /// anyway: reads aren't mutating). Exit 1 means findings exist, not failure (doctor sets
+    /// failed on the first finding), so success is judged by parse, not exit code. stderr is
+    /// split off (`onErrorLine`) so the JSON can't interleave with stray warnings.
+    func runCheckup() async {
+        guard !isRunningCheckup, !brewMissing else { return }
+        isRunningCheckup = true
+        defer { isRunningCheckup = false }
+
+        let stdout = CheckupBuffer()
+        let stderr = CheckupBuffer()
+        do {
+            let code = try await client.run(.doctor) { stdout.lines.append($0) }
+                onErrorLine: { stderr.lines.append($0) }
+            let text = stdout.lines.joined(separator: "\n")
+            if code == 0 || code == 1, let report = DoctorReport.parse(text) {
+                checkupOutcome = .report(report)
+            } else if code == 0 || code == 1 {
+                let raw = text.isEmpty ? stderr.lines.joined(separator: "\n") : text
+                checkupOutcome = .unreadable(raw: raw)
+            } else {
+                checkupOutcome = .failed
+            }
+        } catch {
+            checkupOutcome = .failed
+        }
+        checkupRanAt = .now
+    }
+
+    /// A finding's `affects` names resolved against the catalog — the v17 caveat-mention rule:
+    /// short name (doctor emits full names for tap items), formula first then cask, unresolved
+    /// names dropped, order preserved, deduped.
+    func resolvedAffected(_ names: [String]) -> [Package] {
+        var seen: Set<Package.ID> = []
+        return names.compactMap { name -> Package? in
+            let short = BrewClient.shortName(name)
+            let candidates = [Package.packageID(kind: .formula, name: short),
+                              Package.packageID(kind: .cask, name: short)]
+            guard let found = candidates.lazy.compactMap(package(for:)).first,
+                  seen.insert(found.id).inserted else { return nil }
+            return found
+        }
+    }
+
     /// Same rule for Update All — it lived in the view, spelled longhand.
     var upgradeAllPending: Bool {
         operations.contains { $0.command == .upgradeAll && !$0.isFinished }
@@ -1107,4 +1167,10 @@ final class AppModel {
         requestedTap = tap
         openTapRequests += 1
     }
+}
+
+/// Accumulator for the checkup's split streams; a class so the `@Sendable` line callbacks can
+/// append into it (BrewClient's own `LineBuffer` pattern — all access is MainActor).
+private final class CheckupBuffer {
+    var lines: [String] = []
 }

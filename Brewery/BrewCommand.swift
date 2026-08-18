@@ -53,6 +53,11 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     // it only for casks whose receipt records a zap stanza.
     case uninstall(name: String, cask: Bool)
     case zap(name: String)
+    // v19 — a read-only diagnostic, never queued: it runs inline like the state probes. The
+    // hidden --json switch (cmd/doctor.rb:25-27) yields structured findings; the parser keeps
+    // a raw-text fallback in case the flag ever changes shape. Exit 1 means findings exist,
+    // not failure — the caller judges by parse, not exit code.
+    case doctor
     // v18 — cleanup joins under autoremove's bar: argument-less by construction (no names, no
     // `--prune`, no `-s` representable), scoped to what brew itself computes as stale — old
     // kegs of installed formulae with linked/pinned/keepme versions kept (formula.rb:3657-3662),
@@ -102,6 +107,8 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["uninstall", BrewCommand.kindFlag(cask: cask), name]
         case let .zap(name):
             ["uninstall", "--cask", "--zap", name]
+        case .doctor:
+            ["doctor", "--json"]
         case .cleanup:
             ["cleanup"]
         }
@@ -113,7 +120,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     /// guarantee survives it.
     var isMutating: Bool {
         switch self {
-        case .listFormulae, .listCasks, .outdated, .servicesList:
+        case .listFormulae, .listCasks, .outdated, .servicesList, .doctor:
             false
         case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap, .cleanup:
             true

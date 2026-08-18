@@ -43,8 +43,12 @@ final class BrewClient {
     // MARK: - Invocation
 
     /// Core exec. Streams every stdout and stderr line to `onLine`, returns brew's exit code.
+    /// v19 — `onErrorLine` splits stderr into its own sink when set (doctor's JSON must not
+    /// interleave with stderr noise); nil keeps the historical merged stream for every other
+    /// caller.
     func run(_ command: BrewCommand,
-             onLine: @MainActor @Sendable @escaping (String) -> Void) async throws -> Int32 {
+             onLine: @MainActor @Sendable @escaping (String) -> Void,
+             onErrorLine: (@MainActor @Sendable (String) -> Void)? = nil) async throws -> Int32 {
         guard let executable = path else { throw BrewError.notFound }
 
         let process = Process()
@@ -87,7 +91,7 @@ final class BrewClient {
                         drainSignal.yield()
                     },
                     Task {
-                        await Self.forward(errors.fileHandleForReading, to: onLine)
+                        await Self.forward(errors.fileHandleForReading, to: onErrorLine ?? onLine)
                         drainSignal.yield()
                     },
                 ]

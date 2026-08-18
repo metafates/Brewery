@@ -118,6 +118,7 @@ struct BrewCommandTests {
         .uninstall(name: "iterm2", cask: true),
         .zap(name: "iterm2"),
         .cleanup,
+        .doctor,
     ] }
 
     /// One tag per `BrewCommand` case. The switch is exhaustive on purpose: adding a case to
@@ -126,7 +127,7 @@ struct BrewCommandTests {
     enum CommandKind: CaseIterable {
         case listFormulae, listCasks, outdated, update, install, upgrade, upgradeAll
         case servicesList, serviceStart, serviceStop, tap, untap, trustTap, untrustTap
-        case autoremove, uninstall, zap, cleanup
+        case autoremove, uninstall, zap, cleanup, doctor
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -149,6 +150,7 @@ struct BrewCommandTests {
         case .uninstall: .uninstall
         case .zap: .zap
         case .cleanup: .cleanup
+        case .doctor: .doctor
         }
     }
 
@@ -171,7 +173,9 @@ struct BrewCommandTests {
         // as stale (linked/pinned/keepme kegs are kept), confirmed in the UI before enqueue —
         // and files-only, because the app's standing HOMEBREW_NO_AUTOREMOVE=1 gates the
         // autoremove cleanup would otherwise run (cleanup.rb:412).
-        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup"]
+        // v19 admits `doctor` as a read: strictly diagnostic, never queued, exit 1 means
+        // findings exist rather than failure.
+        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup", "doctor"]
         for command in Self.everyCommand {
             let first = command.arguments.first ?? ""
             #expect(allowed.contains(first), "unexpected subcommand \"\(first)\" in \(command.arguments)")
@@ -181,6 +185,12 @@ struct BrewCommandTests {
     @Test("autoremove is exactly one word — no target can ever ride along")
     func autoremoveArgv() {
         #expect(BrewCommand.autoremove.arguments == ["autoremove"])
+    }
+
+    @Test("doctor is a read: structured output, never queued")
+    func doctorArgv() {
+        #expect(BrewCommand.doctor.arguments == ["doctor", "--json"])
+        #expect(BrewCommand.doctor.isMutating == false)
     }
 
     @Test("cleanup is exactly one word — no prune, no scrub, no names can ever ride along")
@@ -269,6 +279,8 @@ struct BrewCommandTests {
                 // One word, ever: a name would narrow it to per-formula mode, a flag would
                 // widen what it deletes (`--prune=all` wipes the whole cache). Neither exists.
                 #expect(arguments == ["cleanup"])
+            case .doctor:
+                #expect(arguments == ["doctor", "--json"])
             }
         }
     }
