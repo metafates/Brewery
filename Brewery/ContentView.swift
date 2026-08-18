@@ -618,6 +618,9 @@ struct ContentView: View {
                 // window, and nothing has to be dismissed before the next card can be clicked.
                 .inspector(isPresented: $model.showInspector) {
                     inspector
+                        // The secondary column recedes with everything else during a refresh,
+                        // but only the content column's capsule narrates the wait.
+                        .refreshVeil(model.isRefreshing, showsCapsule: false)
                         .inspectorColumnWidth(min: 300, ideal: 340, max: 480)
                 }
         }
@@ -738,7 +741,7 @@ struct ContentView: View {
         if section == .discover, model.catalog.isEmpty, model.catalogFailed {
             catalogFailed
         } else if section == .discover, model.catalog.isEmpty {
-            ProgressView("Loading catalog…")
+            WorkingCapsule(text: "Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if section == .taps {
             // In-column drill-down, no transition (v9): macOS NavigationStack does not animate
@@ -1494,8 +1497,10 @@ extension View {
     /// it is re-checked — behind a glass capsule naming the work. On a warm cache the whole thing
     /// is a soft half-second pulse, which is exactly the acknowledgment a fast refresh needs.
     /// Worn by the grid and by an open detail pane's content alike.
-    func refreshVeil(_ active: Bool) -> some View {
-        modifier(RefreshVeil(active: active))
+    func refreshVeil(_ active: Bool,
+                     text: String = "Checking for updates…",
+                     showsCapsule: Bool = true) -> some View {
+        modifier(RefreshVeil(active: active, text: text, showsCapsule: showsCapsule))
     }
 
     /// The wash behind an inline warning — a deprecated package, an untrusted tap. Shared so the
@@ -1529,6 +1534,10 @@ struct WarningWash: ViewModifier {
 /// dimming survives — it is the part that carries the meaning.
 struct RefreshVeil: ViewModifier {
     let active: Bool
+    var text = "Checking for updates…"
+    /// v24 — false on a secondary column (the inspector): it blurs and dims with everything
+    /// else, but only one capsule narrates a wait — two capsules read as two waits.
+    var showsCapsule = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1543,8 +1552,8 @@ struct RefreshVeil: ViewModifier {
             // things while they wait).
             .disabled(active)
             .overlay {
-                if active {
-                    WorkingCapsule(text: "Checking for updates…")
+                if active, showsCapsule {
+                    WorkingCapsule(text: text)
                         .transition(reduceMotion ? AnyTransition.opacity
                                                 : AnyTransition(.blurReplace))
                 }

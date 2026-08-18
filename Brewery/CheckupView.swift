@@ -18,9 +18,7 @@ struct CheckupView: View {
     let searchText: String
 
     var body: some View {
-        if model.isRunningCheckup {
-            running
-        } else {
+        Group {
             switch model.checkupOutcome {
             case nil:
                 intro
@@ -34,6 +32,9 @@ struct CheckupView: View {
                 failed
             }
         }
+        // v24 — the app's one waiting grammar: the previous content recedes under the same
+        // veil ⌘R uses, instead of being swapped for a bespoke running screen.
+        .refreshVeil(model.isRunningCheckup, text: "Checking…")
     }
 
     // MARK: - States
@@ -47,12 +48,6 @@ struct CheckupView: View {
             runButton("Run Checkup")
                 .buttonStyle(.borderedProminent)
         }
-    }
-
-    /// The app's one working grammar — the refresh veil's capsule, not a second spinner style.
-    private var running: some View {
-        WorkingCapsule(text: "Checking…")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var clean: some View {
@@ -253,6 +248,7 @@ struct CheckupView: View {
         if let operation, !operation.isFinished || operation.awaitingRefresh {
             ProgressView()
                 .controlSize(.small)
+                .accessibilityLabel("Linking \(name)")
         } else if operation?.state == .succeeded {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark")

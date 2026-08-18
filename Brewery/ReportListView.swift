@@ -152,31 +152,15 @@ private struct ReportRow: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 12) {
+        StateRow(title: package.title, subtitle: subtitle) {
             PackageIconView(package: package, size: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(package.title)
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-
-            Spacer(minLength: 8)
-
+        } accessory: {
             if let trailing {
                 Text(trailing)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
         }
-        .padding(.vertical, 4)
-        // Separators hang from the title, not the icon — the platform's list geometry.
-        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 44 }
         .accessibilityElement(children: .combine)
         .contextMenu {
             if let url = package.homepageURL {

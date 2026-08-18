@@ -115,6 +115,43 @@ struct CopyButton: View {
     }
 }
 
+/// v24 — the one list row: a 32 pt tile, a title over a caption subtitle, a trailing
+/// accessory. ServiceRow, TapRow, BuiltInTapRow and ReportRow were four hand-copies of this
+/// shape, drifting in vertical padding (3/3/4) and separator rules. Selection belongs to the
+/// List (`List(selection:)` + `.tag`), so the row is content only — no inner Button.
+struct StateRow<Tile: View, Accessory: View>: View {
+    let title: String
+    var subtitle: String?
+    var subtitleMonospaced = false
+    var subtitleTruncation: Text.TruncationMode = .tail
+    @ViewBuilder let tile: Tile
+    @ViewBuilder let accessory: Accessory
+
+    var body: some View {
+        HStack(spacing: 12) {
+            tile
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(subtitleMonospaced ? .caption.monospaced() : .caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(subtitleTruncation)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            accessory
+        }
+        .padding(.vertical, 4)
+        // Separators hang from the title, not the tile — the platform's list geometry.
+        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 44 }
+    }
+}
+
 /// v22 — the app's one "working" chip: the rotating-arrows label in a glass capsule that the
 /// refresh veil committed. One component, one spinner grammar — the Checkup page briefly grew
 /// a stock starburst spinner beside it, and two working styles read as two apps.

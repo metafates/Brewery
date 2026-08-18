@@ -26,13 +26,26 @@ struct ServicesView: View {
             // banner was really explaining is a consequence of one control, and it now lives on
             // that control (HIG *Offering help* → macOS: "Explain the action or task the control
             // initiates", "Be brief") — where it is still there the day you flip the switch.
-            List(hits) { hit in
-                ServiceRow(package: hit.package,
-                           isSelected: hit.package.id == selectedID,
-                           onSelect: { onSelect(hit.package) })
+            // v24 — selection is the List's own (the report lists' rule): one highlight
+            // grammar app-wide, drawn by the system.
+            List(selection: selection) {
+                ForEach(hits) { hit in
+                    ServiceRow(package: hit.package)
+                        .tag(hit.package.id)
+                }
             }
             .listStyle(.inset)
         }
+    }
+
+    /// Selecting routes through the app's one selection funnel; deselection (⎋) is ignored —
+    /// the inspector, not the list, owns "nothing is selected".
+    private var selection: Binding<Package.ID?> {
+        Binding(get: { selectedID },
+                set: { id in
+                    guard let id, let hit = hits.first(where: { $0.package.id == id }) else { return }
+                    onSelect(hit.package)
+                })
     }
 
     @ViewBuilder private var emptyState: some View {
@@ -50,39 +63,20 @@ struct ServicesView: View {
     }
 }
 
-/// One service. The leading part is a plain button that opens the sheet; the switch stays its
-/// own control so a row tap never toggles a daemon by accident.
+/// One service: the shared row shape, the switch its own control so a row click selects
+/// without ever toggling a daemon by accident.
 private struct ServiceRow: View {
     let package: Package
-    let isSelected: Bool
-    let onSelect: () -> Void
 
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onSelect) {
-                HStack(spacing: 12) {
-                    PackageIconView(package: package, size: 32)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(package.title)
-                        if let command = commandLine {
-                            Text(command)
-                                .font(.caption)
-                                .monospaced()
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    }
-                    Spacer(minLength: 8)
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("Shows package details")
-
+        StateRow(title: package.title,
+                 subtitle: commandLine,
+                 subtitleMonospaced: true,
+                 subtitleTruncation: .middle) {
+            PackageIconView(package: package, size: 32)
+        } accessory: {
             // Speaks only when it has something to say — running, scheduled, or failed. The
             // quiet states are what the switch position already shows.
             ServiceStatusLabel(package: package)
@@ -90,10 +84,7 @@ private struct ServiceRow: View {
 
             ServiceToggle(package: package)
         }
-        .padding(.vertical, 3)
-        // The same accent wash the selected card wears, so one selection reads one way.
-        .listRowBackground(Rectangle().fill(isSelected ? AnyShapeStyle(.tint.quaternary)
-                                                       : AnyShapeStyle(.clear)))
+        .accessibilityHint("Shows package details")
         // The cards' rule (HIG Context menus: support them consistently throughout the app):
         // the switch's action by name, absent — not dimmed — while busy or root-gated.
         .contextMenu {

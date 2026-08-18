@@ -97,16 +97,9 @@ struct PackageGridView<Header: View>: View {
         if isSearching {
             ContentUnavailableView.search
         } else if isChecking {
-            // Software Update's grammar: a centered spinner while the check runs, the claim
-            // ("Everything is up to date") only once it has finished.
-            VStack(spacing: 12) {
-                ProgressView()
-                    .controlSize(.large)
-                Text("Checking for updates…")
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Checking for updates")
+            // Software Update's grammar: the wait first, the claim ("Everything is up to
+            // date") only once the check has finished — in the app's one working chip.
+            WorkingCapsule(text: "Checking for updates…")
         } else if let emptyMessage {
             ContentUnavailableView {
                 Label(emptyMessage, systemImage: "shippingbox")

@@ -39,17 +39,21 @@ struct TapsView: View {
     @State private var showTip = false
 
     var body: some View {
-        List {
+        // v24 — selection is the List's own (the report lists' rule); selecting a row drills
+        // into the tap, the sidebar's own arrow-key grammar.
+        List(selection: selection) {
             if showTip {
                 Section {
                     TipView(tip)
                         .listRowSeparator(.hidden)
+                        .selectionDisabled()
                 }
             }
 
             Section {
                 ForEach(builtInRows, id: \.name) { row in
-                    BuiltInTapRow(row: row, onSelect: { onSelect(row.name) })
+                    BuiltInTapRow(row: row)
+                        .tag(row.name)
                 }
             } header: {
                 // A header labels its group. The vocabulary that used to hang under it is the
@@ -63,14 +67,15 @@ struct TapsView: View {
                     Text(searchText.isEmpty ? "No taps added yet — use + to add one."
                                             : "No taps match the search.")
                         .foregroundStyle(.secondary)
+                        .selectionDisabled()
                 } else {
                     ForEach(filteredInfos) { info in
                         TapRow(info: info,
                                installedCount: model.installedCount(fromTap: info.name),
                                trust: model.trustState,
-                               onSelect: { onSelect(info.name) },
                                onRemove: { removing = info },
                                onUntrust: { model.untrustTap(info.name) })
+                            .tag(info.name)
                     }
                 }
             } header: {
@@ -101,6 +106,16 @@ struct TapsView: View {
 
     private var removalTitle: String {
         removing.map { "Remove \($0.name)?" } ?? ""
+    }
+
+    /// A drill trigger, not a persisted selection: the tap page replaces the list, and coming
+    /// back starts clean — so the getter is always nil and the setter navigates.
+    private var selection: Binding<String?> {
+        Binding(get: { nil },
+                set: { name in
+                    guard let name else { return }
+                    onSelect(name)
+                })
     }
 
     private var removalPresented: Binding<Bool> {
@@ -185,30 +200,16 @@ private struct TapTile: View {
 
 private struct BuiltInTapRow: View {
     let row: TapsView.BuiltIn
-    let onSelect: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onSelect) {
-                HStack(spacing: 12) {
-                    TapTile(name: row.name)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(row.name)
-                        Text("\(row.count.formatted(.number)) \(row.kindLabel)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-
+        StateRow(title: row.name,
+                 subtitle: "\(row.count.formatted(.number)) \(row.kindLabel)") {
+            TapTile(name: row.name)
+        } accessory: {
             TagLabel("Built-in")
                 .font(.caption)
         }
-        .padding(.vertical, 3)
-        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+        .accessibilityHint("Shows the tap's packages")
     }
 }
 
@@ -216,33 +217,16 @@ private struct TapRow: View {
     let info: TapInfo
     let installedCount: Int
     let trust: TrustState
-    let onSelect: () -> Void
     let onRemove: () -> Void
     let onUntrust: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onSelect) {
-                HStack(spacing: 12) {
-                    TapTile(name: info.name, remote: info.remote)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(info.name)
-                        Text(contents)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("Shows the tap's packages")
-
+        StateRow(title: info.name, subtitle: contents) {
+            TapTile(name: info.name, remote: info.remote)
+        } accessory: {
             trustBadge
         }
-        .padding(.vertical, 3)
-        // Separators follow the first text otherwise, leaving stray fragments under the badges.
-        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+        .accessibilityHint("Shows the tap's packages")
         .contextMenu {
             if trust.taps.contains(info.name.lowercased()) {
                 // Only for *explicit* trust: official taps cannot be untrusted, and partial
