@@ -32,7 +32,7 @@ open "$(xcodebuild -project Brewery.xcodeproj -scheme Brewery -configuration Deb
 - **Safety whitelist**: every brew argv comes from the `BrewCommand` enum — no raw-argument path exists. Adding a case trips an exhaustive-switch tripwire in `BrewCommandTests` until the case is tagged, listed, and its first token whitelisted; destructive tokens (`uninstall`, `cleanup`, `kill`, `--force`, `--file`, …) fail the build.
 - **The join rule**: overlay keys are `kind:shortname`; brew output is normalized through `BrewClient.shortName`. Package names stay short — taps are a separate `Package.tap` field, and commands get tap-qualified only in `AppModel.install/upgrade/…Service` via the effective-tap rule.
 - **Cache version** (`CatalogStore.cacheVersion`): bump whenever `Package`'s stored shape changes, and update the pinned value in `CatalogV3Tests`. Optional additions that decode correctly as nil for old caches (like `tap`) don't need a bump.
-- **Performance**: never pass a large `[Package]`/`[SearchHit]` across a view boundary (the attribute graph copies and diffs stored properties — this once cost 6 s per keystroke). The UI tests pin search focus < 1 s, keystroke < 0.5 s, scroll < 1 s.
+- **Performance**: never pass a large `[Package]`/`[SearchHit]` across a view boundary (the attribute graph copies and diffs stored properties — this once cost 6 s per keystroke). The UI tests pin search focus < 1 s, keystroke < 0.5 s, scroll < 1 s. The pins sit near the dev machine's noise floor (the same commit has produced 0.39–0.69 s keystrokes across runs under load): before concluding a change regressed a timing, A/B it interleaved (`git stash push -- Brewery/` → run → `git stash pop` → run, ≥3×) — two sequential batches once "showed" an 18% regression that interleaving dissolved. Never relax a threshold to green a suite; they pass on a rested machine.
 - **View invalidation**: browse/search re-run off `catalogGeneration` (not counts) — a tap rescan can change the catalog at equal size.
 
 ## Design
@@ -42,6 +42,11 @@ Top-class UI/UX is a hard requirement, not a nice-to-have. Follow Apple HIG and 
 - **Nothing modal for reading.** Detail is a non-modal `.inspector` pane; the listing stays live beside it. A surface that grows its own footer, back button and navigation is an app inside the app.
 - **Every toolbar action has a menu bar command and a key equivalent.** Destinations are ⌘1…⌘5; show/hide items name the state they will produce.
 - **Every animation has a Reduce Motion branch.** x-axis slides become crossfades, blurs are dropped, repeating symbol effects hold still.
+
+Two review lessons that keep recurring:
+
+- **Argue back.** The maintainer explicitly wants pushback: when a request contradicts HIG or a more idiomatic pattern exists (even a complete rethink), say so with the citation instead of implementing literally — reasoned, named-pattern-backed rejections get accepted (a "label the source link 'formula'" request became kind-correct Formula/Cask; "trim the font preview" became killing the expander with Font Book as the specimen browser).
+- **When chrome fails in every container, question the control, not the styling.** The v12 scope picker went toolbar → hand-rolled band → `accessoryBar`, each flagged in review, because it fused a filter with two reports; the fix was information architecture (a Filter-menu toggle plus a sidebar Reports group), not another container. Before drawing any bar/band/chip by hand, ask which platform component already draws the pattern — and if a control keeps failing across containers, it's usually two ideas in one widget.
 
 ### Load the HIG skills — always, before touching UI
 
@@ -71,12 +76,19 @@ When guidance and this repo's committed grammar disagree, say so in `ARCHITECTUR
 The terminal has no Screen Recording permission, so `screencapture` fails. Instead: write a temporary `*ShotTests.swift` in `BreweryUITests/` that walks the UI and saves `XCTAttachment(screenshot: app.windows.firstMatch.screenshot())` with `.lifetime = .keepAlways`; run it with `-resultBundlePath`, export via `xcrun xcresulttool export attachments`, map names through the exported `manifest.json`, Read the PNGs, then **delete the test file**. Traps learned the hard way:
 
 - Scope sidebar clicks: `app.outlines["Sidebar"].staticTexts[...]` — bare `staticTexts["Installed"]` also matches card state labels.
-- `app.scrollViews.firstMatch` is the *sidebar*; find grid cards with `app.buttons.matching(NSPredicate(format: "label CONTAINS '…'"))`.
+- `app.scrollViews.firstMatch` is the *sidebar*; find grid cards with `app.buttons.matching(NSPredicate(format: "label CONTAINS '…'"))`. A card's AX label includes its description text — anchor card queries on a desc fragment (`label CONTAINS 'Clone of cat(1)'`) when the name alone would also match pane buttons like "Uninstall bat".
 - ⌘F focus lands asynchronously — `sleep(1)` before ⌘A/typing, and assert the field's value (or retry) before trusting timings.
 - After a `cacheVersion` bump the catalog re-downloads: wait for cards (`label CONTAINS 'Formula'`, generous timeout), not a fixed sleep.
 - macOS switches are `app.checkBoxes[...]` by accessibility label; popovers are separate windows — capture `XCUIScreen.main` to see them.
 - Prefer assertions over eyeballs where possible (frame equality for "no layout shift", `isHittable` for "restored scroll").
+- UI tests inherit persisted state (sidebar section, scopes, filters) from *previous* runs — start each shot test by keying to a known section (⌘1) and restore what you toggled. `@AppStorage` state is INVISIBLE to `defaults read one.metafates.Brewery` (both plists show only window frames, yet state persists) — never rule out a persisted filter by reading plists; open the actual menu in a shot test and read the checkmarks. A "search finds nothing" mystery cost an hour before the filter-menu screenshot showed Hide Deprecated checked.
+- A SwiftUI window's AX title fuses `.navigationTitle` and `.navigationSubtitle` with an en dash ("Title – Subtitle"), so `app.windows["Title"]` misses — match `identifier BEGINSWITH '<scene-id>'` (WindowGroup windows get `<id>-AppWindow-N`).
+- Toolbar menu items collide with their View-menu twins in queries — scope to `app.toolbars.menuItems[...]`. A borderless SwiftUI `Menu` exposes as `app.menuButtons`, NOT `popUpButtons`/`buttons` — and `popUpButtons[...].waitForExistence` can return true while the click's re-resolution then fails; query `menuButtons` by label predicate and click fresh.
+- Bare `app.buttons["Cancel"]` can match a *Touch Bar* element (click fails with "cannot be called with Touch Bar elements") — scope confirmationDialog buttons to `app.sheets.buttons[...]` (dialogs render as sheets), `typeKey(.escape)` as fallback.
+- To learn what a control actually exposes, print `element.debugDescription` in a temp test and grep the output (this found the Operations button vanishing when a ProgressView sat in its label).
+- State that only exists mid-mutation (the operations queue) is seeded via a launch argument (`-demo-operation`), not by mutating the machine.
+- **Verifying animations** (screenshots are too slow — click→screenshot latency outruns a 0.3 s slide): end the temp test with a deliberate `XCTFail("keep the screen recording")` — only *failed* tests keep the ~120 fps screen recording. Export it like any attachment, find the moment with `ffmpeg -vf "select='gt(scene,0.03)',showinfo"` (a gradual animation produces *no* scene cut; a broken instant swap does), then extract frames (`-ss T -t 0.9 -vf fps=30`) and Read the mid-flight ones; per-frame PNG sizes are a quick proxy for smooth ramp vs cut. Related fact: macOS `NavigationStack` does NOT animate pushes in a split-view detail column (iOS does) — the tap drill-down is manual (ZStack + offset, list stays mounted) for this reason, and a pushed page's listing must be prefilled synchronously before `withAnimation`, or it slides in empty and reads as a cut.
 
 ## Commits
 
-Feel free to commit sparingly when needed — one commit per coherent feature or fix; relaunch the app afterward so the user sees the result.
+Feel free to commit sparingly when needed — one commit per coherent feature or fix; a multi-part request lands as separate commits (the maintainer asks for this by name); relaunch the app afterward so the user sees the result.
