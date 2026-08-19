@@ -33,7 +33,7 @@ final class AppModel {
     private var catalogLoading = false
     var catalogFailed = false
 
-    /// Overlays are keyed by `Package.ID` (`kind:shortname`). v16 — persisted as a last-known
+    /// Overlays are keyed by `Package.ID` (`kind:shortname`). Persisted as a last-known
     /// snapshot (`StateSnapshot`) and restored at bootstrap, so launch shows the previous
     /// session's state for the second the probes take instead of a grid of Install buttons;
     /// the probes then correct it silently.
@@ -44,7 +44,7 @@ final class AppModel {
     /// in the same step as the installed overlay it is derived from.
     var dependents: [Package.ID: [Package.ID]] = [:]
 
-    /// v5 — what `brew services list` reports, keyed by short formula name. Every installed
+    /// What `brew services list` reports, keyed by short formula name. Every installed
     /// formula that defines a service has an entry, whatever its state.
     var serviceStatuses: [String: ServiceStatus] = [:]
 
@@ -55,13 +55,13 @@ final class AppModel {
     /// toolbar glyph, so a refresh is visibly happening rather than apparently ignored.
     private(set) var isRefreshing = false
 
-    /// v8 — true while the inline `brew update` of the freshness rule runs. Drives the Outdated
+    /// True while the inline `brew update` of the freshness rule runs. Drives the Outdated
     /// page's "Checking for updates…" states; also holds `pump()`, so a mutation enqueued
     /// mid-check starts right after it (with fresh metadata) instead of colliding with brew's
     /// exclusive update flock.
     private(set) var isCheckingForUpdates = false
 
-    /// v8 — the newest API payload mtime, brew's "metadata last known good" (terminal updates
+    /// The newest API payload mtime, brew's "metadata last known good" (terminal updates
     /// count too). Re-stat'd on every refresh; feeds the "Last checked" caption and the
     /// staleness gate.
     private(set) var metadataCheckedAt: Date?
@@ -91,7 +91,7 @@ final class AppModel {
     /// The sidebar's destination, and whether the operations popover is showing. Both are in the
     /// model rather than the view because the menu bar owns commands for them — View ▸ the five
     /// sections, View ▸ Show Operations — and a `Commands` builder can only reach app-level state.
-    /// Persisted (v9): the app reopens where it was left — HIG Launching, "restore the previous
+    /// Persisted: the app reopens where it was left — HIG Launching, "restore the previous
     /// state when your app restarts so people can continue where they left off". Someone who
     /// lives in Outdated should not re-navigate there every launch.
     var selection: SidebarSection? = SidebarSection(
@@ -119,13 +119,13 @@ final class AppModel {
     var showInspector = UserDefaults.standard.object(forKey: "inspector.shown") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showInspector, forKey: "inspector.shown") }
     }
-    /// v15 — the package the pane is describing. In the model, not the view, for `selection`'s
+    /// The package the pane is describing. In the model, not the view, for `selection`'s
     /// own reason: the menu bar's Uninstall command needs a target, and a `Commands` builder can
     /// only reach app-level state. Session state, never persisted — unlike the pane's
     /// visibility, *what* was being read is not personalization.
     var selectedPackage: Package?
 
-    /// v15.2 — bumped on every card selection, including of the already-shown package:
+    /// Bumped on every card selection, including of the already-shown package:
     /// assigning an equal `selectedPackage` re-renders nothing, so the pane listens to this
     /// counter (the ⌘F channel's shape) to pop its drill-down stack back to the root.
     private(set) var selectionRequests = 0
@@ -160,7 +160,7 @@ final class AppModel {
 
     private var catalogFetchedAt: Date?
     private var didBootstrap = false
-    /// v8 — when the last inline `brew update` was *started*, successful or not. brew only
+    /// When the last inline `brew update` was *started*, successful or not. brew only
     /// touches the payload mtime on success, so without this an offline machine would re-attempt
     /// (and time out) on every single ⌘R; with it, once per window.
     private var lastMetadataAttempt: Date?
@@ -206,7 +206,7 @@ final class AppModel {
             operations = [single, done, running]
         }
 
-        // Shot-test seeding (v25.1): the tap-trust and PATH findings vanished from this
+        // Shot-test seeding: the tap-trust and PATH findings vanished from this
         // machine once the login-shell overlay fixed the environment, so the structured
         // rendering is exercised through canned findings shaped verbatim like brew's
         // (diagnostic.rb pins the texts). Routed through `ingestCheckup` so the demo runs
@@ -288,7 +288,7 @@ final class AppModel {
         guard !didBootstrap else { return }
         didBootstrap = true
 
-        // v16 — last session's overlays before anything else, so the first frame shows
+        // Last session's overlays before anything else, so the first frame shows
         // last-known install state instead of Install buttons; the probes below correct it.
         if let snapshot = StateSnapshot.load() {
             installed = snapshot.installed
@@ -304,7 +304,7 @@ final class AppModel {
             catalogFetchedAt = cache.fetchedAt
         }
 
-        // v25 — the overlay must land before the first probes and tap scan: it was pre-warmed
+        // The overlay must land before the first probes and tap scan: it was pre-warmed
         // in the client's init, so this await typically resolves instantly; worst case (a
         // broken dotfile) it's the capture timeout, paid once.
         _ = await client.shellEnvironment()
@@ -315,13 +315,13 @@ final class AppModel {
         }
         await state
 
-        // v8 — probes first (cached-metadata answers on screen in a second), then the freshness
+        // Probes first (cached-metadata answers on screen in a second), then the freshness
         // rule corrects them: brew's own outdated computation runs against a cache our standing
         // HOMEBREW_NO_AUTO_UPDATE freezes, so a stale launch re-probes after one `brew update`.
         if await checkForUpdatesIfStale() {
             // The claim must wait for the answer: the flag stays up through the re-probe, or an
             // empty Outdated page says "Everything is up to date" for the second it takes the
-            // fresh read to land — the exact lie v8 exists to kill. No suspension between the
+            // fresh read to land — the exact lie the freshness rule exists to kill. No suspension between the
             // check dropping the flag and this raising it, so no frame sees the gap; the held
             // pump costs a queued mutation only the probe's own second.
             isCheckingForUpdates = true
@@ -339,9 +339,9 @@ final class AppModel {
 
         client.discover()
 
-        // v8 — unlike bootstrap, the check runs *before* the probes: the veil is already up, and
+        // Unlike bootstrap, the check runs *before* the probes: the veil is already up, and
         // one landing beats showing stale answers mid-refresh only to swap them seconds later.
-        // v8.2 — forced: ⌘R is an explicit request, and explicit requests are never coalesced.
+        // Forced: ⌘R is an explicit request, and explicit requests are never coalesced.
         _ = await checkForUpdatesIfStale(force: true)
 
         async let state: Void = refreshState()
@@ -351,12 +351,12 @@ final class AppModel {
         await state
     }
 
-    /// The v8 freshness rule: brew's metadata must be no older than brew's own API window
+    /// The freshness rule: brew's metadata must be no older than brew's own API window
     /// (450 s) before `outdated` is worth asking. An explicit `brew update` is not gated by
     /// `HOMEBREW_NO_AUTO_UPDATE` (only the auto-update path checks it), so it refreshes the API
     /// cache and tap clones even with our env set. Failure is silent by design — the probes fall
-    /// back to the cached answer, exactly the pre-v8 behavior. Returns whether an update ran.
-    /// v8.2 — ⌘R passes `force`: the window is brew's *auto*-update coalescing rule and an
+    /// back to the cached answer. Returns whether an update ran.
+    /// ⌘R passes `force`: the window is brew's *auto*-update coalescing rule and an
     /// explicit `brew update` always runs — pressing Refresh at "Last checked 7 minutes ago"
     /// used to visibly do nothing. The queue and re-entrancy guards stay; only the clocks yield.
     private func checkForUpdatesIfStale(force: Bool = false) async -> Bool {
@@ -421,7 +421,7 @@ final class AppModel {
 
     /// The one writer of `catalog` and `catalogIndex`, so neither can drift from the two halves.
     /// Dedupe is deterministic: core wins core-vs-tap, and the scan's tap-alphabetical order makes
-    /// the alphabetically-first tap win tap-vs-tap — the v1 accepted-collision rule, extended.
+    /// the alphabetically-first tap win tap-vs-tap — the accepted-collision rule, extended.
     private func composeCatalog() {
         var index = Dictionary(coreCatalog.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var composed = coreCatalog
@@ -522,7 +522,7 @@ final class AppModel {
             composeCatalog()
         }
 
-        // v16 — persist what was just published; the next launch's first frame reads it back.
+        // Persist what was just published; the next launch's first frame reads it back.
         persistStateSnapshot()
     }
 
@@ -553,7 +553,7 @@ final class AppModel {
         return result
     }
 
-    // MARK: - Disk sizes (v11)
+    // MARK: - Disk sizes
 
     /// Measured bytes per installed package, the Size sort's key. Filled by `measureSizes`
     /// through the same session cache the pane's Size row uses, so the two share every walk.
@@ -568,7 +568,7 @@ final class AppModel {
     /// pane's Size row and the size sort's sweep. A formula is its whole `Cellar/<name>` (every
     /// keg on disk is what the machine is paying); a cask is its Caskroom slot plus the moved
     /// artifacts (apps via the receipt, font files by artifact name).
-    /// v18 — the old kegs of a multi-version formula: every `Cellar/<name>/<version>` but the
+    /// The old kegs of a multi-version formula: every `Cellar/<name>/<version>` but the
     /// current one. Keys are namespaced `oldkeg:` because the pane's Size row caches the *whole*
     /// rack under the same id|version pair — one cache, two meanings would poison each other.
     nonisolated static func oldKegRoots(prefix: URL, name: String, versions: [String])
@@ -692,7 +692,7 @@ final class AppModel {
                with: installed.mapValues { $0.versions })
     }
 
-    /// v10 — the orphan report: what `brew autoremove` would remove. Cask receipts carry no
+    /// The orphan report: what `brew autoremove` would remove. Cask receipts carry no
     /// runtime dependencies, so each installed cask's `depends_on` formulae come from the
     /// catalog — that is how brew itself protects them (`utils/autoremove.rb` reads the cask
     /// DSL, not tabs). Recomputed per access; ~350 kegs and a few rounds are well under a
@@ -701,7 +701,7 @@ final class AppModel {
         Receipts.orphans(in: installed, caskDependencies: installedCaskDependencies)
     }
 
-    /// v18 — how many formulae carry more than one keg. The Storage listing's invalidation
+    /// How many formulae carry more than one keg. The Storage listing's invalidation
     /// signal: cleanup removes kegs without changing the *package* count the browse keys
     /// otherwise watch, so this is the number that has to sit in the keys.
     var multiKegCount: Int {
@@ -710,7 +710,7 @@ final class AppModel {
 
     /// Each installed cask's catalog `depends_on` formulae — cask receipts carry no runtime
     /// deps, so the claim comes from the catalog, which is how brew itself protects them.
-    /// Shared by the orphan fixpoint and the uninstall block list (v15).
+    /// Shared by the orphan fixpoint and the uninstall block list.
     private var installedCaskDependencies: [Package.ID: [String]] {
         var result: [Package.ID: [String]] = [:]
         for id in installed.keys where id.hasPrefix("cask:") {
@@ -722,8 +722,8 @@ final class AppModel {
     }
 
     /// The Installed section under the scope picker. `.all` is the full list; `.onRequest` drops the
-    /// kegs that are only on disk because something else needed them; `.orphans` (v10) keeps only
-    /// what `brew autoremove` would remove; `.attention` (v11) what Homebrew has retired.
+    /// kegs that are only on disk because something else needed them; `.orphans` keeps only
+    /// what `brew autoremove` would remove; `.attention` what Homebrew has retired.
     func installedPackages(scope: InstalledScope) -> [Package] {
         switch scope {
         case .all:
@@ -737,7 +737,7 @@ final class AppModel {
         case .attention:
             return installedPackages.filter(\.needsAttention)
         case .storage:
-            // v18 — formulae carrying more than one keg: the set `brew cleanup` acts on.
+            // Formulae carrying more than one keg: the set `brew cleanup` acts on.
             // Formula-only because no-args cleanup iterates Formula.installed (cleanup.rb:399);
             // old Caskroom versions are an upgrade artifact, not a cleanup target.
             return installedPackages.filter {
@@ -803,7 +803,7 @@ final class AppModel {
             break
         }
 
-        // v8 — auto-update is disabled on every invocation, so a package mutation must bring
+        // Auto-update is disabled on every invocation, so a package mutation must bring
         // brew's metadata in line first; but only when it actually drifted. The once-per-session
         // flag this replaces both under-updated (a days-long session updated once, then drifted)
         // and over-updated (an install a minute after the launch check paid ~5 s for a no-op).
@@ -819,7 +819,7 @@ final class AppModel {
         pump()
     }
 
-    /// v10 — the package whose Install awaits the trust-consent dialog; nil = no dialog.
+    /// The package whose Install awaits the trust-consent dialog; nil = no dialog.
     var pendingInstall: Package?
 
     var trustConsentPresented: Bool {
@@ -886,7 +886,7 @@ final class AppModel {
         enqueue(.upgradeAll, title: "Updating all packages", targetID: nil)
     }
 
-    /// v10 — the orphan report's action. The caller has shown the confirmation dialog by the
+    /// The orphan report's action. The caller has shown the confirmation dialog by the
     /// time this runs (the trust-write rule); brew removes exactly the set the report showed.
     func autoremove() {
         enqueue(.autoremove, title: "Removing orphaned dependencies", targetID: nil)
@@ -897,7 +897,7 @@ final class AppModel {
         operations.contains { $0.command == .autoremove && !$0.isFinished }
     }
 
-    /// v18 — the Storage report's action. The caller has shown the confirmation dialog (the
+    /// The Storage report's action. The caller has shown the confirmation dialog (the
     /// trust-write rule). Files only: the standing HOMEBREW_NO_AUTOREMOVE=1 gates the package
     /// removal plain `brew cleanup` would otherwise run (cleanup.rb:412), and brew itself keeps
     /// linked, pinned and keepme kegs.
@@ -914,7 +914,7 @@ final class AppModel {
         operations.count { $0.command == .cleanup && $0.isFinished && !$0.awaitingRefresh }
     }
 
-    // MARK: - Checkup (v19)
+    // MARK: - Checkup
 
     enum CheckupOutcome: Equatable {
         case report(DoctorReport)
@@ -930,7 +930,7 @@ final class AppModel {
     private(set) var checkupRanAt: Date?
     private(set) var isRunningCheckup = false
 
-    /// v25.1 — the PATH finding's shadowed tools, resolved to the packages that provide them.
+    /// The PATH finding's shadowed tools, resolved to the packages that provide them.
     struct ShadowedPackage: Equatable, Identifiable {
         let package: Package
         let tools: [String]
@@ -974,7 +974,7 @@ final class AppModel {
         checkupRanAt = .now
     }
 
-    /// v25.1 — publishes a parsed report together with its precomputed shadow rows, in one
+    /// Publishes a parsed report together with its precomputed shadow rows, in one
     /// step: the view must never see the report without them. Resolution is readlink-primary
     /// (`<prefix>/bin/<tool>` names its Cellar/Caskroom provider exactly — tap formulae
     /// included, `gem` → whatever is actually linked), with the executables index as the
@@ -1008,7 +1008,7 @@ final class AppModel {
         checkupOutcome = .report(report)
     }
 
-    /// v21 — the one doctor remediation the app runs itself. No dialog: link is non-destructive
+    /// The one doctor remediation the app runs itself. No dialog: link is non-destructive
     /// and reversible — the service-toggle rule, not the removal rule. The targetID keeps the
     /// one busy grammar (card and pane spin while it runs).
     func link(_ name: String) {
@@ -1021,7 +1021,7 @@ final class AppModel {
         operations.last { $0.command == .link(name: name) }
     }
 
-    /// A finding's `affects` names resolved against the catalog — the v17 caveat-mention rule:
+    /// A finding's `affects` names resolved against the catalog — the caveat-mention rule:
     /// short name (doctor emits full names for tap items), formula first then cask, unresolved
     /// names dropped, order preserved, deduped.
     func resolvedAffected(_ names: [String]) -> [Package] {
@@ -1041,7 +1041,7 @@ final class AppModel {
         operations.contains { $0.command == .upgradeAll && !$0.isFinished }
     }
 
-    // MARK: - Uninstall (v15)
+    // MARK: - Uninstall
 
     /// The package whose Uninstall awaits the confirmation dialog; nil = no dialog.
     var pendingUninstall: Package?
@@ -1130,7 +1130,7 @@ final class AppModel {
         return names.prefix(3).joined(separator: ", ") + ", and \(names.count - 3) more"
     }
 
-    /// v11's read-only pin state, hoisted from the pane (v15) so the pane, the card's context
+    /// Read-only pin state, hoisted from the pane so the pane, the card's context
     /// menu and the menu bar all read one rule.
     func isPinned(_ package: Package) -> Bool {
         outdated[package.id]?.pinned == true
@@ -1144,7 +1144,7 @@ final class AppModel {
         return package
     }
 
-    // MARK: - Services (v5)
+    // MARK: - Services
 
     /// The Services section's rows: exactly what brew reports as available, as packages —
     /// catalog entries where covered, synthesized otherwise. Alphabetical, like an inventory.
@@ -1174,7 +1174,7 @@ final class AppModel {
                 targetID: package.id)
     }
 
-    // MARK: - Taps (v6)
+    // MARK: - Taps
 
     /// The Taps tab's rows, straight from the scan; the trust snapshot rides along.
     var tapInfos: [TapInfo] { tapScan.infos }
@@ -1186,7 +1186,7 @@ final class AppModel {
         tapScan.packages.filter { $0.tap == tap }
     }
 
-    /// v14 — what a tap provides, core catalogs included: the one membership rule the Taps grid
+    /// What a tap provides, core catalogs included: the one membership rule the Taps grid
     /// and the pane's tap page both read. Unsorted — each surface orders for its own audience.
     func packages(inTap tap: String) -> [Package] {
         switch tap {
@@ -1285,7 +1285,7 @@ final class AppModel {
         // released by whichever refresh actually publishes (releaseRefreshHolds), not here —
         // this run can be superseded and bail without publishing.
         Task {
-            // v18 — cleanup shrinks Cellar racks under unchanged id|version cache keys, so the
+            // Cleanup shrinks Cellar racks under unchanged id|version cache keys, so the
             // whole session cache goes; it refills lazily. (The size-sort order corrects on the
             // next sweep — its trigger key is unchanged by cleanup, a documented residual.)
             if operation.command == .cleanup { DiskUsage.cache.removeAll() }
@@ -1357,7 +1357,7 @@ final class AppModel {
         NSWorkspace.shared.open(url)
     }
 
-    /// v10 — the service's log as a real file: `$HOMEBREW_PREFIX` substituted, existence
+    /// The service's log as a real file: `$HOMEBREW_PREFIX` substituted, existence
     /// checked per call — the affordance appears once the service has actually logged.
     func serviceLogURL(for package: Package) -> URL? {
         guard let path = package.service?.logPath else { return nil }
@@ -1410,13 +1410,13 @@ final class AppModel {
         showAddTap = true
     }
 
-    /// v14 — the pane's Browse All escape: the Taps section drills into this tap.
+    /// The pane's Browse All escape: the Taps section drills into this tap.
     func requestOpenTap(_ tap: String) {
         selection = .taps
         selectedTap = tap
     }
 
-    /// v21 — Checkup's "Show in Taps": the list, where Remove Tap… lives.
+    /// Checkup's "Show in Taps": the list, where Remove Tap… lives.
     func requestShowTapList() {
         selection = .taps
         selectedTap = nil

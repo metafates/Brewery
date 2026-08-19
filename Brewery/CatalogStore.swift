@@ -14,8 +14,8 @@ nonisolated struct CatalogCache: Codable {
     let version: Int
     let fetchedAt: Date
     let packages: [Package]
-    /// v4: the tap-qualified subset of the formula analytics ("user/repo/name" keys), so the tap
-    /// scan can join real install counts. Optional — a pre-v4 cache decodes it as nil and tap
+    /// The tap-qualified subset of the formula analytics ("user/repo/name" keys), so the tap
+    /// scan can join real install counts. Optional — an older cache decodes it as nil and tap
     /// packages go uncounted until the next daily fetch, which is why no version bump is needed.
     let tapInstalls90d: [String: Int]?
 
@@ -47,7 +47,7 @@ nonisolated struct CatalogStore {
     static let maxCacheAge: TimeInterval = 24 * 60 * 60
 
     /// Bumped whenever `Package`'s shape changes; a mismatch discards the cache and re-downloads.
-    static let cacheVersion = 10   // v11: deprecation dates, reasons and replacements
+    static let cacheVersion = 10   // 10: deprecation dates, reasons and replacements
 
     /// Application Support/Brewery, created once on first use — a computed property re-ran
     /// `createDirectory` on every cache path and icon-store access.
@@ -66,7 +66,7 @@ nonisolated struct CatalogStore {
     }
 
     /// nil when there is no cache, when the schema stamp differs, or when decoding throws — which
-    /// is exactly what a pre-v3 file (no `version` key) produces. Migration is a fresh download.
+    /// is exactly what an unstamped file (no `version` key) produces. Migration is a fresh download.
     /// `@concurrent` for `fetch`'s reason: the warm-launch file is ~8 MB of JSON, which a plain
     /// nonisolated func would decode inline on the main actor.
     @concurrent static func loadCache() async -> CatalogCache? {
@@ -255,7 +255,7 @@ nonisolated struct CatalogStore {
         }
     }
 
-    /// v11 — the deprecation facts both catalogs serialize under the same flat keys
+    /// The deprecation facts both catalogs serialize under the same flat keys
     /// (`formula.rb` / `cask.rb` `to_h`), read once here for both entry types. The fields sit
     /// flat on each entry's JSON object, so each entry's hand-written `init(from:)` passes this
     /// type the same `decoder` and it opens its own keyed view of the same object — the eight

@@ -13,7 +13,7 @@ import TipKit
 struct BreweryApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
-    /// v11 — the same keys `ContentView` binds; `@AppStorage` is how a `Commands` builder and
+    /// The same keys `ContentView` binds; `@AppStorage` is how a `Commands` builder and
     /// a view share a preference without threading it through the model.
     @AppStorage("installed.sort") private var installedSort: InstalledSort = .name
     @AppStorage("discover.kindFilter") private var kindFilter: KindFilter = .all
@@ -110,7 +110,7 @@ struct BreweryApp: App {
                         .disabled(model.selection != .installed)
                 }
                 .disabled(model.selection != .discover && model.selection != .installed)
-                // v11 — the sort menu's menu-bar twin. Always present, disabled outside
+                // The sort menu's menu-bar twin. Always present, disabled outside
                 // Installed ("always show the same set of menu items" — the menu bar's rule),
                 // Toggles for the you-are-here checkmark (the destinations' pattern), ⌃⌘1…3 —
                 // Finder's own sort-by modifier family.
@@ -153,7 +153,7 @@ struct BreweryApp: App {
                 .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(model.outdated.isEmpty)
 
-                // v15 — the context menu's twin (a context item must also exist in the main
+                // The context menu's twin (a context item must also exist in the main
                 // interface, and the shortcut shows here, not there). ⌘⌫ is the platform's
                 // delete family (Finder, App Store); the dynamic title names the target, like
                 // Finder's "Eject <disk>". Always present, disabled when nothing uninstallable

@@ -6,7 +6,7 @@
 import AppKit
 import SwiftUI
 
-/// The installed bundle's real icon when a cask's `.app` is on disk (v10 — identity straight
+/// The installed bundle's real icon when a cask's `.app` is on disk (identity straight
 /// from the app itself, no network), else the package homepage's favicon, else an SF Symbol in
 /// a tinted rounded rect. Favicons are backed by `IconStore` rather than `AsyncImage`: a cell
 /// scrolled out of the grid cancels this view's await, but the store's fetch runs on
@@ -42,7 +42,7 @@ struct PackageIconView: View {
     }
 
     /// Font casks never reach the store at all: a foundry's favicon says nothing about the
-    /// typeface, so they always render the glyph. Forge-hosted homepages don't either (v10):
+    /// typeface, so they always render the glyph. Forge-hosted homepages don't either:
     /// GitHub's and GitLab's favicons are one logo repeated across half the catalog — chrome
     /// pretending to be identity — so they skip the fetch and wear the ordinary kind glyph.
     /// (A GitHub-mark tile shipped first and read as a fourth package kind next to the
@@ -53,9 +53,9 @@ struct PackageIconView: View {
         return host
     }
 
-    /// v25.2 — the one forge-host exception: a *dedicated* GitHub account (owner == repo)
+    /// The one forge-host exception: a *dedicated* GitHub account (owner == repo)
     /// exists for this one project, so its avatar is identity, not the repeated-logo chrome
-    /// the v10 skip exists for. Fonts keep skipping every remote icon.
+    /// the forge-host skip exists for. Fonts keep skipping every remote icon.
     private var avatarSource: (key: String, url: URL)? {
         guard !package.isFont else { return nil }
         return IconStore.avatarSource(homepage: package.homepageURL)

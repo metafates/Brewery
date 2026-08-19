@@ -2,7 +2,7 @@
 //  AttentionTests.swift
 //  BreweryTests
 //
-//  v11 — the Attention report's grammar and decode. The sentences mirror brew's own
+//  The Attention report's grammar and decode. The sentences mirror brew's own
 //  `DeprecateDisable.message` (`deprecate_disable.rb`): preset slugs humanize through the
 //  vendored tables, prose passes through the same "it …" frame, and a missing disable date
 //  projects deprecation + 12 months (`REMOVE_DISABLED_TIME_WINDOW`).
@@ -55,7 +55,7 @@ struct AttentionTests {
                 + "It still installs today, but will likely stop working around May 2027.")
     }
 
-    @Test("no facts at all degrades to the pre-v11 generic copy")
+    @Test("no facts at all degrades to the generic copy")
     func bareDeprecation() {
         #expect(package(deprecated: true).deprecationExplanation
                 == "Homebrew has deprecated this package. It still installs today, but it may be disabled in a future release.")
@@ -140,7 +140,7 @@ struct AttentionTests {
         #expect(decoded[1].deprecationReason == nil)
     }
 
-    // MARK: - Row phrase (v20)
+    // MARK: - Row phrase
 
     @Test("the report row's one-liner: verb, slug phrase, disabled wins, prose passes through")
     func attentionPhrase() {

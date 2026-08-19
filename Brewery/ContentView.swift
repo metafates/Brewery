@@ -25,7 +25,7 @@ struct PackageKindsTip: Tip {
     }
 }
 
-/// The fixed destinations of the sidebar: the library, then the reports. **(v12)** Orphans and
+/// The fixed destinations of the sidebar: the library, then the reports. Orphans and
 /// Attention are destinations, not Installed scopes — they carry their own headers, actions and
 /// empty states, and a titled sidebar group is the platform's container for exactly that (HIG
 /// *Sidebars*: succinct, descriptive labels title each group).
@@ -147,16 +147,16 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// The model's subsets of what is on disk: what the user asked for, everything, the (v10)
-/// orphan report — dependencies nothing installed still needs — and the (v11) attention
-/// report — packages Homebrew has deprecated or disabled. **(v12)** UI-wise this is no longer
+/// The model's subsets of what is on disk: what the user asked for, everything, the
+/// orphan report — dependencies nothing installed still needs — and the attention
+/// report — packages Homebrew has deprecated or disabled. UI-wise this is no longer
 /// one picker: Installed reaches onRequest/all through the Filter menu's Show Dependencies
 /// toggle, and the reports are sidebar destinations.
 nonisolated enum InstalledScope {
     case onRequest, all, orphans, attention, storage
 }
 
-/// v11 — Installed's sort orders, Finder's *Sort By* vocabulary. Name is the inventory default;
+/// Installed's sort orders, Finder's *Sort By* vocabulary. Name is the inventory default;
 /// dates and sizes read newest- and largest-first, which is the question each answers ("what
 /// did I just install", "what is costing me space"). Installed only: Discover browses by
 /// popularity, and Outdated/Services are a dozen rows.
@@ -191,7 +191,7 @@ struct ContentView: View {
 
     @AppStorage("discover.kindFilter") private var kindFilter: KindFilter = .all
     @AppStorage("discover.hideDeprecated") private var hideDeprecated = false
-    /// v12 — On Request is the default truth of Installed; dependency-only kegs join it through
+    /// On Request is the default truth of Installed; dependency-only kegs join it through
     /// this Filter-menu toggle (each already wears the "dependency" mark). The old four-way
     /// scope picker is gone: its two report segments are sidebar destinations now.
     @AppStorage("installed.showDependencies") private var showDependencies = false
@@ -202,7 +202,7 @@ struct ContentView: View {
     /// must not carry one tab's filter into the other.
     @AppStorage("installed.kindFilter") private var installedKindFilter: KindFilter = .all
     @AppStorage("installed.tapsOnly") private var installedTapsOnly = false
-    /// v11 — Installed's sort. `@AppStorage`, not model state, for the same reason as the
+    /// Installed's sort. `@AppStorage`, not model state, for the same reason as the
     /// filters: it is a view preference, and the View ▸ Sort By commands share it by key.
     @AppStorage("installed.sort") private var installedSort: InstalledSort = .name
 
@@ -246,14 +246,14 @@ struct ContentView: View {
     /// Opening a package means selecting it, not interrupting: the pane follows the selection, so
     /// clicking through card after card is one continuous act rather than open-read-dismiss.
     private func select(_ package: Package) {
-        // v15 — selection lives in the model: the menu bar's Uninstall command needs a target,
-        // and (v15.2) the request counter lets the pane react to re-selecting the same package.
+        // Selection lives in the model: the menu bar's Uninstall command needs a target,
+        // and the request counter lets the pane react to re-selecting the same package.
         model.select(package)
     }
 
     // MARK: - Shell
 
-    /// v10 — the trust-consent dialog's title: the situation, succinctly (HIG Alerts).
+    /// The trust-consent dialog's title: the situation, succinctly (HIG Alerts).
     private var trustConsentTitle: Text {
         guard let package = model.pendingInstall,
               let tap = model.effectiveTap(for: package) else { return Text(verbatim: "") }
@@ -269,7 +269,7 @@ struct ContentView: View {
             : "Remove \(info.name)?"
     }
 
-    /// v15 — the uninstall dialog's title, same grammar — except blocked, where there is no
+    /// The uninstall dialog's title, same grammar — except blocked, where there is no
     /// question to ask: the dialog is informational (HIG Alerts), a statement with an OK.
     private var uninstallTitle: Text {
         guard let package = model.pendingUninstall else { return Text(verbatim: "") }
@@ -310,7 +310,7 @@ struct ContentView: View {
                     Label(item.title, systemImage: item.symbol)
                         .badge(badgeCount(for: item))
                 }
-                // v12 — the reports, in the source list's own grammar (Mail's Smart Mailboxes,
+                // The reports, in the source list's own grammar (Mail's Smart Mailboxes,
                 // Finder's groups): always discoverable, never floating over the listing.
                 Section("Reports") {
                     ForEach(SidebarSection.reports) { item in
@@ -356,7 +356,7 @@ struct ContentView: View {
                         .inspectorColumnWidth(min: 300, ideal: 340, max: 480)
                 }
         }
-        // v10 — trust consent, at the moment of consequence: every Install surface funnels
+        // Trust consent, at the moment of consequence: every Install surface funnels
         // through AppModel.install, and when the grant would be new the dialog asks instead.
         // The same confirmationDialog grammar the tap page's Trust and Remove decisions use.
         .confirmationDialog(trustConsentTitle,
@@ -369,7 +369,7 @@ struct ContentView: View {
         } message: { package in
             Text("This tap isn't trusted yet. Installing trusts only \(package.name)'s recipe; trusting the tap covers everything it ships.")
         }
-        // v15 — uninstall consent: every Uninstall surface funnels through AppModel.uninstall,
+        // Uninstall consent: every Uninstall surface funnels through AppModel.uninstall,
         // and the dialog runs before anything enqueues (the trust-write rule). A formula
         // something still needs loses the destructive buttons and the message explains —
         // Remove Tap's exact shape. The zap tier appears only when the receipt earned it.
@@ -457,7 +457,7 @@ struct ContentView: View {
             if section == .discover || (section == .taps && TapStore.coreTaps.contains(model.selectedTap ?? "")) {
                 packages.sort(by: Package.popularityOrder)
             }
-            // v11 — Installed's chosen order, every scope. Search results stay relevance-ranked
+            // Installed's chosen order, every scope. Search results stay relevance-ranked
             // (Finder's own behavior), which is why this lives on the browse path only.
             if section == .installed {
                 switch installedSort {
@@ -474,7 +474,7 @@ struct ContentView: View {
             browseHits[key.listing.section] = packages.map { SearchHit(package: $0, matchedCommand: nil) }
             builtKeys[key.listing.section] = key
         }
-        // v11 — the Size sort's data: sweep every installed package when the sort needs it, and
+        // The Size sort's data: sweep every installed package when the sort needs it, and
         // again when the installed set changes. A warm pass is instant and publishes nothing.
         .task(id: sizeSweepKey) {
             guard sizeSweepKey.active else { return }
@@ -507,7 +507,7 @@ struct ContentView: View {
             WorkingCapsule(text: "Loading catalog…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if section == .taps {
-            // In-column drill-down, no transition (v9): macOS NavigationStack does not animate
+            // In-column drill-down, no transition: macOS NavigationStack does not animate
             // this push — a split view's detail column swaps instantly, as do Finder's and
             // Mail's own drill-ins — so the hand-rolled slide was imitating motion the platform
             // doesn't perform here, and a translucent grid crossing a fading list read as smear,
@@ -540,7 +540,7 @@ struct ContentView: View {
             CheckupView(searchText: model.query)
                 .refreshVeil(model.isRefreshing)
         } else if section == .orphans || section == .attention || section == .storage {
-            // v20 — reports are state rows, not catalog cards (the Services rule generalized).
+            // Reports are state rows, not catalog cards (the Services rule generalized).
             ReportListView(hits: displayedHits,
                            isSearching: isSearching,
                            selectedID: inspectedID,
@@ -606,7 +606,7 @@ struct ContentView: View {
                         })
     }
 
-    /// v8 — the Outdated page's status feedback, integrated into the page rather than raised at
+    /// The Outdated page's status feedback, integrated into the page rather than raised at
     /// it (HIG *Feedback*): a small spinner naming the launch-time check while it runs, else how
     /// long ago brew's metadata was last refreshed — the answer to "is this list stale?" that
     /// used to require a terminal. Lives in the header slot so it scrolls with content and sits
@@ -674,7 +674,7 @@ struct ContentView: View {
         builtKeys[.taps] = browseKey
     }
 
-    /// v11 — the cold size sweep, named while it runs (HIG *Progress indicators*: a spinner for
+    /// The cold size sweep, named while it runs (HIG *Progress indicators*: a spinner for
     /// a background operation, description where helpful) — the Outdated freshness caption's
     /// grammar. A warm sweep finishes before anyone reads this, so it never flashes.
     @ViewBuilder private var sizeMeasuringCaption: some View {
@@ -769,7 +769,7 @@ struct ContentView: View {
         }
     }
 
-    /// A tap page's contents — the model's one membership rule (v14), this page's kind filter
+    /// A tap page's contents — the model's one membership rule, this page's kind filter
     /// on top. The list view (tap == nil) needs no packages.
     private func tapPagePackages(for tap: String?) -> [Package] {
         guard let tap else { return [] }
@@ -1085,14 +1085,14 @@ struct ContentView: View {
                 .accessibilityLabel("Filter")
             }
         }
-        // v12 — Filter and Sort share one group: both shape how the listing reads, and one
+        // Filter and Sort share one group: both shape how the listing reads, and one
         // capsule instead of two thins the edge that used to overflow (HIG *Toolbars*: "group
         // toolbar items logically by function… minimize the number of groups").
         if section == .installed {
             ToolbarItemGroup(placement: .primaryAction) {
                 Menu {
                     kindPicker($installedKindFilter)
-                    // v12 — dependency visibility is a filter, so it lives with the filters;
+                    // Dependency visibility is a filter, so it lives with the filters;
                     // the filled funnel counts it because the listing differs from the default.
                     Toggle("Show Dependencies", isOn: $showDependencies)
                     Toggle("From Taps Only", isOn: $installedTapsOnly)
@@ -1102,7 +1102,7 @@ struct ContentView: View {
                 }
                 .help("Filter by kind or source, or show dependency-only packages")
                 .accessibilityLabel("Filter")
-                // v11 — the sort, in the Filter menu's own grammar (HIG *Pop-up buttons*: a flat
+                // The sort, in the Filter menu's own grammar (HIG *Pop-up buttons*: a flat
                 // list of mutually exclusive options). Its menu-bar twin is View ▸ Sort By.
                 Menu {
                     Picker("Sort By", selection: $installedSort) {
@@ -1143,7 +1143,7 @@ struct ContentView: View {
     @ToolbarContentBuilder private var refreshToolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             // A Label, not a bare Image: the system overflow menu renders a toolbar item's
-            // text, and an icon-only item there is a glyph with no name (v12).
+            // text, and an icon-only item there is a glyph with no name.
             Button { refresh() } label: {
                 Label {
                     Text("Refresh")
@@ -1178,7 +1178,7 @@ struct ContentView: View {
             Button {
                 model.showInspector.toggle()
             } label: {
-                // Names the state it will produce, like its View-menu twin (v12).
+                // Names the state it will produce, like its View-menu twin.
                 Label(model.showInspector ? "Hide Info" : "Show Info",
                       systemImage: "sidebar.right")
             }

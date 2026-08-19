@@ -2,7 +2,7 @@
 //  CommandsTests.swift
 //  BreweryTests
 //
-//  v13 — the Commands section's order. The API's ASCII order front-loaded the capitals
+//  The Commands section's order. The API's ASCII order front-loaded the capitals
 //  block (llvm led with FileCheck · UnicodeNameMappingGenerator); display order is
 //  case-insensitive with the raw name as a deterministic tiebreak.
 //
@@ -29,7 +29,7 @@ struct CommandsTests {
     }
 }
 
-/// v14 — the popularity comparator, hoisted to Package for the tap page (comparators are pure
+/// The popularity comparator, hoisted to Package for the tap page (comparators are pure
 /// statics with tests).
 struct PopularityOrderTests {
     private func package(_ name: String, installs: Int?) -> Package {

@@ -26,7 +26,7 @@ struct ServicesView: View {
             // banner was really explaining is a consequence of one control, and it now lives on
             // that control (HIG *Offering help* → macOS: "Explain the action or task the control
             // initiates", "Be brief") — where it is still there the day you flip the switch.
-            // v24 — selection is the List's own (the report lists' rule): one highlight
+            // Selection is the List's own (the report lists' rule): one highlight
             // grammar app-wide, drawn by the system.
             List(selection: selection) {
                 ForEach(hits) { hit in
@@ -96,12 +96,12 @@ private struct ServiceRow: View {
                     Button("Start") { model.startService(package) }
                 }
             }
-            // v10 — present once the service has actually logged; absent, not dimmed.
+            // Present once the service has actually logged; absent, not dimmed.
             if let url = model.serviceLogURL(for: package) {
                 Button("Open Log") { model.openFile(at: url) }
             }
             Divider()
-            // v24 — the shared package base every package row carries.
+            // The shared package base every package row carries.
             PackageMenuItems(package: package)
         }
     }

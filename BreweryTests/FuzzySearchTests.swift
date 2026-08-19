@@ -166,7 +166,7 @@ struct FuzzySearchTests {
         #expect(order.map(\.package.name) == ["ab", "ab-one", "ab-two"])
     }
 
-    // MARK: - Command index (v3)
+    // MARK: - Command index
 
     /// The index the app actually feeds the ranker, so these tests exercise the real inversion too.
     private static func index(_ packages: [Package]) async -> [String: [Package.ID]] {
@@ -236,7 +236,7 @@ struct FuzzySearchTests {
         #expect(subset.isEmpty)
     }
 
-    // MARK: - Tap-qualified candidate (v4)
+    // MARK: - Tap-qualified candidate
 
     private static func tapFormula(_ name: String, tap: String) -> Package {
         Package(kind: .formula, name: name, displayName: nil, desc: nil, homepage: nil,

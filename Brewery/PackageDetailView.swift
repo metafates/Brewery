@@ -17,8 +17,8 @@ import SwiftUI
 struct PackageDetailView: View {
     let package: Package
 
-    /// One entry in the pane's drill-down: another package's page, (v13) a package's full
-    /// command list, or (v14) a tap's package list.
+    /// One entry in the pane's drill-down: another package's page, a package's full
+    /// command list, or a tap's package list.
     enum Page {
         case package(Package)
         case commands(Package)
@@ -96,11 +96,11 @@ struct PackageDetailView: View {
                         .transition(pushTransition)
                 }
             }
-            // v24 — the veil moved up to ContentView's inspector container: applied once for
+            // The veil moved up to ContentView's inspector container: applied once for
             // both the selected and the No Selection branch, capsule-less (one wait, one
             // narrator — the content column's capsule).
         }
-        // v15.2 — re-selecting this package's own card while drilled into a subpage pops the
+        // Re-selecting this package's own card while drilled into a subpage pops the
         // stack home. The pane's `.id(package.id)` only resets when the selection *changes*;
         // without this, clicking the shown package's card answered with nothing.
         .onChange(of: model.selectionRequests) {
@@ -262,7 +262,7 @@ private struct DetailPage: View {
     // MARK: - Banner
 
     /// A disabled package's button is greyed out; this is where that gets explained.
-    /// v11 — specific, not generic: why brew retired it (brew's own reason vocabulary), since
+    /// Specific, not generic: why brew retired it (brew's own reason vocabulary), since
     /// when, when it stops working, and what replaces it. The replacement is the pane's usual
     /// tappable row, kept *outside* the texts' `.combine` — folding a button into a combined
     /// element hides it from VoiceOver (the service Logs row's lesson).
@@ -319,7 +319,7 @@ private struct DetailPage: View {
             ForEach(blocks.enumerated(), id: \.offset) { index, block in
                 switch block {
                 case .text(let paragraph):
-                    // Native Text (v9): it renders the code chips and opens the link runs on
+                    // Native Text: it renders the code chips and opens the link runs on
                     // click. This was an AppKit NSTextField for one refinement — the pointing
                     // hand over exactly the link, which SwiftUI has no per-run cursor for —
                     // and a whole NSViewRepresentable with a sizing workaround wasn't worth
@@ -329,7 +329,7 @@ private struct DetailPage: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 case .code(let code):
-                    // v17 — a `brew install` the caveat asks for is a package this app can show:
+                    // A `brew install` the caveat asks for is a package this app can show:
                     // the catalog-resolved mentions ride directly under their block as the same
                     // navigation rows dependencies use. Install stays on the pushed page, where
                     // the one prominent Install button (and its consent flow) already lives.
@@ -372,7 +372,7 @@ private struct DetailPage: View {
         return result
     }
 
-    /// v13 — a handful of commands reads inline as one copyable word list; past this the run
+    /// A handful of commands reads inline as one copyable word list; past this the run
     /// is a wall (llvm ships 112 — the fonts lesson in prose form), so the section shows the
     /// count and the full list lives one page down the pane's own stack.
     private static let inlineCommandLimit = 8
@@ -481,7 +481,7 @@ private struct DetailPage: View {
                     }
                 }
                 if let logPath = service.logPath {
-                    // v10 — a bespoke row, not `gridRow`: its `.combine` would swallow the
+                    // A bespoke row, not `gridRow`: its `.combine` would swallow the
                     // open button (the license row's lesson). Console is the platform's log
                     // viewer; the button appears once the file exists — the app already has
                     // a log window, but that one tails *operations*, not service runtime.
@@ -530,7 +530,7 @@ private struct DetailPage: View {
     }
 
     /// Packages that cannot be installed alongside this one — formula conflicts with brew's
-    /// reasons, cask conflicts (v10) as bare cask tokens. Each name is a row like a dependency,
+    /// reasons, cask conflicts as bare cask tokens. Each name is a row like a dependency,
     /// so following one retargets the sheet; a name the catalog does not cover stays plain text.
     private var conflicts: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -617,8 +617,8 @@ private struct DetailPage: View {
 }
 
 
-/// v13 — the Commands section's summary row when the run would be a wall: the count as the
-/// descriptive label, the pane's row chrome (`PaneRow`, shared with `RelatedRow` since v24),
+/// The Commands section's summary row when the run would be a wall: the count as the
+/// descriptive label, the pane's row chrome (`PaneRow`, shared with `RelatedRow`),
 /// the drill-down as the disclosure.
 private struct CommandsRow: View {
     let count: Int
@@ -636,7 +636,7 @@ private struct CommandsRow: View {
     }
 }
 
-/// v13 — the full command list, one per row: a scannable column where the inline run was a
+/// The full command list, one per row: a scannable column where the inline run was a
 /// wall. Lazy because texlive ships hundreds; selectable like the run it replaces.
 private struct CommandsPage: View {
     let package: Package
@@ -664,7 +664,7 @@ private struct CommandsPage: View {
     }
 }
 
-/// v14 — what a tap provides, one page down (the Commands page's grammar): RelatedRows so any
+/// What a tap provides, one page down (the Commands page's grammar): RelatedRows so any
 /// package is one click deeper. Bounded, the fonts law: past the shelf limit the page shows
 /// the most-installed slice — the top of homebrew/core is a real answer, row 4 000 is not —
 /// and a Browse All button hands the full walk to the Taps grid, the surface built for it.
@@ -737,5 +737,5 @@ private struct TapPage: View {
     }
 }
 
-// RelatedRow, CopyButton and CodeChip moved to SharedControls.swift (v19) — the Checkup
+// RelatedRow, CopyButton and CodeChip moved to SharedControls.swift — the Checkup
 // report shares the pane's grammar for package rows and command chips.

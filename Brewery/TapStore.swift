@@ -36,7 +36,7 @@ nonisolated struct TrustState: Equatable {
         return trustedItems.count { $0.hasPrefix(prefix) }
     }
 
-    /// v10 — whether installing `name` from `tap` would grant trust brew doesn't already
+    /// Whether installing `name` from `tap` would grant trust brew doesn't already
     /// have: the tap isn't trusted and no per-item entry covers this name. URL-shaped
     /// custom-remote entries fail the exact match and simply re-ask — the conservative side.
     func needsConsent(tap: String, name: String) -> Bool {
@@ -335,7 +335,7 @@ nonisolated enum TapStore {
 
     // MARK: - Trust
 
-    /// Reads brew 6's trust store. Pure parsing is split out for tests. v25 — the path follows
+    /// Reads brew 6's trust store. Pure parsing is split out for tests. The path follows
     /// brew's own resolution (bin/brew:163-170, trust.rb:27-34): `$XDG_CONFIG_HOME/homebrew`,
     /// else `$HOMEBREW_XDG_CONFIG_HOME/homebrew`, else `~/.homebrew` — evaluated against the
     /// same environment the brew children get, so Taps and Checkup can never disagree about

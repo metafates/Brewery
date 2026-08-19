@@ -2,7 +2,7 @@
 //  InstalledSortTests.swift
 //  BreweryTests
 //
-//  v11 — Installed's sort orders: the comparators (newest/largest first, missing data last,
+//  Installed's sort orders: the comparators (newest/largest first, missing data last,
 //  name as tiebreak) and the receipt `time` that feeds Date Installed.
 //
 

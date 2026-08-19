@@ -74,7 +74,7 @@ struct CaveatFormatTests {
         #expect(CaveatFormat.blocks(of: "") == [])
     }
 
-    // MARK: - Install mentions (v17)
+    // MARK: - Install mentions
 
     private typealias Mention = CaveatFormat.InstallMention
 

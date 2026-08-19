@@ -32,12 +32,12 @@ final class BrewClient {
 
     init() {
         discover()
-        // v25 — warm the login-shell capture so it overlaps bootstrap's snapshot/cache load;
+        // Warm the login-shell capture so it overlaps bootstrap's snapshot/cache load;
         // the first brew child then awaits an already-resolved task in the common case.
         Task { _ = await shellEnvironment() }
     }
 
-    // MARK: - Login-shell overlay (v25)
+    // MARK: - Login-shell overlay
 
     private var overlayTask: Task<[String: String], Never>?
 
@@ -72,7 +72,7 @@ final class BrewClient {
     // MARK: - Invocation
 
     /// Core exec. Streams every stdout and stderr line to `onLine`, returns brew's exit code.
-    /// v19 — `onErrorLine` splits stderr into its own sink when set (doctor's JSON must not
+    /// `OnErrorLine` splits stderr into its own sink when set (doctor's JSON must not
     /// interleave with stderr noise); nil keeps the historical merged stream for every other
     /// caller.
     func run(_ command: BrewCommand,
@@ -188,7 +188,7 @@ final class BrewClient {
                askpass: command.isMutating ? askpassPath() : nil)
     }
 
-    /// v25 — merge order is the contract: the GUI base, then the login-shell overlay (terminal
+    /// Merge order is the contract: the GUI base, then the login-shell overlay (terminal
     /// parity — a shell HOMEBREW_CACHE must reach the child), then the app's forced vars last,
     /// because they are safety guarantees and must beat any shell export.
     static func merged(base: [String: String],
@@ -199,7 +199,7 @@ final class BrewClient {
         environment["HOMEBREW_NO_ASK"] = "1"
         environment["HOMEBREW_NO_AUTO_UPDATE"] = "1"
         environment["HOMEBREW_NO_INSTALL_CLEANUP"] = "1"
-        // v15 — `brew uninstall` implicitly autoremoves afterwards (cmd/uninstall.rb:133); a
+        // `Brew uninstall` implicitly autoremoves afterwards (cmd/uninstall.rb:133); a
         // removal must be exactly what the user chose. Orphans surface in the Orphans report
         // instead. The explicit `.autoremove` command is unaffected (cmd/autoremove.rb calls
         // Cleanup.autoremove directly).
@@ -212,7 +212,7 @@ final class BrewClient {
         return environment
     }
 
-    // MARK: - Metadata freshness (v8)
+    // MARK: - Metadata freshness
 
     /// brew's own API refresh window (`HOMEBREW_API_AUTO_UPDATE_SECS` default, env_config.rb:57).
     /// Metadata younger than this is exactly what a terminal `brew outdated` would settle for.

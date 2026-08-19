@@ -12,9 +12,9 @@ nonisolated enum PackageKind: String, Codable, Hashable, CaseIterable {
 }
 
 /// One entry of a package's conflicts list. Formulae pair `conflicts_with` with its reasons;
-/// cask conflicts (v10) name other casks and carry no reason — brew's cask DSL accepts only
+/// cask conflicts name other casks and carry no reason — brew's cask DSL accepts only
 /// the `cask` key. `kind` says what the row resolves to: nil means formula, which is also
-/// what pre-v10 caches decode as.
+/// what older caches decode as.
 nonisolated struct Conflict: Codable, Hashable {
     let name: String
     let reason: String?
@@ -152,7 +152,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let deprecated: Bool
     let disabled: Bool        // disabled packages cannot be installed
     let caveats: String?      // may embed a literal "$HOMEBREW_PREFIX" — see `resolvedCaveats`
-    let conflicts: [Conflict] // formula conflicts carry reasons; cask conflicts (v10) name casks
+    let conflicts: [Conflict] // formula conflicts carry reasons; cask conflicts name casks
     let commands: [String]    // formulae only; the executables this formula installs
     let installs90d: Int?     // nil when the package is absent from the analytics files
     let license: String?      // formulae only; SPDX identifier
@@ -160,12 +160,12 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     let tap: String?          // "user/repo" for third-party taps; nil = core (implied by kind)
     let tapRemote: String?    // the tap clone's git remote, for source links; nil for core
     let artifacts: [CaskArtifact] // casks only; payload artifacts aggregated by kind
-    /// v10 — casks only: `depends_on.formula` from the cask DSL. Cask receipts carry no
+    /// Casks only: `depends_on.formula` from the cask DSL. Cask receipts carry no
     /// runtime dependencies, so this is the only record of the formulae a cask keeps alive —
     /// which is exactly what brew's own autoremove reads (`utils/autoremove.rb`).
     var caskDependencies: [String] = []
     let service: ServiceDefinition? // formulae only; nil = defines no background service
-    /// v11 — the Attention report's facts, straight from the API. Dates stay the API's
+    /// The Attention report's facts, straight from the API. Dates stay the API's
     /// "yyyy-MM-dd" strings (trivially Codable; parsed only for display), reasons stay brew's
     /// raw values — a preset slug like "unsupported" or maintainer prose — and are humanized
     /// in `deprecationExplanation`. All optional, so old caches decode them as nil; the cache
@@ -245,7 +245,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
 
     /// Browse order for the core catalogs — most-installed first, names breaking ties: an
     /// alphabetical walk of 16k packages opens on "0 A.D." and never reaches anything anyone
-    /// installs. Lived in `ContentView` until the (v14) tap page needed it too.
+    /// installs. Lived in `ContentView` until the tap page needed it too.
     static func popularityOrder(_ lhs: Package, _ rhs: Package) -> Bool {
         let (x, y) = (lhs.installs90d ?? 0, rhs.installs90d ?? 0)
         return x == y ? lhs.name < rhs.name : x > y
@@ -259,7 +259,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     }
 
     /// Largest first; unmeasured packages sort last rather than blocking the listing on the
-    /// sweep. Lived in `ContentView` (v11's Size sort) until the (v20) report lists needed it.
+    /// sweep. Lived in `ContentView` until the report lists needed it.
     static func sizeOrder(_ lhs: Package, _ rhs: Package, sizes: [Package.ID: Int64]) -> Bool {
         let (x, y) = (sizes[lhs.id] ?? -1, sizes[rhs.id] ?? -1)
         return x == y ? displayOrder(lhs, rhs) : x > y
@@ -373,14 +373,14 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         tap ?? (kind == .formula ? "homebrew/core" : "homebrew/cask")
     }
 
-    /// v13 — the Commands section's order: case-insensitive, so llvm reads `amdgpu-arch …
+    /// The Commands section's order: case-insensitive, so llvm reads `amdgpu-arch …
     /// clang … FileCheck` interleaved instead of leading with the ASCII capitals block; the
     /// raw name breaks ties deterministically.
     var displayCommands: [String] {
         commands.sorted { ($0.lowercased(), $0) < ($1.lowercased(), $1) }
     }
 
-    // MARK: - Attention (v11)
+    // MARK: - Attention
 
     /// What the Attention scope lists: brew has marked the package end-of-life, in one of its
     /// two stages.
@@ -418,7 +418,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
     ]
 
     /// The banner's body text — why, since when, and when it stops working — degrading a fact
-    /// at a time down to the pre-v11 generic copy when the API said nothing. Pure, so every
+    /// at a time down to the generic copy when the API said nothing. Pure, so every
     /// sentence shape has a test.
     var deprecationExplanation: String? {
         guard needsAttention else { return nil }
@@ -446,7 +446,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         return opening + " It still installs today, but it may be disabled in a future release."
     }
 
-    /// v20 — the report row's one-line form of the banner's story: "Deprecated — is not
+    /// The report row's one-line form of the banner's story: "Deprecated — is not
     /// maintained upstream", bare "Disabled" when brew gave no reason. Free-prose reasons pass
     /// through (the row clamps to one line); the full sentence stays the pane's job.
     var attentionPhrase: String? {
@@ -499,12 +499,12 @@ nonisolated struct InstalledInfo: Equatable, Hashable, Codable {
     /// From the receipt's `source.tap`, normalized: core taps and absent → nil, else "user/repo".
     /// Outranks the catalog's tap — the receipt records what was *actually* installed.
     var tap: String? = nil
-    /// v10 — `poured_from_bottle` inverted; brew never autoremoves a from-source build.
+    /// `Poured_from_bottle` inverted; brew never autoremoves a from-source build.
     var builtFromSource: Bool = false
-    /// v11 — from the receipt's `time`, for the Date Installed sort. Rides the v16 state
+    /// From the receipt's `time`, for the Date Installed sort. Rides the state
     /// snapshot (`StateSnapshot.currentVersion` governs), never the catalog cache.
     var installedAt: Date? = nil
-    /// v15 — casks only: the receipt's `uninstall_artifacts` names a `zap` stanza. Gates the
+    /// Casks only: the receipt's `uninstall_artifacts` names a `zap` stanza. Gates the
     /// dialog's second destructive tier; a stanza-less zap adds nothing over plain uninstall.
     var hasZap: Bool = false
 }
@@ -515,7 +515,7 @@ nonisolated struct OutdatedInfo: Equatable, Hashable, Codable {
     var pinned: Bool
 }
 
-/// v5 — brew's seven service states, verbatim; a string brew invents later lands in `.other`
+/// Brew's seven service states, verbatim; a string brew invents later lands in `.other`
 /// rather than failing the parse.
 nonisolated enum ServiceHealth: String, Equatable, Codable {
     case started, stopped, none, scheduled, error, unknown, other

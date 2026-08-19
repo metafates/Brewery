@@ -165,19 +165,19 @@ struct BrewCommandTests {
     func firstTokenIsWhitelisted() {
         // `autoremove` was the first removal admitted: argument-less by construction
         // (nothing to aim it with), scoped to what brew itself computes as unneeded, and
-        // confirmed in the UI before it is ever enqueued. v15 admits `uninstall` under its
+        // confirmed in the UI before it is ever enqueued. `uninstall` is admitted under its
         // own narrower bar: named but per-target-confirmed (the dialog runs before the
         // model enqueues), kind-pinned like install, force-less (no `--force`, no
         // `--ignore-dependencies` — brew's dependents refusal fires before anything is
         // removed), and its `remove`/`rm` aliases stay banned: one spelling, one case.
-        // v18 admits `cleanup` under autoremove's exact bar: argument-less by construction
+        // `cleanup` is admitted under autoremove's exact bar: argument-less by construction
         // (no `--prune`, no `-s`, no names representable), scoped to what brew itself computes
         // as stale (linked/pinned/keepme kegs are kept), confirmed in the UI before enqueue —
         // and files-only, because the app's standing HOMEBREW_NO_AUTOREMOVE=1 gates the
         // autoremove cleanup would otherwise run (cleanup.rb:412).
-        // v19 admits `doctor` as a read: strictly diagnostic, never queued, exit 1 means
+        // `doctor` is admitted as a read: strictly diagnostic, never queued, exit 1 means
         // findings exist rather than failure.
-        // v21 admits `link`: named but non-destructive — bare link creates symlinks, refuses
+        // `link` is admitted: named but non-destructive — bare link creates symlinks, refuses
         // conflicts and rolls back (keg.rb:574-576); `--overwrite` (the deleting variant) is
         // in the forbidden list below; names come verbatim from doctor's own remediation.
         let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup", "doctor", "link"]
@@ -217,12 +217,12 @@ struct BrewCommandTests {
 
     @Test("no argv element carries a destructive token")
     func noDestructiveTokens() {
-        // v15: "uninstall" left this list when it joined the whitelist (its shape is pinned in
+        // "uninstall" left this list when it joined the whitelist (its shape is pinned in
         // `explicitKindToken` and `zapArgv` instead); "--ignore-dependencies" joined it. Bare
         // "zap" stays: the match rule below is exact-or-`zap-`/`zap=`, so the `.zap` case's
         // `--zap` flag never trips it — the entry bans any argv element *being* the word.
-        // v18: "cleanup" left the list the same way (argv pinned to exactly ["cleanup"] in
-        // `cleanupArgv`/`explicitKindToken`). The v5 ban on `services cleanup` (deletes plists)
+        // "cleanup" left the list the same way (argv pinned to exactly ["cleanup"] in
+        // `cleanupArgv`/`explicitKindToken`). The ban on `services cleanup` (deletes plists)
         // survives structurally: the services argvs are pinned flag-less with canonical verbs,
         // so "cleanup" can never appear as a services subcommand. "--prune" and "--scrub"/"-s"
         // join the ban so no future case can widen cleanup's blast radius.
@@ -305,7 +305,7 @@ struct BrewCommandTests {
         }
     }
 
-    // MARK: - Uninstall (v15)
+    // MARK: - Uninstall
 
     @Test("uninstall/zap: exact argv, kind-pinned, force-less")
     func uninstallArguments() {

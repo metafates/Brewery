@@ -7,7 +7,7 @@ import Foundation
 import Testing
 @testable import Brewery
 
-@Suite("DoctorReport parsing (v19)")
+@Suite("DoctorReport parsing")
 struct DoctorReportTests {
 
     @Test("the full shape: tier, findings with affects, links and remediation commands")
@@ -97,7 +97,7 @@ struct DoctorReportTests {
     }
 }
 
-@Suite("Remedy classification (v21)")
+@Suite("Remedy classification")
 struct RemedyTests {
 
     @Test("brew link with exactly one clean name goes native; anything else stays a chip")

@@ -17,7 +17,7 @@ import Foundation
 actor IconStore {
     static let shared = IconStore(directoryName: "Icons")
 
-    /// v10 — repo social-preview cards for the detail pane's hero slot. A separate instance
+    /// Repo social-preview cards for the detail pane's hero slot. A separate instance
     /// with its own directory: a ~300 KB banner in the favicon LRU would evict icons by the
     /// dozen, and the two caches age on entirely different rhythms.
     static let banners = IconStore(directoryName: "Banners")
@@ -184,7 +184,7 @@ actor IconStore {
         URL(string: "https://icons.duckduckgo.com/ip3/\(host).ico")
     }
 
-    /// v10 — a tap owner's GitHub avatar: `github.com/<owner>.png` redirects to the avatar
+    /// A tap owner's GitHub avatar: `github.com/<owner>.png` redirects to the avatar
     /// CDN, so a tap's identity costs one URL and no API. The owner comes from the *remote*,
     /// never the tap name — a tap name can front a custom remote — and the built-in taps
     /// (which have no clone and no remote) map to Homebrew's own organization. Anything
@@ -204,11 +204,11 @@ actor IconStore {
         return (key: fileName(for: "avatar_\(owner)"), url: url)
     }
 
-    /// v25.2 — a package's GitHub avatar, but only for a *dedicated* account: the homepage is
+    /// A package's GitHub avatar, but only for a *dedicated* account: the homepage is
     /// `github.com/<owner>/<repo>` with owner == repo (case-insensitively — GitHub is), the
     /// single-project-account pattern (XCTestHTMLReport/XCTestHTMLReport). There the avatar IS
-    /// the project's identity, which is exactly what the forge-host favicon skip (the v10
-    /// rule) isn't: one GitHub logo repeated across half the catalog. An owner who hosts many
+    /// the project's identity, which is exactly what the forge-host favicon skip
+    /// isn't: one GitHub logo repeated across half the catalog. An owner who hosts many
     /// repos fails the rule and keeps the kind glyph — their avatar identifies them, not this
     /// package. Same key namespace as tap avatars, so a tap owner's tile is shared.
     nonisolated static func avatarSource(homepage: URL?) -> (key: String, url: URL)? {
@@ -219,7 +219,7 @@ actor IconStore {
         return (key: fileName(for: "avatar_\(owner)"), url: url)
     }
 
-    /// v10 — the GitHub social card for a package whose homepage is a repo. GitHub renders one
+    /// The GitHub social card for a package whose homepage is a repo. GitHub renders one
     /// for every repo (the custom preview if the author set one, else the generated
     /// name-avatar-stats card), served from the opengraph assets CDN — no API, no auth. Deep
     /// homepage paths keep their first two segments; a `.git` suffix folds away.
@@ -360,7 +360,7 @@ actor IconStore {
 
     /// Empty data means "the host answered, and the answer is no image" — a definitive HTTP
     /// error or a body we cannot decode. That earns a marker; a transport failure (nil) does
-    /// not — and neither do rate limiting or server trouble (v10): a 429 from the banner CDN
+    /// not — and neither do rate limiting or server trouble: a 429 from the banner CDN
     /// with a week-long marker would hide a real image over a burst of browsing.
     /// `nonisolated` like the seven sibling statics: an actor's statics carry no instance
     /// isolation and would otherwise pick up the module's MainActor default, scheduling two

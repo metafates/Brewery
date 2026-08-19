@@ -7,7 +7,7 @@ import Foundation
 import Testing
 @testable import Brewery
 
-@Suite("Storage report (v18)")
+@Suite("Storage report")
 struct StorageTests {
 
     private let prefix = URL(filePath: "/opt/homebrew")

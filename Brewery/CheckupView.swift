@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-/// v19 — the Checkup report: `brew doctor`, on demand. Four states — an intro with the one
+/// The Checkup report: `brew doctor`, on demand. Four states — an intro with the one
 /// action (doctor is slow and its findings advisory; running it uninvited is the annoying
 /// thing this app doesn't do), an indeterminate spinner (HIG *Progress indicators*: unknown
 /// duration; doctor deliberately runs its slow checks last), Software Update's positive
@@ -32,7 +32,7 @@ struct CheckupView: View {
                 failed
             }
         }
-        // v24 — the app's one waiting grammar: the previous content recedes under the same
+        // The app's one waiting grammar: the previous content recedes under the same
         // veil ⌘R uses, instead of being swapped for a bespoke running screen.
         .refreshVeil(model.isRunningCheckup, text: "Checking…")
     }

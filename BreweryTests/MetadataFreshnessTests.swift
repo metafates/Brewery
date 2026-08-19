@@ -7,7 +7,7 @@ import Foundation
 import Testing
 @testable import Brewery
 
-/// v8 — the staleness gate's two pure pieces: which cache directory brew will use for the
+/// The staleness gate's two pure pieces: which cache directory brew will use for the
 /// processes we spawn, and which file's mtime counts as "metadata last known good".
 struct MetadataFreshnessTests {
 

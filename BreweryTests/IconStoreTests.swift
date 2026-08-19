@@ -86,7 +86,7 @@ struct IconMarkerTests {
     }
 }
 
-@Suite("Banner sources (v10)")
+@Suite("Banner sources")
 struct BannerSourceTests {
     @Test("github repo homepages yield a card URL; everything else yields nothing")
     func bannerSource() throws {
@@ -107,7 +107,7 @@ struct BannerSourceTests {
     }
 }
 
-@Suite("Tap avatar sources (v10)")
+@Suite("Tap avatar sources")
 struct AvatarSourceTests {
     @Test("owner comes from the remote; built-ins map to Homebrew; anything else is nothing")
     func avatarSource() throws {
@@ -129,7 +129,7 @@ struct AvatarSourceTests {
     }
 }
 
-@Suite("Package avatar sources (v25.2)")
+@Suite("Package avatar sources")
 struct PackageAvatarSourceTests {
     @Test("a dedicated github account (owner == repo) yields its avatar; anything else nothing")
     func avatarFromHomepage() throws {

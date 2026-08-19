@@ -7,7 +7,7 @@ import Foundation
 import Testing
 @testable import Brewery
 
-/// v8 follow-up — the "Last checked" caption's bucketing: minute granularity that turns over
+/// The "Last checked" caption's bucketing: minute granularity that turns over
 /// exactly at the unit boundary, and never a future phrasing when the tick predates the stat.
 @MainActor
 struct FreshnessCaptionTests {

@@ -9,7 +9,7 @@ import Foundation
 /// the API carries no sizes at all (bottle `files` entries hold `url` + `sha256` only, casks
 /// nothing), so installed packages are the only ones a size can be honest for.
 nonisolated enum DiskUsage {
-    /// v10.1 — measured sizes, keyed `"<package id>|<installed version>"` so an upgrade
+    /// Measured sizes, keyed `"<package id>|<installed version>"` so an upgrade
     /// invalidates naturally. Session-lifetime and unbounded on purpose: one `Int64` per
     /// *visited* package is noise, and re-measuring a large keg on every card revisit was
     /// the cost worth killing — the redacted row only ever shows on a first visit.

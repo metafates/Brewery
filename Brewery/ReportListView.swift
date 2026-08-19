@@ -5,16 +5,16 @@
 
 import SwiftUI
 
-/// v20 — which report a list is rendering; decides the row's subtitle and trailing value.
+/// Which report a list is rendering; decides the row's subtitle and trailing value.
 nonisolated enum ReportKind {
     case orphans, attention, storage
 }
 
-/// v20 — the reports' shared surface: state rows, not catalog cards. A report answers "what is
+/// The reports' shared surface: state rows, not catalog cards. A report answers "what is
 /// this item's state and what does it cost me" — the Services rule generalized — and iPhone
 /// Storage's grammar answers it: size-sorted rows with a per-item value. Cards answered
 /// "should I install this?", the wrong question for packages that are all installed.
-/// v22 — selection is the List's own (`List(selection:)` + `.tag`): the system draws the
+/// Selection is the List's own (`List(selection:)` + `.tag`): the system draws the
 /// rounded inset highlight, arrow keys work, and the rows share one gutter with the summary
 /// bar, which rides in an ordinary row slot with its chrome margin removed.
 struct ReportListView<Header: View>: View {
@@ -71,7 +71,7 @@ struct ReportListView<Header: View>: View {
     }
 
     /// Browse order is largest-first — the report's own question is "where are the bytes" —
-    /// but an active search stays relevance-ranked (v11's committed rule), and Attention has
+    /// but an active search stays relevance-ranked (the committed rule), and Attention has
     /// no byte axis, so it keeps the pipeline's name order.
     private var sortedHits: [SearchHit] {
         guard kind != .attention, !isSearching else { return hits }
@@ -155,7 +155,7 @@ struct ReportListView<Header: View>: View {
 }
 
 /// One report row: 32 pt icon, title over a one-line state, a trailing value. Selection and
-/// highlight are the List's; the row carries the cards' context-menu subset (the v9 rule:
+/// highlight are the List's; the row carries the cards' context-menu subset (the shared rule:
 /// support context menus consistently).
 private struct ReportRow: View {
     let package: Package
@@ -175,7 +175,7 @@ private struct ReportRow: View {
             }
         }
         .accessibilityElement(children: .combine)
-        // v24 — the shared package base every package row carries.
+        // The shared package base every package row carries.
         .contextMenu { PackageMenuItems(package: package) }
     }
 

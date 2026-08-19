@@ -33,14 +33,14 @@ struct PackageGridView<Header: View>: View {
     /// date" invites exactly that question. Omitted where it is not, such as a filter hiding
     /// everything on Discover.
     var onRefresh: (() -> Void)?
-    /// v8: while the freshness check runs, an empty Outdated section must not claim "Everything
+    /// While the freshness check runs, an empty Outdated section must not claim "Everything
     /// is up to date" — the answer is still being computed. Spinner instead (HIG Progress
     /// indicators, macOS: a spinner for a background operation, description where helpful).
     var isChecking = false
     /// Set when a filter emptied the listing: clearing the filters is the fix Check Again
     /// cannot be.
     var onClearFilters: (() -> Void)? = nil
-    /// v6: an optional page header that scrolls with the content — the App Store pattern. A fixed
+    /// An optional page header that scrolls with the content — the App Store pattern. A fixed
     /// header above the ScrollView fights macOS's scroll-under-chrome behavior and clips cards.
     /// A stored view, not a closure: the synthesized memberwise init builds it, and the
     /// 19-line hand-written restatement of every property goes with it.

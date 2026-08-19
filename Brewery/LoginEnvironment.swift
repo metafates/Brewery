@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// v25 — the user's login-shell environment, captured once per launch and overlaid onto every
+/// The user's login-shell environment, captured once per launch and overlaid onto every
 /// brew child. A Finder-launched app inherits launchd's environment, not the shell's, and brew
 /// reads real configuration from the environment: the trust store and user `brew.env` resolve
 /// through `XDG_CONFIG_HOME` (bin/brew:163-170, trust.rb:27-34), doctor's PATH checks judge
@@ -64,7 +64,7 @@ nonisolated enum LoginEnvironment {
 
     /// Runs the login shell once and returns the whitelisted overlay. Any failure — no shell,
     /// launch error, timeout, unparseable output — returns empty, which merges as a no-op:
-    /// capture failure costs nothing but the pre-v25 behavior. `@concurrent` so the spawn and
+    /// capture failure merely loses the overlay. `@concurrent` so the spawn and
     /// the byte-by-byte pipe drain leave the caller's actor (the reader Task inherits this
     /// context) instead of running on the main thread.
     @concurrent static func capture(timeout: Duration = .seconds(3)) async -> [String: String] {

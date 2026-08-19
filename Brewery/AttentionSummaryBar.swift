@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-/// v11 — the Attention scope's header: how many installed packages Homebrew has retired, and
+/// The Attention scope's header: how many installed packages Homebrew has retired, and
 /// what that means. The orphan bar's chrome, but **no action button, deliberately**: nothing
 /// safe to enqueue exists — uninstalling is a non-goal — and a report is not a task. The
 /// per-package specifics (why, since when, when it stops working, what replaces it) are the

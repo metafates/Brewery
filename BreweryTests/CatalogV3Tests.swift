@@ -219,7 +219,7 @@ struct CatalogV3Tests {
         #expect(vim.installs90d == 63_157)
         #expect(vim.caveats == nil)
 
-        // No conflicts, no commands, absent from the analytics file: every v3 field degrades quietly.
+        // No conflicts, no commands, absent from the analytics file: every optional field degrades quietly.
         let php = packages[1]
         #expect(php.conflicts.isEmpty)
         #expect(php.commands.isEmpty)
@@ -246,11 +246,11 @@ struct CatalogV3Tests {
         let firefox = packages[1]
         #expect(firefox.installs90d == 46_785)
         #expect(firefox.caveats?.hasPrefix("Installing this cask") == true)
-        // v10 — the object-shaped cask `conflicts_with` decodes: cask tokens, no reasons,
+        // The object-shaped cask `conflicts_with` decodes: cask tokens, no reasons,
         // kind .cask so the pane's row pushes to the right namespace.
         #expect(firefox.conflicts == [Conflict(name: "firefox@developer-edition", reason: nil, kind: .cask)])
         #expect(firefox.commands.isEmpty)
-        // v10 — depends_on.formula survives the slim decode (the macos key is ignored);
+        // Depends_on.formula survives the slim decode (the macos key is ignored);
         // the orphan report needs it to know what a cask keeps alive.
         #expect(firefox.caskDependencies == ["libx"])
         #expect(font.caskDependencies.isEmpty)
@@ -331,7 +331,7 @@ struct CatalogV3Tests {
         #expect(formula(nil).licenseComponents.isEmpty)
     }
 
-    @Test("a cache without the v3 schema stamp is treated as no cache")
+    @Test("a cache without the schema stamp is treated as no cache")
     func cacheVersionMismatch() throws {
         // Bumped whenever a field joins Package (4: `license`, 5: `rubySourcePath`,
         // 6: `artifacts`, 7: `service`, 10: deprecation facts): an older file decodes without it
@@ -339,7 +339,7 @@ struct CatalogV3Tests {
         #expect(CatalogStore.cacheVersion == 10)
         #expect(CatalogCache(fetchedAt: .now, packages: []).version == CatalogStore.cacheVersion)
 
-        // What the shipped v2 file looks like: no `version` key at all, so the decode throws — which
+        // What a legacy unstamped file looks like: no `version` key at all, so the decode throws — which
         // is exactly the "no cache" branch `loadCache` takes. The missing key is the invariant:
         // any other decode failure would pass a broad throws-check for the wrong reason.
         let error = try #require(#expect(throws: DecodingError.self) {

@@ -6,7 +6,7 @@
 import Foundation
 import SwiftUI
 
-/// v10 — the Orphans scope's header: the report's totals and its one action. **Remove All…**
+/// The Orphans scope's header: the report's totals and its one action. **Remove All…**
 /// is a native, confirmed operation (the ellipsis promises the dialog — HIG *Buttons*) that
 /// enqueues `brew autoremove`: the deliberate exception to the no-removals whitelist,
 /// admissible because it is argument-less by construction, scoped to what brew itself

@@ -7,7 +7,7 @@ import Foundation
 import Testing
 @testable import Brewery
 
-/// v15 — the uninstall funnel's contract: confirmed before enqueue, pinned blocked up front,
+/// The uninstall funnel's contract: confirmed before enqueue, pinned blocked up front,
 /// zap only where the receipt earned it, and hostile names dead on arrival.
 @MainActor
 struct UninstallFunnelTests {

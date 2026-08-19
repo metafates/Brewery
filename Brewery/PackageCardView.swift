@@ -104,7 +104,7 @@ struct PackageCardView: View {
         default:
             EmptyView()
         }
-        // v24 — the shared package base: Open Homepage, Copy Name, Uninstall… last (App
+        // The shared package base: Open Homepage, Copy Name, Uninstall… last (App
         // Store's Delete-last grammar; absent while pinned, not dimmed).
         PackageMenuItems(package: package)
     }
@@ -225,7 +225,7 @@ struct PackageCardView: View {
                              : "Update \(package.title)")
 
         case .installed:
-            // The App Store's grammar (v9): an installed app's button says Open. Single-bundle
+            // The App Store's grammar: an installed app's button says Open. Single-bundle
             // casks get it — bordered, so the one filled button on a card stays the
             // state-changing one. Formulae and multi-app casks keep the state label: nothing
             // unambiguous to open (the detail pane's Open menu handles the multi-app few).

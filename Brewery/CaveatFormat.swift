@@ -94,7 +94,7 @@ nonisolated enum CaveatFormat {
     }
 
     /// The charset real package names use (`lld@19`, `gtk+3`, `python-matplotlib`).
-    /// Non-private since v21: the doctor remediation classifier applies the same rule.
+    /// Non-private: the doctor remediation classifier applies the same rule.
     static func isPackageName(_ name: String) -> Bool {
         guard let first = name.first, first.isLetter || first.isNumber else { return false }
         return name.allSatisfy { $0.isLetter || $0.isNumber || "@._+-".contains($0) }
@@ -110,7 +110,7 @@ nonisolated enum CaveatFormat {
     /// A prose paragraph, dressed: inline Markdown (inline-only — full parsing would collapse the
     /// newlines the text depends on; failure falls back to the raw string), code spans tinted so
     /// mono-heavy prose stops reading as noise, and bare URLs linkified — caveats cite docs pages
-    /// as plain text. Native `AttributedString` for a native `Text` (v9): the base font is the
+    /// as plain text. Native `AttributedString` for a native `Text`: the base font is the
     /// view's own `.font(.callout)`, which the code spans' run-level font overrides.
     static func attributed(_ paragraph: String) -> AttributedString {
         var result = (try? AttributedString(

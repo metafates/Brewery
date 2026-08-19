@@ -77,7 +77,7 @@ struct DetailHeader: View {
                 // bordered so the one filled button in the pane is always the state-changing one.
                 openAction
                 Spacer(minLength: 0)
-                // v15.1 — secondary actions behind a quiet ellipsis at the trailing edge
+                // Secondary actions behind a quiet ellipsis at the trailing edge
                 // (HIG Pull-down buttons: "a More pull-down button presents items that
                 // don't need prominent positions"). A bordered Uninstall… shipped first
                 // and read as Open's peer — two equal buttons where one destroys is a
@@ -93,9 +93,9 @@ struct DetailHeader: View {
                     statRow("tag") { versionLine }
                 }
 
-                // v10 — the App Store's Size row, measured rather than promised: what the
+                // The App Store's Size row, measured rather than promised: what the
                 // installed package occupies, formatted the way Finder would print it.
-                // v10.1 — the row is *reserved* from first layout (its presence is knowable
+                // The row is *reserved* from first layout (its presence is knowable
                 // synchronously; only the value is slow) and the number fills in place: a
                 // row inserting itself mid-list pushed everything below it on every card
                 // switch. Redacted text is the system's own skeleton — HIG Loading's "show
@@ -132,7 +132,7 @@ struct DetailHeader: View {
                 }
 
                 // Every package answers "which tap is this from" — core items included, so the
-                // row is a constant of the pane, not a third-party oddity. v14 — the value
+                // row is a constant of the pane, not a third-party oddity. The value
                 // stays a quiet selectable stat (a tinted button shipped first and read as the
                 // one loud row in a secondary column); navigation rides a trailing glyph
                 // button, the Logs row's composition, wearing chevron.right — the pane's
@@ -331,7 +331,7 @@ struct DetailHeader: View {
                       : "Update \(package.title)")
                 .accessibilityLabel("Update \(package.title)")
         case .notInstalled:
-            // v10 — no caption under Install: the trust disclosure moved into the consent
+            // No caption under Install: the trust disclosure moved into the consent
             // dialog, which appears only when installing would actually grant new trust.
             // The old always-on "Trusts user/tap" line named the wrong scope (the grant is
             // per-item) and kept showing for taps already trusted, where it disclosed nothing.
@@ -347,7 +347,7 @@ struct DetailHeader: View {
         }
     }
 
-    /// v15.1 — the card context menu's twin in the pane's main interface: Copy Name for every
+    /// The card context menu's twin in the pane's main interface: Copy Name for every
     /// package, Uninstall… while it is on disk and not pinned or mid-operation — destructive
     /// last, behind a separator (the Delete-last grammar); absent, not dimmed. The dialog the
     /// item opens is the confirm-intent step HIG Pull-down buttons asks for.
@@ -387,7 +387,7 @@ struct DetailHeader: View {
         return "Install \(package.title)"
     }
 
-    // v15 — one rule, hoisted: the card's context menu and the menu bar read the same state.
+    // One rule, hoisted: the card's context menu and the menu bar read the same state.
     private var isPinned: Bool { model.isPinned(package) }
 
     /// The effective tap (receipt over catalog), falling back to the core tap the kind implies.
@@ -396,8 +396,8 @@ struct DetailHeader: View {
     }
 }
 
-/// v10 — the repo's social-preview card as hero artwork, in the screenshots slot. Not for
-/// fonts: their Preview section is strictly better artwork. v10.1 — the slot is reserved
+/// The repo's social-preview card as hero artwork, in the screenshots slot. Not for
+/// fonts: their Preview section is strictly better artwork. The slot is reserved
 /// while the card loads (HIG Loading: "show something as soon as possible"; placeholders
 /// over spinners is the icon grammar) and the image crossfades in — the pop-in reflow read
 /// as a glitch.

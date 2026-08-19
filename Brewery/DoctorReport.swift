@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// v19 — `brew doctor --json`'s payload (cmd/doctor.rb:89-93, shape from
+/// `Brew doctor --json`'s payload (cmd/doctor.rb:89-93, shape from
 /// diagnostic/finding.rb:70-77): a support tier plus findings, each carrying its text, the
 /// package names it affects, doc links, and a remediation whose `commands` are the
 /// machine-readable fix. Decoding is deliberately tolerant — the flag is hidden and every
@@ -58,7 +58,7 @@ nonisolated struct DoctorReport: Decodable, Equatable {
     }
 }
 
-/// v25.1 — the structure layer over a finding's prose. `CaveatFormat.blocks` splits finding
+/// The structure layer over a finding's prose. `CaveatFormat.blocks` splits finding
 /// text and remediation prose into paragraphs and indented code runs (brew's `inject_file_list`
 /// and trust messages are exactly the two-space shape caveats use); this enum decides what a
 /// code block *is*. Detection keys on sentinel lines brew's own tests pin
@@ -139,7 +139,7 @@ nonisolated enum FindingFormat {
     }
 }
 
-/// v25.1 — which installed package provides a shadowed tool. `<prefix>/bin/<tool>` is a
+/// Which installed package provides a shadowed tool. `<prefix>/bin/<tool>` is a
 /// symlink into `../Cellar/<formula>/<version>/…` (or `…/Caskroom/<cask>/…` for cask
 /// binaries), so one readlink names the provider exactly — tap formulae included, and
 /// ambiguous names (`gem` → `ruby`) resolved by what is actually linked, which no
@@ -243,7 +243,7 @@ nonisolated struct FindingPresentation {
     }
 }
 
-/// v21 — what one remediation command becomes in the UI. A whitelist-preserving classifier:
+/// What one remediation command becomes in the UI. A whitelist-preserving classifier:
 /// exactly four shapes go native, everything else stays the copy chip — arbitrary argv remains
 /// unrepresentable. Deliberately stricter than `CaveatFormat.installMentions` (which *skips*
 /// unknown flags): here any flag beyond the tolerated set aborts to `.chip`, so
@@ -256,7 +256,7 @@ nonisolated enum Remedy: Equatable {
     /// `brew untap <tap>…` — navigation to the Taps list, where removal owns its blocking UX.
     case untap(taps: [String])
     /// `brew install|upgrade <name>…` (only `--cask` tolerated) — navigation rows; install
-    /// lives on the package's own page (the v17 rule).
+    /// lives on the package's own page (the caveat-mention rule).
     case packages(names: [String], isCask: Bool)
     /// Everything else, verbatim — sudo, git, shell redirects, force flags.
     case chip(command: String)

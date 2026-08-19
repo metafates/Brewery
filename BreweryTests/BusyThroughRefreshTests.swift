@@ -7,7 +7,7 @@ import Foundation
 import Testing
 @testable import Brewery
 
-/// v9 — the blink bug's regression test: a finished operation must keep its card busy until the
+/// The blink bug's regression test: a finished operation must keep its card busy until the
 /// post-operation refresh lands. Between those two moments the overlays still answer for the
 /// old world, and dropping busy on completion alone flashed "Install" right after installing.
 @MainActor

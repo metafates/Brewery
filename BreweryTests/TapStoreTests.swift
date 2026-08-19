@@ -171,7 +171,7 @@ struct TapStoreTests {
         #expect(TapStore.formulaFiles(at: flat).map(\.lastPathComponent) == ["rootformula.rb"])
     }
 
-    // MARK: - Trust store (v6)
+    // MARK: - Trust store
 
     @Test("trust.json parses: keys, lowercasing, URL entries tolerated, partial trust counted")
     func trustParsing() {
@@ -190,7 +190,7 @@ struct TapStoreTests {
         #expect(state.isTrusted("foo/bar") == false)
     }
 
-    @Test("consent asked exactly when installing would grant new trust (v10)")
+    @Test("consent asked exactly when installing would grant new trust")
     func trustConsent() {
         let state = TrustState(taps: ["oven-sh/bun"],
                                trustedItems: ["charmbracelet/tap/gum"])
@@ -212,7 +212,7 @@ struct TapStoreTests {
         #expect(TrustState().trustedItemCount(in: "any/tap") == 0)
     }
 
-    @Test("trust store path follows brew's resolution against the child environment (v25)")
+    @Test("trust store path follows brew's resolution against the child environment")
     func trustCandidates() {
         let home = URL(filePath: "/Users/u")
         func paths(_ environment: [String: String]) -> [String] {

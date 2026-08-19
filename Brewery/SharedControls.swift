@@ -2,7 +2,7 @@
 //  SharedControls.swift
 //  Brewery
 //
-//  v19 — three controls hoisted out of PackageDetailView when the Checkup report needed them:
+//  Three controls hoisted out of PackageDetailView when the Checkup report needed them:
 //  the navigation row for "names another package", the copy-confirming button, and the
 //  monospaced command chip. Same grammar in the pane and on report pages.
 //
@@ -10,7 +10,7 @@
 import AppKit
 import SwiftUI
 
-/// v24 — the pane's row chrome, one home: `.plain` button, subheadline, hover pill, chevron.
+/// The pane's row chrome, one home: `.plain` button, subheadline, hover pill, chevron.
 /// `RelatedRow` and the pane's `CommandsRow` were two hand-copies of it.
 struct PaneRow<Leading: View>: View {
     let title: String
@@ -18,7 +18,7 @@ struct PaneRow<Leading: View>: View {
     /// title's size read as a second title).
     var detail: String? = nil
     var trailing: String? = nil
-    /// v23.1 — false in wide content columns (the Checkup boxes): the hover pill and chevron
+    /// False in wide content columns (the Checkup boxes): the hover pill and chevron
     /// are the narrow pane's tells; stretched wide the pill reads as a giant card, and the
     /// chevron fights any trailing action button for the row's meaning.
     var paneTells: Bool = true
@@ -95,7 +95,7 @@ struct RelatedRow: View {
         .accessibilityLabel(label)
         .accessibilityHint("Shows package details")
         .help("Show \(package.title)")
-        // The v9 rule: every package row supports the same context-menu base.
+        // Every package row supports the same context-menu base.
         .contextMenu { PackageMenuItems(package: package) }
     }
 
@@ -107,7 +107,7 @@ struct RelatedRow: View {
     }
 }
 
-/// v24 — the context-menu base every package row shares (v9's consistency rule): homepage,
+/// The context-menu base every package row shares (the consistency rule): homepage,
 /// the brew token, and — for uninstallable installed packages — App Store's Delete-last
 /// grammar. Surfaces prepend their own verbs (a card's Install, a service row's Start).
 struct PackageMenuItems: View {
@@ -135,7 +135,7 @@ struct PackageMenuItems: View {
     }
 }
 
-/// v24 — the page-level box chrome (report bars, finding boxes), one home: continuous
+/// The page-level box chrome (report bars, finding boxes), one home: continuous
 /// curvature on *both* the fill and the stroke — the layers drifted apart per surface.
 struct ContentBox: ViewModifier {
     func body(content: Content) -> some View {
@@ -154,7 +154,7 @@ extension View {
     func contentBox() -> some View { modifier(ContentBox()) }
 }
 
-/// v24 — the pane's section heading, one home (it was inlined three times).
+/// The pane's section heading, one home (it was inlined three times).
 struct SectionTitle: View {
     let text: String
 
@@ -168,7 +168,7 @@ struct SectionTitle: View {
     }
 }
 
-/// v24 — the one Clean Up button: trigger, dialog and disabled rule together, so the Storage
+/// The one Clean Up button: trigger, dialog and disabled rule together, so the Storage
 /// bar and the Checkup finding can't drift (the copy already shared via `CleanupDialog`).
 struct CleanupButton: View {
     var isSmall: Bool = false
@@ -223,7 +223,7 @@ struct CopyButton: View {
     }
 }
 
-/// v24 — the one list row: a 32 pt tile, a title over a caption subtitle, a trailing
+/// The one list row: a 32 pt tile, a title over a caption subtitle, a trailing
 /// accessory. ServiceRow, TapRow, BuiltInTapRow and ReportRow were four hand-copies of this
 /// shape, drifting in vertical padding (3/3/4) and separator rules. Selection belongs to the
 /// List (`List(selection:)` + `.tag`), so the row is content only — no inner Button.
@@ -260,7 +260,7 @@ struct StateRow<Tile: View, Accessory: View>: View {
     }
 }
 
-/// v22 — the app's one "working" chip: the rotating-arrows label in a glass capsule that the
+/// The app's one "working" chip: the rotating-arrows label in a glass capsule that the
 /// refresh veil committed. One component, one spinner grammar — the Checkup page briefly grew
 /// a stock starburst spinner beside it, and two working styles read as two apps.
 struct WorkingCapsule: View {
@@ -281,7 +281,7 @@ struct WorkingCapsule: View {
     }
 }
 
-/// v21 — the cleanup confirmation's copy, one home for its two surfaces (the Storage bar and
+/// The cleanup confirmation's copy, one home for its two surfaces (the Storage bar and
 /// the Checkup remediation button) so they cannot drift.
 nonisolated enum CleanupDialog {
     static let title = "Clean up Homebrew files?"
@@ -310,11 +310,11 @@ struct CodeChip: View {
     }
 }
 
-/// The tap identity tile — the tap owner's GitHub avatar (v10: being GitHub repos is what
+/// The tap identity tile — the tap owner's GitHub avatar (being GitHub repos is what
 /// makes tap identity *fetchable*, the Sources-list grammar of Login Items and account
 /// lists), the spigot glyph while it loads or when the remote isn't GitHub. Same fallback
 /// discipline as `PackageIconView`: dimmed glyph while loading, crossfade on arrival.
-/// Hoisted from TapsView (v25.1) when the Checkup tap-trust finding became its second
+/// Hoisted from TapsView when the Checkup tap-trust finding became its second
 /// consumer.
 struct TapTile: View {
     let name: String
@@ -413,7 +413,7 @@ struct WarningWash: ViewModifier {
 struct RefreshVeil: ViewModifier {
     let active: Bool
     var text = "Checking for updates…"
-    /// v24 — false on a secondary column (the inspector): it blurs and dims with everything
+    /// False on a secondary column (the inspector): it blurs and dims with everything
     /// else, but only one capsule narrates a wait — two capsules read as two waits.
     var showsCapsule = true
 

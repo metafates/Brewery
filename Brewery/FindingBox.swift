@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-/// v21 — one Checkup finding. The box reads top-down as brew wrote it: the problem, the
+/// One Checkup finding. The box reads top-down as brew wrote it: the problem, the
 /// prose that introduces any commands, the commands the app can only offer for copying,
 /// then everything it can do natively — Link rows, package rows, the Clean Up / Show in
 /// Taps buttons — and links. Its own view with a stable identity (the finding text), so a

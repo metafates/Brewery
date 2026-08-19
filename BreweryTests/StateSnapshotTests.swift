@@ -8,7 +8,7 @@ import Testing
 
 @testable import Brewery
 
-/// v16 — the launch snapshot must return exactly what was published, and anything it cannot
+/// The launch snapshot must return exactly what was published, and anything it cannot
 /// vouch for (wrong version, garbage, absent file) must read as "no snapshot".
 @Suite("State snapshot")
 struct StateSnapshotTests {

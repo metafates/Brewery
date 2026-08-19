@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// v16 — the last-known install state, persisted so launch shows the previous session's truth
+/// The last-known install state, persisted so launch shows the previous session's truth
 /// instead of flashing every card "Install" for the second the first probes take. Written at
 /// every `refreshState()` publish, applied by `bootstrap()` before the first frame; the probes
 /// then correct it silently — the same stale-until-refresh rule the app already runs

@@ -10,20 +10,20 @@ nonisolated struct Receipt: Equatable {
     var onRequest: Bool
     var dependencies: [String]   // short names, `declared_directly` entries first
     var apps: [String] = []      // cask `.app` bundle names, e.g. "Firefox.app"
-    var tap: String? = nil       // v4, from `source.tap`; core taps normalized to nil
-    /// v10 — `poured_from_bottle` inverted: brew's autoremove never removes a formula built
+    var tap: String? = nil       // from `source.tap`; core taps normalized to nil
+    /// `Poured_from_bottle` inverted: brew's autoremove never removes a formula built
     /// from source (`utils/autoremove.rb`), so the orphan report must not claim it would.
     /// Absent or unreadable counts as built-from-source — the side that under-reports.
     var builtFromSource: Bool = true
-    /// v11 — the receipt's `time` (unix seconds; formula and cask receipts alike), for the
+    /// The receipt's `time` (unix seconds; formula and cask receipts alike), for the
     /// Date Installed sort. nil sorts last: a keg with no receipt has no date to claim.
     var installedAt: Date? = nil
-    /// v15 — casks only: `uninstall_artifacts` names a `zap` stanza, so `--zap` would do more
+    /// Casks only: `uninstall_artifacts` names a `zap` stanza, so `--zap` would do more
     /// than plain uninstall. Gates the dialog's second destructive tier.
     var hasZap: Bool = false
 }
 
-/// Reads Homebrew's per-keg install receipts. They answer both of v2's questions — "did the user
+/// Reads Homebrew's per-keg install receipts. They answer two questions — "did the user
 /// ask for this?" and "what does it pull in?" — as plain local file reads, so no `brew deps` /
 /// `brew uses` subprocess (Ruby startup per call) is needed.
 ///
@@ -102,7 +102,7 @@ nonisolated enum Receipts {
         /// bundles the cask actually put on disk. Every other artifact kind decodes to nil `app`.
         struct Artifact: Decodable {
             let app: [String]?
-            /// v15 — presence of a `zap` key, whatever its value shape: the stanza's existence is
+            /// Presence of a `zap` key, whatever its value shape: the stanza's existence is
             /// the fact wanted, and its payload mixes strings with objects.
             let zap: Bool
 
@@ -194,7 +194,7 @@ nonisolated enum Receipts {
         return nil
     }
 
-    // MARK: - Orphans (v10)
+    // MARK: - Orphans
 
     /// What `brew autoremove` would remove (`utils/autoremove.rb`), to the same fixpoint —
     /// removing an orphan can orphan what it depended on, so the sweep repeats until stable.

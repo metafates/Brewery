@@ -6,11 +6,11 @@
 import Foundation
 import SwiftUI
 
-// v24 — the report bars' chrome is the shared `.contentBox()` (SharedControls.swift): one
+// The report bars' chrome is the shared `.contentBox()` (SharedControls.swift): one
 // page-level box for bars and finding boxes alike. No margins of its own — the bars ride in
 // ordinary list-row slots, so the list's insets are the gutter.
 
-/// v18 — the Storage report's header, System Settings › Storage's grammar: an inventory of
+/// The Storage report's header, System Settings › Storage's grammar: an inventory of
 /// what Homebrew is spending on disk and the one recommendation that reclaims it. The three
 /// components are measured locally (the API carries no sizes; `DiskUsage` is the app's one
 /// honest source): old kegs per multi-version formula, the cache directory brew's cleanup

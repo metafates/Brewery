@@ -42,7 +42,7 @@ struct TapsView: View {
     @State private var showTip = false
 
     var body: some View {
-        // v24 — selection is the List's own (the report lists' rule); a click or Return
+        // Selection is the List's own (the report lists' rule); a click or Return
         // opens the selected tap.
         List(selection: $focusedTap) {
             if showTip {
