@@ -75,6 +75,13 @@ final class AppModel {
     /// tears the detail column down, taking any `@State` query with it.
     var queries: [SidebarSection: String] = [:]
 
+    /// The current section's query — what `.searchable` binds directly. The dictionary stays
+    /// the storage so queries never leak across tabs.
+    var query: String {
+        get { queries[selection ?? .discover] ?? "" }
+        set { queries[selection ?? .discover] = newValue }
+    }
+
     /// The sidebar's destination, and whether the operations popover is showing. Both are in the
     /// model rather than the view because the menu bar owns commands for them — View ▸ the five
     /// sections, View ▸ Show Operations — and a `Commands` builder can only reach app-level state.

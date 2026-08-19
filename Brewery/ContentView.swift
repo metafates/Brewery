@@ -312,7 +312,7 @@ struct ContentView: View {
                     operationsToolbar
                     inspectorToolbar
                 }
-                .searchable(text: searchQuery, prompt: searchPrompt)
+                .searchable(text: $model.query, prompt: searchPrompt)
                 .searchFocused($searchFocused)
                 // Return opens the top hit — the keyboard path from typing a name to reading about
                 // it, without reaching for the pointer.
@@ -373,14 +373,14 @@ struct ContentView: View {
             // Short on purpose: ranking is a few milliseconds and runs off the main actor, so the
             // debounce only has to coalesce a fast typist's burst, not hide a slow search.
             guard (try? await Task.sleep(for: .milliseconds(50))) != nil else { return }
-            results[ranked] = await FuzzySearch.rank(query: searchText,
+            results[ranked] = await FuzzySearch.rank(query: model.query,
                                                      in: sourcePackages,
                                                      commands: model.commandIndex)
         }
         .task(id: browseKey) {
             // A revisit with nothing changed: the cached listing is already right.
             let key = browseKey
-            guard builtKeys[key.section] != key else { return }
+            guard builtKeys[key.listing.section] != key else { return }
             var packages = sourcePackages
             // Discover browses by popularity, not by name: an alphabetical walk of 16k packages
             // opens on "0 A.D." and never reaches anything anyone installs. Installed and Outdated
@@ -402,8 +402,8 @@ struct ContentView: View {
                     packages.sort { Package.sizeOrder($0, $1, sizes: sizes) }
                 }
             }
-            browseHits[key.section] = packages.map { SearchHit(package: $0, matchedCommand: nil) }
-            builtKeys[key.section] = key
+            browseHits[key.listing.section] = packages.map { SearchHit(package: $0, matchedCommand: nil) }
+            builtKeys[key.listing.section] = key
         }
         // v11 — the Size sort's data: sweep every installed package when the sort needs it, and
         // again when the installed set changes. A warm pass is instant and publishes nothing.
@@ -441,7 +441,7 @@ struct ContentView: View {
             // frequent interactions). Still a ZStack rather than if/else: the list stays
             // mounted, keeping its scroll position for the way back.
             ZStack {
-                TapsView(searchText: searchText, onSelect: openTap)
+                TapsView(searchText: model.query, onSelect: openTap)
                     .opacity(model.selectedTap == nil ? 1 : 0)
                     // Disabled, not just covered: the hidden rows must leave the Tab order.
                     .disabled(model.selectedTap != nil)
@@ -463,7 +463,7 @@ struct ContentView: View {
                 .refreshVeil(model.isRefreshing)
         } else if section == .checkup {
             // Findings, not packages — the view owns its four states.
-            CheckupView(searchText: searchText)
+            CheckupView(searchText: model.query)
                 .refreshVeil(model.isRefreshing)
         } else if section == .orphans || section == .attention || section == .storage {
             // v20 — reports are state rows, not catalog cards (the Services rule generalized).
@@ -668,15 +668,9 @@ struct ContentView: View {
 
     /// Per-tab, and in the model rather than in `@State`: switching sections destroys the detail
     /// view along with anything it holds, so a query stored here would not survive the round trip.
-    private var searchText: String { model.queries[section] ?? "" }
-
-    private var searchQuery: Binding<String> {
-        Binding(get: { model.queries[section] ?? "" },
-                set: { model.queries[section] = $0 })
-    }
 
     private var isSearching: Bool {
-        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func badgeCount(for item: SidebarSection) -> Int {
@@ -782,16 +776,7 @@ struct ContentView: View {
     /// What the browse listing is made of. Deliberately excludes the query: while a search is being
     /// typed the grid still shows this listing, so rebuilding it per keystroke would be pure waste.
     private struct BrowseKey: Equatable {
-        let section: SidebarSection
-        let kindFilter: KindFilter
-        let hideDeprecated: Bool
-        let showDependencies: Bool
-        let installedKindFilter: KindFilter
-        let tapsOnly: Bool
-        let installedTapsOnly: Bool
-        let installedSort: InstalledSort
-        let selectedTap: String?
-        let tapKindFilter: KindFilter
+        let listing: ListingToken
         /// Not a count: a tap rescan can swap entries while netting zero, which a count cannot see.
         let catalogGeneration: Int
         let installedCount: Int
@@ -799,22 +784,13 @@ struct ContentView: View {
         let servicesCount: Int
         /// The size sweep's publish signal — a finished sweep re-sorts the listing it ordered.
         let sizesGeneration: Int
-        /// v18 — cleanup removes kegs without changing the package count; the Storage listing
+        /// Cleanup removes kegs without changing the package count; the Storage listing
         /// re-lists on this instead.
         let multiKegCount: Int
     }
 
     private var browseKey: BrowseKey {
-        BrowseKey(section: section,
-                  kindFilter: kindFilter,
-                  hideDeprecated: hideDeprecated,
-                  showDependencies: showDependencies,
-                  installedKindFilter: installedKindFilter,
-                  tapsOnly: tapsOnly,
-                  installedTapsOnly: installedTapsOnly,
-                  installedSort: installedSort,
-                  selectedTap: model.selectedTap,
-                  tapKindFilter: tapKindFilter,
+        BrowseKey(listing: listingToken,
                   catalogGeneration: model.catalogGeneration,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
@@ -824,17 +800,7 @@ struct ContentView: View {
     }
 
     private var searchKey: SearchKey {
-        SearchKey(window: WindowToken(section: section,
-                                      query: searchText,
-                                      kindFilter: kindFilter,
-                                      hideDeprecated: hideDeprecated,
-                                      showDependencies: showDependencies,
-                                      installedKindFilter: installedKindFilter,
-                                      tapsOnly: tapsOnly,
-                                      installedTapsOnly: installedTapsOnly,
-                                      installedSort: installedSort,
-                                      selectedTap: model.selectedTap,
-                                      tapKindFilter: tapKindFilter),
+        SearchKey(window: WindowToken(listing: listingToken, query: model.query),
                   catalogGeneration: model.catalogGeneration,
                   commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
@@ -859,11 +825,19 @@ struct ContentView: View {
         let multiKegCount: Int
     }
 
-    /// The part of the key that changes *which* packages are listed — the grid restarts its render
-    /// window on it. A refresh landing new versions deliberately does not.
+    /// The part of the key that changes *which* packages are listed — the grid restarts its
+    /// render window on it. A refresh landing new versions deliberately does not, and
+    /// `catalogGeneration` stays out: a recompose must never reset the scroll window.
     private struct WindowToken: Hashable {
-        let section: SidebarSection
+        let listing: ListingToken
         let query: String
+    }
+
+    /// The ten values that decide which packages a section lists — navigation plus every
+    /// filter, spelled once. BrowseKey and WindowToken both ride it; the generations and
+    /// counts that *re-rank* without changing the question live beside it, never inside.
+    private struct ListingToken: Hashable {
+        let section: SidebarSection
         let kindFilter: KindFilter
         let hideDeprecated: Bool
         let showDependencies: Bool
@@ -874,6 +848,19 @@ struct ContentView: View {
         let installedSort: InstalledSort
         let selectedTap: String?
         let tapKindFilter: KindFilter
+    }
+
+    private var listingToken: ListingToken {
+        ListingToken(section: section,
+                     kindFilter: kindFilter,
+                     hideDeprecated: hideDeprecated,
+                     showDependencies: showDependencies,
+                     installedKindFilter: installedKindFilter,
+                     tapsOnly: tapsOnly,
+                     installedTapsOnly: installedTapsOnly,
+                     installedSort: installedSort,
+                     selectedTap: model.selectedTap,
+                     tapKindFilter: tapKindFilter)
     }
 
     // MARK: - Counts
@@ -897,7 +884,7 @@ struct ContentView: View {
         let formatted = count.formatted(.number)
         guard !isSearching, !isNarrowed else {
             let results = count == 1 ? "1 result" : "\(formatted) results"
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let query = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
             // Finder's grammar (Searching “This Mac”): the count names its query, in curly
             // quotes. A filter-only narrowing has no query to name.
             return isSearching ? "\(results) for “\(query)”" : results
