@@ -135,6 +135,21 @@ final class AppModel {
     /// field — the automatic ⌘F binding has historically been unreliable on macOS.
     private(set) var findRequests = 0
 
+    /// ⌘[ lives in the menu bar with one owner: the content column's tap page wins when both
+    /// stacks are deep (the committed rule — two view-level claims on one shortcut let SwiftUI
+    /// pick arbitrarily); otherwise the pane's drill-down pops via the counter.
+    private(set) var backRequests = 0
+    /// The pane's drill depth, published so View ▸ Back can enable itself.
+    var paneDepth = 0
+
+    func requestBack() {
+        if selectedTap != nil {
+            selectedTap = nil
+        } else {
+            backRequests += 1
+        }
+    }
+
     let client = BrewClient()
 
     private var catalogFetchedAt: Date?

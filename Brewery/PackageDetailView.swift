@@ -16,11 +16,6 @@ import SwiftUI
 /// back button, its own swipe-back gesture and three hardcoded heights — an app inside the app.
 struct PackageDetailView: View {
     let package: Package
-    /// v9 — whether this pane's back button owns ⌘[. False while a tap page is showing: two
-    /// live back stacks would both claim the shortcut and SwiftUI would pick one arbitrarily,
-    /// so the content column — the primary navigation — wins (HIG Keyboards: don't create
-    /// ambiguous shortcuts). The button itself stays clickable and focusable regardless.
-    var ownsBackShortcut = true
 
     /// One entry in the pane's drill-down: another package's page, (v13) a package's full
     /// command list, or (v14) a tap's package list.
@@ -112,6 +107,11 @@ struct PackageDetailView: View {
             guard !stack.isEmpty else { return }
             withAnimation(.smooth(duration: 0.3)) { stack.removeAll() }
         }
+        // View ▸ Back's channel (the model routes it here only while no tap page is open),
+        // and the published depth that enables the menu item.
+        .onChange(of: model.backRequests) { pop() }
+        .onChange(of: stack.count, initial: true) { model.paneDepth = stack.count }
+        .onDisappear { model.paneDepth = 0 }
     }
 
     /// Navigation at the leading top edge, which is where macOS puts a way back. It sat in a footer
@@ -125,7 +125,6 @@ struct PackageDetailView: View {
                 Label(pages[pages.count - 2].title, systemImage: "chevron.backward")
             }
             .buttonStyle(.borderless)
-            .keyboardShortcut(ownsBackShortcut ? KeyboardShortcut("[", modifiers: .command) : nil)
             .help("Back")
             Spacer(minLength: 0)
         }

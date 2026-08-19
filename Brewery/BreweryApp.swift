@@ -85,6 +85,12 @@ struct BreweryApp: App {
             }
             CommandGroup(after: .sidebar) {
                 Divider()
+                // Both drill-downs' one keyboard exit; two view-level ⌘[ claims let SwiftUI
+                // pick an owner arbitrarily, and a drilled-in pane could lose its back key.
+                Button("Back") { model.requestBack() }
+                    .keyboardShortcut("[", modifiers: .command)
+                    .disabled(model.selectedTap == nil && model.paneDepth == 0)
+                Divider()
                 // The Sort By rule, applied to its Filter twin: every toolbar action needs a
                 // menu bar command. One stable item set (the menu bar's same-items rule): one
                 // Kind picker bound to the section on screen, each toggle disabled where its

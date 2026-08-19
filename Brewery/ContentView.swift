@@ -569,8 +569,7 @@ struct ContentView: View {
     @ViewBuilder private var inspector: some View {
         if let package = model.selectedPackage {
             // The pane's back yields ⌘[ while a tap page shows its own — one shortcut, one owner.
-            PackageDetailView(package: package,
-                              ownsBackShortcut: !(section == .taps && model.selectedTap != nil))
+            PackageDetailView(package: package)
                 .id(package.id)
         } else {
             // Reachable: ⌘I opens the pane whether or not anything is selected.
@@ -1040,7 +1039,6 @@ struct ContentView: View {
                     } label: {
                         Label("Taps", systemImage: "chevron.backward")
                     }
-                    .keyboardShortcut("[", modifiers: .command)
                     .help("Back to the tap list")
                 }
                 ToolbarItem(placement: .primaryAction) {
