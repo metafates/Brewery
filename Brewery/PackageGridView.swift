@@ -37,6 +37,9 @@ struct PackageGridView<Header: View>: View {
     /// is up to date" — the answer is still being computed. Spinner instead (HIG Progress
     /// indicators, macOS: a spinner for a background operation, description where helpful).
     var isChecking = false
+    /// Set when a filter emptied the listing: clearing the filters is the fix Check Again
+    /// cannot be.
+    var onClearFilters: (() -> Void)? = nil
     /// v6: an optional page header that scrolls with the content — the App Store pattern. A fixed
     /// header above the ScrollView fights macOS's scroll-under-chrome behavior and clips cards.
     /// A stored view, not a closure: the synthesized memberwise init builds it, and the
@@ -94,7 +97,10 @@ struct PackageGridView<Header: View>: View {
             } description: {
                 EmptyView()
             } actions: {
-                if let onRefresh {
+                if let onClearFilters {
+                    Button("Clear Filters", action: onClearFilters)
+                        .buttonStyle(.borderedProminent)
+                } else if let onRefresh {
                     Button("Check Again", action: onRefresh)
                         .buttonStyle(.borderedProminent)
                 }

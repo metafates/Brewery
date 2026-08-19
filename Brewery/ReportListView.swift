@@ -33,36 +33,29 @@ struct ReportListView<Header: View>: View {
     @State private var bytes: [Package.ID: Int64] = [:]
 
     var body: some View {
-        Group {
-            if hits.isEmpty {
-                VStack(spacing: 0) {
-                    header
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                    emptyState
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            } else {
-                List(selection: selection) {
-                    // An ordinary row slot: the list's own insets are the shared gutter, so the
-                    // bar's edges and the rows' content agree by construction. The bottom gap
-                    // matches the Discover tip's clearance from its cards — a banner needs air
-                    // before the content it summarizes.
-                    header
-                        .padding(.bottom, 14)
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .selectionDisabled()
+        // One container either way: the empty state rides an overlay, so the header keeps the
+        // list's own gutter instead of a hand-set twin, and the centering stays.
+        List(selection: selection) {
+            // An ordinary row slot: the list's own insets are the shared gutter, so the
+            // bar's edges and the rows' content agree by construction. The bottom gap
+            // matches the Discover tip's clearance from its cards — a banner needs air
+            // before the content it summarizes.
+            header
+                .padding(.bottom, 14)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .selectionDisabled()
 
-                    ForEach(sortedHits) { hit in
-                        ReportRow(package: hit.package,
-                                  kind: kind,
-                                  bytes: bytes[hit.package.id])
-                            .tag(hit.package.id)
-                    }
-                }
-                .listStyle(.inset)
+            ForEach(sortedHits) { hit in
+                ReportRow(package: hit.package,
+                          kind: kind,
+                          bytes: bytes[hit.package.id])
+                    .tag(hit.package.id)
             }
+        }
+        .listStyle(.inset)
+        .overlay {
+            if hits.isEmpty { emptyState }
         }
         .task(id: measureKey) { await measure() }
     }

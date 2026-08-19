@@ -224,6 +224,10 @@ struct ContentView: View {
     /// skips the rebuild outright instead of paying it on every switch.
     @State private var builtKeys: [SidebarSection: BrowseKey] = [:]
     @FocusState private var searchFocused: Bool
+    @State private var kindsTip = PackageKindsTip()
+    /// TipView hides itself once dismissed, but its row keeps its insets — a permanent empty
+    /// band atop Discover (TapsView's own lesson). Gate the row on the tip's status.
+    @State private var showKindsTip = false
 
     /// How many cards are handed to the grid. It grows as the end of the list is reached and resets
     /// whenever the listing changes. It lives here, not in the grid, because the slicing has to
@@ -430,6 +434,11 @@ struct ContentView: View {
             await model.measureSizes()
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
+        .task {
+            for await status in kindsTip.statusUpdates {
+                showKindsTip = status == .available
+            }
+        }
         .onChange(of: model.selectedTap) { tapKindFilter = .all }
         .onChange(of: model.findRequests) { searchFocused = true }
         .onChange(of: model.failureToPresent?.id) { _, failure in
@@ -490,7 +499,7 @@ struct ContentView: View {
                            selectedID: inspectedID,
                            onSelect: { select($0) },
                            onRefresh: { refresh() },
-                           emptyMessage: emptyMessage,
+                           emptyMessage: emptyState?.message,
                            kind: section == .orphans ? .orphans
                                : section == .attention ? .attention : .storage) {
                 if section == .orphans {
@@ -532,11 +541,12 @@ struct ContentView: View {
                         isSearching: isSearching,
                         selectedID: inspectedID,
                         onSelect: { select($0) },
-                        emptyMessage: emptyMessage,
+                        emptyMessage: emptyState?.message,
                         emptySymbol: section.symbol,
                         onNeedMore: { window += Self.windowStep },
-                        onRefresh: emptyStateRefresh,
+                        onRefresh: emptyState?.isFiltered == true ? nil : emptyStateRefresh,
                         isChecking: section == .outdated && model.isCheckingForUpdates,
+                        onClearFilters: emptyState?.isFiltered == true ? { clearFilters() } : nil,
                         header: {
                             if let tap {
                                 TapPageHeader(tap: tap)
@@ -641,8 +651,8 @@ struct ContentView: View {
     /// feedback — and a TipView sharing the tree with `ContentUnavailableView.search` blanks
     /// the split view's sidebar (framework interaction, reproduced and pinned by UI test).
     @ViewBuilder private var discoverTip: some View {
-        if section == .discover, !isSearching {
-            TipView(PackageKindsTip())
+        if section == .discover, !isSearching, showKindsTip {
+            TipView(kindsTip)
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
         }
@@ -751,22 +761,39 @@ struct ContentView: View {
 
     /// Discover has no empty state of its own — by the time it renders, the catalog is loaded — but
     /// a filter can empty it, and so can On Request on a machine whose kegs are all deps.
-    private var emptyMessage: String? {
+    /// The cause rides along: a filter-emptied listing offers Clear Filters — Check Again
+    /// cannot fix it — and a genuinely empty one offers the re-check.
+    private var emptyState: (message: String, isFiltered: Bool)? {
         switch section {
         case .discover:
-            filtersActive ? "No packages match the filters" : nil
+            filtersActive ? ("No packages match the filters", true) : nil
         case .installed:
             if installedKindFilter != .all || installedTapsOnly, !model.installed.isEmpty {
-                "No installed packages match the filters"
+                ("No installed packages match the filters", true)
             } else if !showDependencies, !model.installed.isEmpty {
-                "No packages installed on request"
+                ("No packages installed on request", true)
             } else {
-                section.emptyMessage
+                section.emptyMessage.map { ($0, false) }
             }
         case .outdated, .services, .orphans, .attention, .storage, .checkup:
-            section.emptyMessage
+            section.emptyMessage.map { ($0, false) }
         case .taps:
-            tapKindFilter != .all ? "No packages match the filter" : section.emptyMessage
+            tapKindFilter != .all ? ("No packages match the filter", true)
+                                  : section.emptyMessage.map { ($0, false) }
+        }
+    }
+
+    /// The section's own keys only — Clear Filters must not reach across tabs.
+    private func clearFilters() {
+        switch section {
+        case .discover:
+            (kindFilter, hideDeprecated, tapsOnly) = (.all, false, false)
+        case .installed:
+            (installedKindFilter, installedTapsOnly, showDependencies) = (.all, false, true)
+        case .taps:
+            tapKindFilter = .all
+        default:
+            break
         }
     }
 
