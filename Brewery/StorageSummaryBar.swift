@@ -83,7 +83,7 @@ struct StorageSummaryBar: View {
                 if measured.isEmpty {
                     Rectangle().fill(.quaternary)
                 } else {
-                    ForEach(Array(measured.enumerated()), id: \.offset) { _, part in
+                    ForEach(measured.enumerated(), id: \.offset) { _, part in
                         Rectangle()
                             .fill(part.color.gradient)
                             .frame(width: max(3, proxy.size.width

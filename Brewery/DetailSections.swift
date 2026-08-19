@@ -261,14 +261,17 @@ struct DetailHeader: View {
         }
     }
 
-    /// One header stat. The glyph sits in a fixed-width column so the values line up down the
-    /// list — `chart.bar` and `doc.text` are not the same width, so `Label` alone leaves them ragged.
+    /// One header stat. `Label` keeps the glyph on the value's first baseline (an `HStack`
+    /// centered it against a wrapping license or tap name, floating it mid-block); the
+    /// fixed-width icon column still lines the values up — `chart.bar` and `doc.text` are
+    /// not the same width.
     private func statRow(_ symbol: String, @ViewBuilder content: () -> some View) -> some View {
-        HStack(spacing: 6) {
+        Label {
+            content()
+        } icon: {
             Image(systemName: symbol)
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
-            content()
         }
     }
 

@@ -231,7 +231,7 @@ struct TapPageHeader: View {
             HStack(spacing: 16) {
                 if let remote = info?.remote, let url = URL(string: remote) {
                     Link(destination: url) {
-                        Label(url.host() ?? remote, systemImage: "safari")
+                        Label(url.host() ?? remote, systemImage: "globe")
                     }
                     .pointerStyle(.link)
                 }

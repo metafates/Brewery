@@ -104,7 +104,7 @@ struct CheckupView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         header(caption: countCaption(report))
-                        ForEach(Array(shown.enumerated()), id: \.offset) { _, finding in
+                        ForEach(shown.enumerated(), id: \.offset) { _, finding in
                             findingBox(finding)
                         }
                         // brew prints this preamble before its warnings; --json drops it, but
@@ -170,7 +170,7 @@ struct CheckupView: View {
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(textBlocks.enumerated()), id: \.offset) { _, block in
+                    ForEach(textBlocks.enumerated(), id: \.offset) { _, block in
                         findingBlock(block, structure: structure)
                     }
                 }
@@ -180,7 +180,7 @@ struct CheckupView: View {
             // native — the action rows then say it themselves. A text-only remediation (the
             // untrusted-taps finding) keeps its prose: the text is all brew offered.
             if !chips.isEmpty || remedies.isEmpty {
-                ForEach(Array(remedyBlocks.enumerated()), id: \.offset) { _, block in
+                ForEach(remedyBlocks.enumerated(), id: \.offset) { _, block in
                     remediationBlock(block)
                 }
             }

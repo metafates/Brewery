@@ -17,7 +17,7 @@ struct OperationLogView: View {
                     Text("Waiting for output…")
                         .foregroundStyle(.tertiary)
                 } else {
-                    ForEach(Array(operation.lines.enumerated()), id: \.offset) { _, raw in
+                    ForEach(operation.lines.enumerated(), id: \.offset) { _, raw in
                         let line = Self.stripANSI(raw)
                         Text(line)
                             .foregroundStyle(Self.tint(for: line))

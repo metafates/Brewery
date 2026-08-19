@@ -80,7 +80,7 @@ struct PackageDetailView: View {
             // going back reveals the parent exactly as it was left — scroll position included.
             // Identity is the stack slot, so revisiting a package deeper down never collides.
             ZStack {
-                ForEach(Array(pages.enumerated()), id: \.offset) { index, item in
+                ForEach(pages.enumerated(), id: \.offset) { index, item in
                     Group {
                         switch item {
                         case .package(let package):
@@ -182,7 +182,9 @@ private struct DetailPage: View {
                         // and the word matches the card context menu's "Open Homepage".
                         if let url = package.homepageURL {
                             Link(destination: url) {
-                                Label("Homepage", systemImage: "safari")
+                                // `globe`, not `safari`: the link opens the *default* browser,
+                                // and Apple restricts the safari glyph to Safari itself.
+                                Label("Homepage", systemImage: "globe")
                             }
                             .help(url.absoluteString)
                             .accessibilityLabel("Open the \(package.title) homepage")
@@ -313,9 +315,9 @@ private struct DetailPage: View {
         let blocks = CaveatFormat.blocks(of: text)
         let mentioned = mentionedPackages(in: blocks)
         return VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("Caveats")
+            SectionTitle("Caveats")
 
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+            ForEach(blocks.enumerated(), id: \.offset) { index, block in
                 switch block {
                 case .text(let paragraph):
                     // Native Text (v9): it renders the code chips and opens the link runs on
@@ -379,7 +381,7 @@ private struct DetailPage: View {
     /// The executables the formula puts on `PATH`, as one copyable list — a word list, not chips.
     private var commands: some View {
         VStack(alignment: .leading, spacing: 4) {
-            sectionTitle("Commands")
+            SectionTitle("Commands")
 
             let commands = package.displayCommands
             if commands.count <= Self.inlineCommandLimit {
@@ -404,7 +406,7 @@ private struct DetailPage: View {
     /// (app, commands, installer…) read as one aligned table rather than stacked fragments.
     private var contents: some View {
         VStack(alignment: .leading, spacing: 4) {
-            sectionTitle("Contents")
+            SectionTitle("Contents")
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 5) {
                 ForEach(package.artifacts, id: \.kind) { artifact in
@@ -446,7 +448,7 @@ private struct DetailPage: View {
     /// the same two-column grid Contents uses. What it runs, when, where it listens, where it logs.
     private func serviceSection(_ service: ServiceDefinition) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            sectionTitle("Service")
+            SectionTitle("Service")
 
             // A switch must terminate a labeled row (System Settings' grammar) — floating beside
             // the section title it reads as decoration. The label is the live state, so the row
@@ -533,7 +535,7 @@ private struct DetailPage: View {
     /// so following one retargets the sheet; a name the catalog does not cover stays plain text.
     private var conflicts: some View {
         VStack(alignment: .leading, spacing: 2) {
-            sectionTitle("Conflicts with")
+            SectionTitle("Conflicts with")
 
             ForEach(package.conflicts, id: \.name) { conflict in
                 if let package = model.package(for: Package.packageID(kind: conflict.kind ?? .formula, name: conflict.name)) {
@@ -562,10 +564,6 @@ private struct DetailPage: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func sectionTitle(_ title: String) -> some View {
-        SectionTitle(title)
-    }
-
     // MARK: - Dependencies
 
     /// The receipt's runtime dependencies, in receipt order — `declared_directly` ones lead, and
@@ -587,7 +585,7 @@ private struct DetailPage: View {
 
     private func related(_ title: String, packages: [Package]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            sectionTitle(title)
+            SectionTitle(title)
 
             ForEach(packages) { item in
                 RelatedRow(package: item, version: model.installed[item.id]?.versions.last) {
