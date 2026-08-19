@@ -32,16 +32,19 @@ struct TapsView: View {
     let onSelect: (String) -> Void
 
     @Environment(AppModel.self) private var model
-    @State private var removing: TapInfo?
+    /// Focus and activation, split (Finder's grammar): arrow keys move a real, persistent
+    /// selection; Return and a click open the tap. Drilling on selection *change* cannot
+    /// work — the page covers and disables the list mid-traversal.
+    @State private var focusedTap: String?
     @State private var tip = TapsTip()
     /// TipView hides itself once dismissed, but the row it sits in would keep its insets — the
     /// gap would read as a layout bug. Gate the whole row on the tip's own status instead.
     @State private var showTip = false
 
     var body: some View {
-        // v24 — selection is the List's own (the report lists' rule); selecting a row drills
-        // into the tap, the sidebar's own arrow-key grammar.
-        List(selection: selection) {
+        // v24 — selection is the List's own (the report lists' rule); a click or Return
+        // opens the selected tap.
+        List(selection: $focusedTap) {
             if showTip {
                 Section {
                     TipView(tip)
@@ -54,6 +57,7 @@ struct TapsView: View {
                 ForEach(builtInRows, id: \.name) { row in
                     BuiltInTapRow(row: row)
                         .tag(row.name)
+                        .onTapGesture { onSelect(row.name) }
                 }
             } header: {
                 // A header labels its group. The vocabulary that used to hang under it is the
@@ -73,9 +77,10 @@ struct TapsView: View {
                         TapRow(info: info,
                                installedCount: model.installedCount(fromTap: info.name),
                                trust: model.trustState,
-                               onRemove: { removing = info },
+                               onRemove: { model.pendingTapRemoval = info },
                                onUntrust: { model.untrustTap(info.name) })
                             .tag(info.name)
+                            .onTapGesture { onSelect(info.name) }
                     }
                 }
             } header: {
@@ -83,50 +88,16 @@ struct TapsView: View {
             }
         }
         .listStyle(.inset)
+        .onKeyPress(.return) {
+            guard let focusedTap else { return .ignored }
+            onSelect(focusedTap)
+            return .handled
+        }
         .task {
             for await status in tip.statusUpdates {
                 showTip = status == .available
             }
         }
-        .confirmationDialog(removalTitle, isPresented: removalPresented, titleVisibility: .visible) {
-            if let info = removing, model.installedCount(fromTap: info.name) == 0 {
-                Button("Remove Tap", role: .destructive) { model.removeTap(info.name) }
-                Button("Cancel", role: .cancel) {}
-            } else {
-                // Blocked removal is informational — a statement with an OK (the uninstall
-                // dialog's rule); the cancel role keeps Escape working.
-                Button("OK", role: .cancel) {}
-            }
-        } message: {
-            if let info = removing {
-                if model.installedCount(fromTap: info.name) > 0 {
-                    Text("Homebrew refuses to remove a tap while packages from it are installed. Uninstall them first.")
-                } else {
-                    Text("This removes the tap's local copy — you can add it back anytime. If the tap is trusted, it stays trusted when you re-add it.")
-                }
-            }
-        }
-    }
-
-    private var removalTitle: String {
-        guard let removing else { return "" }
-        return model.installedCount(fromTap: removing.name) > 0
-            ? "\(removing.name) is still in use"
-            : "Remove \(removing.name)?"
-    }
-
-    /// A drill trigger, not a persisted selection: the tap page replaces the list, and coming
-    /// back starts clean — so the getter is always nil and the setter navigates.
-    private var selection: Binding<String?> {
-        Binding(get: { nil },
-                set: { name in
-                    guard let name else { return }
-                    onSelect(name)
-                })
-    }
-
-    private var removalPresented: Binding<Bool> {
-        Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })
     }
 
     private var query: String {
@@ -247,6 +218,9 @@ struct TapPageHeader: View {
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
+                if info != nil {
+                    headerMenu
+                }
             }
             .font(.callout)
 
@@ -289,6 +263,29 @@ struct TapPageHeader: View {
         }
         .warningWash(.orange)
         .accessibilityElement(children: .contain)
+    }
+
+    /// The list row context menu's twin in the main interface (the pane's moreMenu rule):
+    /// Untrust only where explicit trust exists, then the destructive Remove behind a
+    /// divider, funneling into the one removal dialog.
+    private var headerMenu: some View {
+        Menu {
+            if let info, model.trustState.taps.contains(info.name.lowercased()) {
+                Button("Untrust") { model.untrustTap(info.name) }
+                Divider()
+            }
+            if let info {
+                Button("Remove Tap…", role: .destructive) { model.pendingTapRemoval = info }
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis.circle")
+                .labelStyle(.iconOnly)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More actions")
+        .accessibilityLabel("More actions for \(tap)")
     }
 
     private var info: TapInfo? {

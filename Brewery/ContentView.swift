@@ -260,6 +260,15 @@ struct ContentView: View {
         return Text("Install \(package.title) from \(tap)?")
     }
 
+    /// Remove Tap's title, the uninstall grammar: a question when removable, a statement when
+    /// blocked.
+    private var tapRemovalTitle: String {
+        guard let info = model.pendingTapRemoval else { return "" }
+        return model.installedCount(fromTap: info.name) > 0
+            ? "\(info.name) is still in use"
+            : "Remove \(info.name)?"
+    }
+
     /// v15 — the uninstall dialog's title, same grammar — except blocked, where there is no
     /// question to ask: the dialog is informational (HIG Alerts), a statement with an OK.
     private var uninstallTitle: Text {
@@ -383,6 +392,25 @@ struct ContentView: View {
             }
         } message: { package in
             Text(uninstallMessage(for: package))
+        }
+        .confirmationDialog(tapRemovalTitle,
+                            isPresented: $model.tapRemovalPresented,
+                            titleVisibility: .visible,
+                            presenting: model.pendingTapRemoval) { info in
+            if model.installedCount(fromTap: info.name) == 0 {
+                Button("Remove Tap", role: .destructive) { model.removeTap(info.name) }
+                Button("Cancel", role: .cancel) {}
+            } else {
+                // Blocked removal is informational — a statement with an OK (the uninstall
+                // dialog's rule); the cancel role keeps Escape working.
+                Button("OK", role: .cancel) {}
+            }
+        } message: { info in
+            if model.installedCount(fromTap: info.name) > 0 {
+                Text("Homebrew refuses to remove a tap while packages from it are installed. Uninstall them first.")
+            } else {
+                Text("This removes the tap's local copy — you can add it back anytime. If the tap is trusted, it stays trusted when you re-add it.")
+            }
         }
         .task(id: searchKey) {
             let ranked = section

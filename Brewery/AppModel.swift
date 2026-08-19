@@ -1030,6 +1030,15 @@ final class AppModel {
         set { if !newValue { pendingUninstall = nil } }
     }
 
+    /// pendingUninstall's grammar for taps: every Remove Tap… surface — list row, page
+    /// header, menu bar — funnels here, and the one dialog runs before anything enqueues.
+    var pendingTapRemoval: TapInfo?
+
+    var tapRemovalPresented: Bool {
+        get { pendingTapRemoval != nil }
+        set { if !newValue { pendingTapRemoval = nil } }
+    }
+
     /// Every Uninstall surface funnels through here — pane button, card context menu, menu bar —
     /// and it only sets the pending package: the confirmation dialog runs before anything
     /// enqueues (the trust-write rule). Pinned packages never pass — brew's pinned refusal
@@ -1183,6 +1192,8 @@ final class AppModel {
     func removeTap(_ name: String) {
         guard Self.isValidTapName(name) else { return }
         enqueue(.untap(name: name), title: "Removing \(name)", targetID: nil)
+        // A page drilled into the tap being removed has nothing left to show.
+        if selectedTap == name { selectedTap = nil }
     }
 
     /// The one guarded trust write: the caller has shown the confirmation dialog by the time
