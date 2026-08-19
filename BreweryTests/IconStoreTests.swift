@@ -129,6 +129,31 @@ struct AvatarSourceTests {
     }
 }
 
+@Suite("Package avatar sources (v25.2)")
+struct PackageAvatarSourceTests {
+    @Test("a dedicated github account (owner == repo) yields its avatar; anything else nothing")
+    func avatarFromHomepage() throws {
+        let dedicated = try #require(IconStore.avatarSource(
+            homepage: URL(string: "https://github.com/XCTestHTMLReport/XCTestHTMLReport")))
+        #expect(dedicated.url.absoluteString == "https://github.com/XCTestHTMLReport.png?size=128")
+        // Same key namespace as tap avatars — the tile is shared.
+        #expect(dedicated.key == IconStore.fileName(for: "avatar_XCTestHTMLReport"))
+
+        // GitHub is case-insensitive; the comparison is too. A .git suffix folds away.
+        #expect(IconStore.avatarSource(
+            homepage: URL(string: "https://www.github.com/Exiftool/exiftool")) != nil)
+        #expect(IconStore.avatarSource(
+            homepage: URL(string: "https://github.com/tmux/tmux.git")) != nil)
+
+        // An owner hosting many repos keeps the kind glyph — their avatar isn't this package.
+        #expect(IconStore.avatarSource(homepage: URL(string: "https://github.com/sharkdp/bat")) == nil)
+        #expect(IconStore.avatarSource(homepage: URL(string: "https://github.com/sponsors")) == nil)
+        #expect(IconStore.avatarSource(homepage: URL(string: "https://gitlab.com/x/x")) == nil)
+        #expect(IconStore.avatarSource(homepage: URL(string: "https://example.com/x/x")) == nil)
+        #expect(IconStore.avatarSource(homepage: nil) == nil)
+    }
+}
+
 @Suite("Host file names")
 struct IconFileNameTests {
     @Test("a plain host is its own file name")

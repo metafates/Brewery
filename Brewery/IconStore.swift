@@ -204,6 +204,27 @@ actor IconStore {
         return (key: fileName(for: "avatar_\(owner)"), url: url)
     }
 
+    /// v25.2 — a package's GitHub avatar, but only for a *dedicated* account: the homepage is
+    /// `github.com/<owner>/<repo>` with owner == repo (case-insensitively — GitHub is), the
+    /// single-project-account pattern (XCTestHTMLReport/XCTestHTMLReport). There the avatar IS
+    /// the project's identity, which is exactly what the forge-host favicon skip (the v10
+    /// rule) isn't: one GitHub logo repeated across half the catalog. An owner who hosts many
+    /// repos fails the rule and keeps the kind glyph — their avatar identifies them, not this
+    /// package. Same key namespace as tap avatars, so a tap owner's tile is shared.
+    nonisolated static func avatarSource(homepage: URL?) -> (key: String, url: URL)? {
+        guard let homepage, let host = homepage.host()?.lowercased(),
+              host == "github.com" || host == "www.github.com" else { return nil }
+
+        let parts = homepage.path().split(separator: "/").prefix(2).map(String.init)
+        guard parts.count == 2 else { return nil }
+        let owner = parts[0]
+        let repo = parts[1].hasSuffix(".git") ? String(parts[1].dropLast(4)) : parts[1]
+        guard !owner.isEmpty, owner.lowercased() == repo.lowercased(),
+              let url = URL(string: "https://github.com/\(owner).png?size=128")
+        else { return nil }
+        return (key: fileName(for: "avatar_\(owner)"), url: url)
+    }
+
     /// v10 — the GitHub social card for a package whose homepage is a repo. GitHub renders one
     /// for every repo (the custom preview if the author set one, else the generated
     /// name-avatar-stats card), served from the opengraph assets CDN — no API, no auth. Deep

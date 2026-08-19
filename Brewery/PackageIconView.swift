@@ -50,6 +50,14 @@ struct PackageIconView: View {
         return host
     }
 
+    /// v25.2 — the one forge-host exception: a *dedicated* GitHub account (owner == repo)
+    /// exists for this one project, so its avatar is identity, not the repeated-logo chrome
+    /// the v10 skip exists for. Fonts keep skipping every remote icon.
+    private var avatarSource: (key: String, url: URL)? {
+        guard !package.isFont else { return nil }
+        return IconStore.avatarSource(homepage: package.homepageURL)
+    }
+
     private static let forgeHosts: Set<String> = [
         "github.com", "www.github.com", "gitlab.com", "www.gitlab.com",
     ]
@@ -87,13 +95,20 @@ struct PackageIconView: View {
         // a grid that fills in and a grid that flickers as you scroll through it.
         .animation(.easeOut(duration: 0.2), value: image == nil)
         .accessibilityHidden(true)
-        .task(id: "\(installedAppPath ?? "")|\(host ?? "")") {
+        .task(id: "\(installedAppPath ?? "")|\(avatarSource?.key ?? "")|\(host ?? "")") {
             if let path = installedAppPath {
                 // Icon services answers from its own cache; the reps cover retina sizes.
                 let icon = NSWorkspace.shared.icon(forFile: path)
                 icon.size = NSSize(width: 256, height: 256)
                 image = icon
                 isAppIcon = true
+                return
+            }
+            if let avatarSource {
+                isLoading = true
+                image = await IconStore.shared.image(key: avatarSource.key, url: avatarSource.url)
+                isAppIcon = false
+                isLoading = false
                 return
             }
             guard let host else {
