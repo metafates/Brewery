@@ -210,8 +210,6 @@ private struct DetailPage: View {
                     .pointerStyle(.link)
                 }
 
-                DetailBanner(package: package)
-
                 DetailFontPreview(package: package)
 
                 if let text = package.resolvedCaveats(prefix: model.client.prefix), !text.isEmpty {

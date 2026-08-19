@@ -86,27 +86,6 @@ struct IconMarkerTests {
     }
 }
 
-@Suite("Banner sources")
-struct BannerSourceTests {
-    @Test("github repo homepages yield a card URL; everything else yields nothing")
-    func bannerSource() throws {
-        let fira = try #require(IconStore.bannerSource(
-            homepage: URL(string: "https://github.com/tonsky/FiraCode")))
-        #expect(fira.url.absoluteString == "https://opengraph.githubassets.com/brewery/tonsky/FiraCode")
-        #expect(fira.key.isEmpty == false)
-
-        // www, a .git suffix and a deep path all fold to the first two segments.
-        let deep = try #require(IconStore.bannerSource(
-            homepage: URL(string: "https://www.github.com/owner/repo.git/tree/main")))
-        #expect(deep.url.absoluteString.hasSuffix("/owner/repo"))
-
-        #expect(IconStore.bannerSource(homepage: URL(string: "https://gitlab.com/x/y")) == nil)
-        #expect(IconStore.bannerSource(homepage: URL(string: "https://github.com/sponsors")) == nil)
-        #expect(IconStore.bannerSource(homepage: URL(string: "https://gist.github.com/a/b")) == nil)
-        #expect(IconStore.bannerSource(homepage: nil) == nil)
-    }
-}
-
 @Suite("Tap avatar sources")
 struct AvatarSourceTests {
     @Test("owner comes from the remote; built-ins map to Homebrew; anything else is nothing")

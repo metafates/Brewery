@@ -20,8 +20,6 @@ actor IconStore {
     /// Repo social-preview cards for the detail pane's hero slot. A separate instance
     /// with its own directory: a ~300 KB banner in the favicon LRU would evict icons by the
     /// dozen, and the two caches age on entirely different rhythms.
-    static let banners = IconStore(directoryName: "Banners")
-
     /// Icons rarely change. A file older than this is still served — it is just refreshed behind
     /// the view — and it is also how long a negative marker suppresses re-asking.
     static let ttl: TimeInterval = 7 * 24 * 60 * 60
@@ -212,35 +210,19 @@ actor IconStore {
     /// repos fails the rule and keeps the kind glyph — their avatar identifies them, not this
     /// package. Same key namespace as tap avatars, so a tap owner's tile is shared.
     nonisolated static func avatarSource(homepage: URL?) -> (key: String, url: URL)? {
-        guard let (owner, repo) = githubOwnerRepo(homepage),
-              owner.lowercased() == repo.lowercased(),
+        guard let homepage, let host = homepage.host()?.lowercased(),
+              host == "github.com" || host == "www.github.com" else { return nil }
+        let parts = homepage.path().split(separator: "/").prefix(2).map(String.init)
+        guard parts.count == 2, !parts[0].isEmpty else { return nil }
+        let owner = parts[0]
+        let repo = parts[1].hasSuffix(".git") ? String(parts[1].dropLast(4)) : parts[1]
+        guard owner.lowercased() == repo.lowercased(),
               let url = URL(string: "https://github.com/\(owner).png?size=128")
         else { return nil }
         return (key: fileName(for: "avatar_\(owner)"), url: url)
     }
 
-    /// The GitHub social card for a package whose homepage is a repo. GitHub renders one
-    /// for every repo (the custom preview if the author set one, else the generated
-    /// name-avatar-stats card), served from the opengraph assets CDN — no API, no auth. Deep
-    /// homepage paths keep their first two segments; a `.git` suffix folds away.
-    /// ponytail: github.com homepages only — arbitrary hosts would need og:image HTML parsing.
-    nonisolated static func bannerSource(homepage: URL?) -> (key: String, url: URL)? {
-        guard let (owner, repo) = githubOwnerRepo(homepage), !repo.isEmpty,
-              let url = URL(string: "https://opengraph.githubassets.com/brewery/\(owner)/\(repo)")
-        else { return nil }
-        return (key: fileName(for: "\(owner)_\(repo)"), url: url)
-    }
 
-    /// `github.com/<owner>/<repo>` homepages, parsed once for both artwork sources: first two
-    /// path segments, `.git` suffix folded away. (The tap-remote parser is a different rule.)
-    private nonisolated static func githubOwnerRepo(_ homepage: URL?) -> (owner: String, repo: String)? {
-        guard let homepage, let host = homepage.host()?.lowercased(),
-              host == "github.com" || host == "www.github.com" else { return nil }
-        let parts = homepage.path().split(separator: "/").prefix(2).map(String.init)
-        guard parts.count == 2, !parts[0].isEmpty else { return nil }
-        let repo = parts[1].hasSuffix(".git") ? String(parts[1].dropLast(4)) : parts[1]
-        return (owner: parts[0], repo: repo)
-    }
 
     // MARK: - Disk
 

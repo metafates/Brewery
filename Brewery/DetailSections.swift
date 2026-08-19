@@ -7,7 +7,7 @@ import AppKit
 import SwiftUI
 
 // The pane's state-owning sections. Each owns the `@State` and the `.task` it needs, so a
-// disk-size landing, a banner crossfade or a license popover invalidates its own subtree
+// disk-size landing or a license popover invalidates its own subtree
 // instead of re-evaluating the whole page.
 
 /// Stacked, not one wide row: a pane is about 300 pt across, and the sheet's icon-name-stats
@@ -393,89 +393,6 @@ struct DetailHeader: View {
     /// The effective tap (receipt over catalog), falling back to the core tap the kind implies.
     private var tapLabel: String {
         model.effectiveTap(for: package) ?? package.tapLabel
-    }
-}
-
-/// The repo's social-preview card as hero artwork, in the screenshots slot. Not for
-/// fonts: their Preview section is strictly better artwork. The slot is reserved
-/// while the card loads (HIG Loading: "show something as soon as possible"; placeholders
-/// over spinners is the icon grammar) and the image crossfades in — the pop-in reflow read
-/// as a glitch.
-struct DetailBanner: View {
-    let package: Package
-
-    @State private var phase = Phase.absent
-
-    /// The banner slot's lifecycle: reserved while the card is on its way, gone if it
-    /// never arrives. Knowing the footprint up front is what makes the reservation honest.
-    private enum Phase: Equatable {
-        case absent
-        case loading
-        case loaded(NSImage)
-
-        static func == (lhs: Self, rhs: Self) -> Bool {
-            switch (lhs, rhs) {
-            case (.absent, .absent), (.loading, .loading): true
-            case let (.loaded(a), .loaded(b)): a === b
-            default: false
-            }
-        }
-    }
-
-    var body: some View {
-        Group {
-            switch phase {
-            case .absent:
-                EmptyView()
-            case .loading:
-                placeholder
-            case .loaded(let image):
-                banner(image)
-            }
-        }
-        .animation(.easeOut(duration: 0.2), value: phase)
-        .task(id: package.id) {
-            guard !package.isFont,
-                  let source = IconStore.bannerSource(homepage: package.homepageURL) else {
-                phase = .absent
-                return
-            }
-            phase = .loading
-            if let image = await IconStore.banners.image(key: source.key, url: source.url) {
-                phase = .loaded(image)
-            } else {
-                // Offline or no card after all: collapse. The rare case pays one reflow
-                // rather than every pane paying a permanent empty box.
-                phase = .absent
-            }
-        }
-    }
-
-    /// The card's reserved footprint: GitHub renders og cards at 1200×600 (verified on the
-    /// wire, not the og-spec's 1.91:1), so the slot is laid out at final size and the image
-    /// replaces the quiet fill without a reflow.
-    private var placeholder: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(.quinary)
-            .aspectRatio(2, contentMode: .fit)
-            .accessibilityHidden(true)
-    }
-
-    /// GitHub's cards are 2:1-ish; full pane width, its own corner radius, and a hairline —
-    /// a white-background banner otherwise bleeds into the pane in light mode.
-    private func banner(_ image: NSImage) -> some View {
-        Image(nsImage: image)
-            .resizable()
-            .interpolation(.high)
-            .scaledToFit()
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(.separator, lineWidth: 1)
-            }
-            // Decoration: everything the card says — name, description, author — the pane
-            // already reads out as text.
-            .accessibilityHidden(true)
     }
 }
 
