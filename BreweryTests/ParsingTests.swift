@@ -341,3 +341,16 @@ struct CatalogDecodingTests {
         #expect(CatalogStore.isStale(.now) == false)
     }
 }
+
+/// The log's one ingest-time normalization — stripped once here, never per render.
+@Suite("Operation log ingest")
+struct OperationLogIngestTests {
+    @Test("ANSI escapes are stripped at append")
+    @MainActor
+    func stripsANSI() {
+        let operation = BrewOperation(command: .doctor, title: "x", targetID: nil)
+        operation.append("\u{1B}[1;32m==> \u{1B}[0mUpgrading ffmpeg")
+        operation.append("plain line")
+        #expect(operation.lines == ["==> Upgrading ffmpeg", "plain line"])
+    }
+}

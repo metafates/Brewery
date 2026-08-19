@@ -17,8 +17,8 @@ struct OperationLogView: View {
                     Text("Waiting for output…")
                         .foregroundStyle(.tertiary)
                 } else {
-                    ForEach(operation.lines.enumerated(), id: \.offset) { _, raw in
-                        let line = Self.stripANSI(raw)
+                    // Lines arrive ANSI-stripped from BrewOperation.append.
+                    ForEach(operation.lines.enumerated(), id: \.offset) { _, line in
                         Text(line)
                             .foregroundStyle(Self.tint(for: line))
                             .textSelection(.enabled)
@@ -44,14 +44,6 @@ struct OperationLogView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Output of \(operation.title)")
-    }
-
-    /// A user's `brew.env` can force `HOMEBREW_COLOR=1`, in which case brew writes CSI escapes into
-    /// a pipe that has no terminal to interpret them.
-    private static let ansiEscape = #/\x1B\[[0-9;?]*[\x20-\x2F]*[\x40-\x7E]/#
-
-    private static func stripANSI(_ line: String) -> String {
-        line.replacing(ansiEscape, with: "")
     }
 
     /// brew already prefixes its diagnostics; nothing else in the stream is worth tinting.

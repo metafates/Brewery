@@ -39,10 +39,20 @@ final class BrewOperation: Identifiable {
     }
 
     func append(_ line: String) {
-        lines.append(line)
+        lines.append(Self.stripANSI(line))
         if lines.count > Self.lineLimit {
             lines.removeFirst(lines.count - Self.lineLimit)
         }
+    }
+
+    /// A user's `brew.env` can force `HOMEBREW_COLOR=1`, in which case brew writes CSI escapes
+    /// into a pipe that has no terminal to interpret them. Normalized once at ingest: the log
+    /// view re-renders per appended line, and re-stripping every visible line there made a
+    /// chatty upgrade pay the regex hundreds of times per frame.
+    private nonisolated static let ansiEscape = #/\x1B\[[0-9;?]*[\x20-\x2F]*[\x40-\x7E]/#
+
+    nonisolated static func stripANSI(_ line: String) -> String {
+        line.replacing(ansiEscape, with: "")
     }
 
     var isFinished: Bool {
