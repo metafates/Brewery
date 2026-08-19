@@ -2,60 +2,45 @@
 
 A native macOS app for Homebrew. SwiftUI, no third-party dependencies.
 
-Search the full catalog of roughly 16,000 formulae and casks, see what you have
-installed, update it, and manage background services, all without opening a
-terminal. Packages from your third-party taps show up too, read straight off
-disk.
+Search roughly 16,000 formulae and casks, install and update them, run
+services, manage taps, and let Homebrew diagnose itself, all without opening
+a terminal.
 
-## What it does
+## Features
 
-- Fuzzy search across everything, including the commands a formula provides:
-  typing `convert` finds `imagemagick`, and the card tells you why it matched.
-- Browsing sorted by popularity, with filters for kind (formulae, casks, fonts)
-  and source (taps only), plus an on-request scope so dependencies stay out of
-  your way.
-- Package pages with install counts, caveats rendered the way brew means them
-  (copyable command blocks included), provided commands, cask contents, service
-  details, conflicts, licenses, and a navigable dependency graph.
-- Install, update, and uninstall, per package or all at once, with live logs
-  and a cancellable queue. Uninstalling always confirms first, and a cask that
-  documents its own leftovers offers to remove its app data too.
-- A Services tab in the style of Login Items: see every brew service, its
-  status, and a switch to start or stop it.
+- Fuzzy search over names, descriptions and provided commands: `convert`
+  finds `imagemagick`
+- Package pages with caveats, on-disk sizes, licenses, dependencies,
+  conflicts and cask contents
+- Install, update and uninstall with live logs and a cancellable queue
+- Services in the style of Login Items, with start/stop switches
+- Taps with brew 6's trust model built into the UI
+- Reports: Orphans, Attention, Storage, and Checkup (`brew doctor`, made
+  actionable)
+- Every action has a menu bar command and a keyboard shortcut
 
-## Destructive only on purpose
+## Safety
 
-Brewery installs, upgrades, uninstalls, and toggles services. Every removal is
-confirmed before anything runs, and what brew can be asked to do is enforced
-by construction rather than by discipline: every invocation comes from a
-closed enum of commands, nothing execs brew with arbitrary arguments, and a
-test fails the build if a forbidden token — `--force`,
-`--ignore-dependencies`, `cleanup`, `pin`, and friends — ever shows up in an
-argv. Brew's implicit destruction is switched off on every invocation too:
-the periodic cleanup that install and upgrade normally trigger, and the
-autoremove cascade that follows an uninstall (orphaned dependencies surface
-in the app's own Orphans report instead, where removing them is its own
-confirmed decision).
+Every brew invocation comes from a closed enum of commands — a test fails the
+build if a destructive token ever appears in an argv. Removals are confirmed
+before anything runs, and brew's implicit cleanup and autoremove are switched
+off on every invocation.
 
 ## Requirements
 
-- macOS 26 or later
-- [Homebrew](https://brew.sh) at `/opt/homebrew` (Apple silicon) or
-  `/usr/local` (Intel). If it is missing, the app says so and links to the
-  installer.
-
-The app is not sandboxed. It runs the `brew` binary, which a sandbox would
-forbid.
+macOS 26 or later, and [Homebrew](https://brew.sh). The app is not sandboxed:
+it runs the `brew` binary, which a sandbox would forbid.
 
 ## Building
 
 ```sh
-xcodebuild -project Brewery.xcodeproj -scheme Brewery -configuration Debug build
-xcodebuild test -project Brewery.xcodeproj -scheme Brewery -destination 'platform=macOS' -only-testing:BreweryTests
+make run        # Debug build, then launch
+make install    # Release build into /Applications
+make test       # unit tests, headless
+make test-ui    # UI tests; needs automation permission
 ```
 
-`ARCHITECTURE.md` documents the design and the Homebrew behavior it depends
-on. `CLAUDE.md` has the day-to-day commands.
+`ARCHITECTURE.md` is the spec; `CLAUDE.md` has the day-to-day commands.
 
 ## License
 
