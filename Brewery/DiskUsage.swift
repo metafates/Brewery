@@ -53,13 +53,13 @@ nonisolated enum DiskUsage {
         var visited = 0
         for root in roots {
             guard !Task.isCancelled else { return nil }
-            var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory) else {
-                continue
-            }
+            // One resourceValues read answers exists/directory/size at once; a missing or
+            // dangling root throws and is skipped, the old fileExists probe's behavior.
+            guard let values = try? root.resourceValues(forKeys:
+                [.isDirectoryKey, .isRegularFileKey, .fileSizeKey]) else { continue }
             found = true
-            guard isDirectory.boolValue else {
-                total += size(of: root)
+            guard values.isDirectory == true else {
+                total += values.isRegularFile == true ? Int64(values.fileSize ?? 0) : 0
                 continue
             }
             let enumerator = FileManager.default.enumerator(

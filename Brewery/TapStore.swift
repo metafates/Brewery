@@ -152,7 +152,7 @@ nonisolated enum TapStore {
                                 tap: String, remote: String?, tapRoot: URL,
                                 installs90d: [String: Int]) -> Package {
         let name = file.deletingPathExtension().lastPathComponent
-        let sourcePath = file.path.replacingOccurrences(of: tapRoot.path + "/", with: "")
+        let sourcePath = file.path.replacing(tapRoot.path + "/", with: "")
         return Package(kind: kind,
                        name: name,
                        displayName: parsed.displayName,
@@ -362,7 +362,7 @@ nonisolated enum TapStore {
 
         static func read(environment: [String: String]) -> TrustState {
             for url in candidates(environment: environment,
-                                  home: FileManager.default.homeDirectoryForCurrentUser) {
+                                  home: URL.homeDirectory) {
                 if let data = try? Data(contentsOf: url) {
                     return parse(data)
                 }

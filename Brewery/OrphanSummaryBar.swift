@@ -34,7 +34,7 @@ struct OrphanSummaryBar: View {
                     // only, nothing below moves.
                     // The reclaimable component is non-breaking: a narrow bar wraps only at
                     // the separator, never inside "1,2 GB reclaimable".
-                    Text("^[\(ids.count) orphaned dependencies](inflect: true)\(bytes.map { " · " + "\($0.formatted(.byteCount(style: .file))) reclaimable".replacingOccurrences(of: " ", with: "\u{00A0}") } ?? "")")
+                    Text("^[\(ids.count) orphaned dependencies](inflect: true)\(bytes.map { " · " + "\($0.formatted(.byteCount(style: .file))) reclaimable".replacing(" ", with: "\u{00A0}") } ?? "")")
                         .font(.title3)
                         .fontWeight(.semibold)
                     Text("Installed for packages you've since removed.")

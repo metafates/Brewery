@@ -224,7 +224,7 @@ final class BrewClient {
     func metadataDate() -> Date? {
         Self.newestMetadataDate(in: Self.apiDirectory(
             environment: effectiveEnvironment,
-            home: FileManager.default.homeDirectoryForCurrentUser))
+            home: URL.homeDirectory))
     }
 
     /// The cache directory brew will use for the processes *we* spawn: the inherited
@@ -254,7 +254,7 @@ final class BrewClient {
     func cleanedDate() -> Date? {
         let marker = Self.cacheDirectory(
             environment: effectiveEnvironment,
-            home: FileManager.default.homeDirectoryForCurrentUser).appending(path: ".cleaned")
+            home: URL.homeDirectory).appending(path: ".cleaned")
         return try? marker.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 

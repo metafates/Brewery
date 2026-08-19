@@ -100,6 +100,13 @@ nonisolated enum CaveatFormat {
         return name.allSatisfy { $0.isLetter || $0.isNumber || "@._+-".contains($0) }
     }
 
+    /// Taps are exactly `owner/repo`, each segment in the package-name charset — one rule for
+    /// the remedy classifier and the finding-format tap list.
+    static func isTapName(_ token: String) -> Bool {
+        let segments = token.split(separator: "/")
+        return segments.count == 2 && segments.allSatisfy { isPackageName(String($0)) }
+    }
+
     /// A prose paragraph, dressed: inline Markdown (inline-only — full parsing would collapse the
     /// newlines the text depends on; failure falls back to the raw string), code spans tinted so
     /// mono-heavy prose stops reading as noise, and bare URLs linkified — caveats cite docs pages

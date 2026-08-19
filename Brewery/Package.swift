@@ -136,7 +136,7 @@ nonisolated struct ServiceDefinition: Codable, Hashable {
     /// "tcp://127.0.0.1:6379" → "127.0.0.1:6379" — the scheme is launchd plumbing.
     var ports: [String] {
         sockets.map { socket in
-            socket.range(of: "://").map { String(socket[$0.upperBound...]) } ?? socket
+            socket.firstRange(of: "://").map { String(socket[$0.upperBound...]) } ?? socket
         }
     }
 }
@@ -342,7 +342,7 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         guard let prefix else { return text }
         var root = prefix.path(percentEncoded: false)
         if root.count > 1, root.hasSuffix("/") { root.removeLast() }
-        return text.replacingOccurrences(of: "$HOMEBREW_PREFIX", with: root)
+        return text.replacing("$HOMEBREW_PREFIX", with: root)
     }
 
     var homepageURL: URL? { homepage.flatMap(URL.init(string:)) }
@@ -469,26 +469,22 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
 
     var replacementName: String? { replacementFormula ?? replacementCask }
 
+    /// ISO8601's parse strategy defaults to GMT, preserving the day-slip guard on the way in.
     private static func day(_ api: String?) -> Date? {
-        api.flatMap { apiDayFormat.date(from: $0) }
+        api.flatMap { try? Date($0, strategy: .iso8601.year().month().day()) }
     }
 
-    private static func dayText(_ date: Date) -> String { dayFormat.string(from: date) }
-    private static func monthText(_ date: Date) -> String { monthFormat.string(from: date) }
+    private static func dayText(_ date: Date) -> String { date.formatted(dayStyle) }
+    private static func monthText(_ date: Date) -> String { date.formatted(monthStyle) }
 
-    /// All three pinned to en_US + UTC: the app's strings are unlocalized English, and a
-    /// calendar date rendered through a local timezone can slip a day.
-    private static let apiDayFormat = fixedFormat("yyyy-MM-dd")
-    private static let dayFormat = fixedFormat("MMMM d, yyyy")
-    private static let monthFormat = fixedFormat("MMMM yyyy")
-
-    private static func fixedFormat(_ format: String) -> DateFormatter {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.dateFormat = format
-        return formatter
-    }
+    /// Both pinned to en_US + UTC: the app's strings are unlocalized English, and a calendar
+    /// date rendered through a local timezone can slip a day.
+    private static let dayStyle = Date.FormatStyle(date: .long,
+                                                   locale: Locale(identifier: "en_US_POSIX"),
+                                                   timeZone: .gmt)
+    private static let monthStyle = Date.FormatStyle(locale: Locale(identifier: "en_US_POSIX"),
+                                                     timeZone: .gmt)
+        .month(.wide).year()
 }
 
 nonisolated struct InstalledInfo: Equatable, Hashable, Codable {

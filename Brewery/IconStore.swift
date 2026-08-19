@@ -212,14 +212,8 @@ actor IconStore {
     /// repos fails the rule and keeps the kind glyph — their avatar identifies them, not this
     /// package. Same key namespace as tap avatars, so a tap owner's tile is shared.
     nonisolated static func avatarSource(homepage: URL?) -> (key: String, url: URL)? {
-        guard let homepage, let host = homepage.host()?.lowercased(),
-              host == "github.com" || host == "www.github.com" else { return nil }
-
-        let parts = homepage.path().split(separator: "/").prefix(2).map(String.init)
-        guard parts.count == 2 else { return nil }
-        let owner = parts[0]
-        let repo = parts[1].hasSuffix(".git") ? String(parts[1].dropLast(4)) : parts[1]
-        guard !owner.isEmpty, owner.lowercased() == repo.lowercased(),
+        guard let (owner, repo) = githubOwnerRepo(homepage),
+              owner.lowercased() == repo.lowercased(),
               let url = URL(string: "https://github.com/\(owner).png?size=128")
         else { return nil }
         return (key: fileName(for: "avatar_\(owner)"), url: url)
@@ -231,17 +225,21 @@ actor IconStore {
     /// homepage paths keep their first two segments; a `.git` suffix folds away.
     /// ponytail: github.com homepages only — arbitrary hosts would need og:image HTML parsing.
     nonisolated static func bannerSource(homepage: URL?) -> (key: String, url: URL)? {
-        guard let homepage, let host = homepage.host()?.lowercased(),
-              host == "github.com" || host == "www.github.com" else { return nil }
-
-        let parts = homepage.path().split(separator: "/").prefix(2).map(String.init)
-        guard parts.count == 2 else { return nil }
-        let owner = parts[0]
-        let repo = parts[1].hasSuffix(".git") ? String(parts[1].dropLast(4)) : parts[1]
-        guard !owner.isEmpty, !repo.isEmpty,
+        guard let (owner, repo) = githubOwnerRepo(homepage), !repo.isEmpty,
               let url = URL(string: "https://opengraph.githubassets.com/brewery/\(owner)/\(repo)")
         else { return nil }
         return (key: fileName(for: "\(owner)_\(repo)"), url: url)
+    }
+
+    /// `github.com/<owner>/<repo>` homepages, parsed once for both artwork sources: first two
+    /// path segments, `.git` suffix folded away. (The tap-remote parser is a different rule.)
+    private nonisolated static func githubOwnerRepo(_ homepage: URL?) -> (owner: String, repo: String)? {
+        guard let homepage, let host = homepage.host()?.lowercased(),
+              host == "github.com" || host == "www.github.com" else { return nil }
+        let parts = homepage.path().split(separator: "/").prefix(2).map(String.init)
+        guard parts.count == 2, !parts[0].isEmpty else { return nil }
+        let repo = parts[1].hasSuffix(".git") ? String(parts[1].dropLast(4)) : parts[1]
+        return (owner: parts[0], repo: repo)
     }
 
     // MARK: - Disk
@@ -271,7 +269,10 @@ actor IconStore {
         // syscall per icon per appearance, all of it serialized behind this actor.
         if let accessed = values.contentModificationDate,
            now.timeIntervalSince(accessed) > Self.touchInterval {
-            try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: url.path)
+            var stamp = url
+            var touched = URLResourceValues()
+            touched.contentModificationDate = now
+            try? stamp.setResourceValues(touched)
         }
 
         // Zero bytes is the negative marker: it renders as our SF Symbol fallback, never as
@@ -290,10 +291,14 @@ actor IconStore {
         let url = fileURL(key)
         guard (try? bytes.write(to: url, options: .atomic)) != nil else { return }
         // An atomic write replaces the file, and a replacement can inherit the old birthtime —
-        // which would make a refreshed marker immortal. Stamp both dates explicitly.
+        // which would make a refreshed marker immortal. Stamp both dates explicitly, through
+        // the same URLResourceValues API the read side uses.
         let now = Date.now
-        try? FileManager.default.setAttributes([.creationDate: now, .modificationDate: now],
-                                               ofItemAtPath: url.path)
+        var stamp = url
+        var dates = URLResourceValues()
+        dates.creationDate = now
+        dates.contentModificationDate = now
+        try? stamp.setResourceValues(dates)
 
         unsweptBytes += bytes.count
         guard unsweptBytes >= Self.sweepInterval else { return }

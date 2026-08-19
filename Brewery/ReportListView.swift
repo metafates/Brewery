@@ -3,7 +3,6 @@
 //  Brewery
 //
 
-import AppKit
 import SwiftUI
 
 /// v20 — which report a list is rendering; decides the row's subtitle and trailing value.

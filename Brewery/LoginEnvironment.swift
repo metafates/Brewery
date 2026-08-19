@@ -52,12 +52,9 @@ nonisolated enum LoginEnvironment {
         return result
     }
 
-    /// `[A-Za-z_][A-Za-z0-9_]*` — the POSIX name rule; anything else is shell noise.
+    /// The POSIX name rule; anything else is shell noise.
     private static func isValidName(_ key: String) -> Bool {
-        guard let first = key.first, first == "_" || (first.isASCII && first.isLetter) else {
-            return false
-        }
-        return key.allSatisfy { $0 == "_" || ($0.isASCII && ($0.isLetter || $0.isNumber)) }
+        key.wholeMatch(of: /[A-Za-z_][A-Za-z0-9_]*/) != nil
     }
 
     /// The whitelist: the exact names above plus every `HOMEBREW_`-prefixed variable.

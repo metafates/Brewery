@@ -106,7 +106,7 @@ struct StorageSummaryBar: View {
                             .fill(part.color)
                             .frame(width: 8, height: 8)
                         Text("\(part.name) \(bytes.formatted(.byteCount(style: .file)))"
-                            .replacingOccurrences(of: " ", with: "\u{00A0}"))
+                            .replacing(" ", with: "\u{00A0}"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -158,7 +158,7 @@ struct StorageSummaryBar: View {
         // Cache and logs are mutable directories under stable names — the session cache would
         // serve stale bytes, so these bypass it.
         let environment = model.client.effectiveEnvironment
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = URL.homeDirectory
         cacheBytes = await DiskUsage.bytes(
             at: [BrewClient.cacheDirectory(environment: environment, home: home)])
         logsBytes = await DiskUsage.bytes(

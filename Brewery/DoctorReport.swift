@@ -96,10 +96,7 @@ nonisolated enum FindingFormat {
     /// The tap list inside an `.untrustedTaps` finding's code block: exactly `owner/repo` lines.
     static func tapList(inCode code: String) -> [String]? {
         let lines = code.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard !lines.isEmpty, lines.allSatisfy({ line in
-            let segments = line.split(separator: "/")
-            return segments.count == 2 && segments.allSatisfy { CaveatFormat.isPackageName(String($0)) }
-        }) else { return nil }
+        guard !lines.isEmpty, lines.allSatisfy(CaveatFormat.isTapName) else { return nil }
         return lines
     }
 
@@ -280,7 +277,7 @@ nonisolated enum Remedy: Equatable {
             return .cleanup
         case "untap":
             let taps = Array(tokens.dropFirst(2))
-            guard !taps.isEmpty, taps.allSatisfy({ isTapName($0) }) else {
+            guard !taps.isEmpty, taps.allSatisfy(CaveatFormat.isTapName) else {
                 return .chip(command: command)
             }
             return .untap(taps: taps)
@@ -306,11 +303,5 @@ nonisolated enum Remedy: Equatable {
     private static func isName(_ token: String) -> Bool {
         let segments = token.split(separator: "/")
         return !segments.isEmpty && segments.allSatisfy { CaveatFormat.isPackageName(String($0)) }
-    }
-
-    /// Taps are exactly `owner/repo`.
-    private static func isTapName(_ token: String) -> Bool {
-        let segments = token.split(separator: "/")
-        return segments.count == 2 && segments.allSatisfy { CaveatFormat.isPackageName(String($0)) }
     }
 }

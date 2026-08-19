@@ -39,41 +39,23 @@ struct PackageGridView<Header: View>: View {
     var isChecking = false
     /// v6: an optional page header that scrolls with the content — the App Store pattern. A fixed
     /// header above the ScrollView fights macOS's scroll-under-chrome behavior and clips cards.
-    let header: () -> Header
+    /// A stored view, not a closure: the synthesized memberwise init builds it, and the
+    /// 19-line hand-written restatement of every property goes with it.
+    @ViewBuilder let header: Header
 
-    init(hits: [SearchHit], totalCount: Int, isSearching: Bool,
-         selectedID: Package.ID? = nil,
-         onSelect: @escaping (Package) -> Void, emptyMessage: String? = nil,
-         emptySymbol: String = "shippingbox",
-         onNeedMore: @escaping () -> Void, onRefresh: (() -> Void)? = nil,
-         isChecking: Bool = false,
-         @ViewBuilder header: @escaping () -> Header = { EmptyView() }) {
-        self.hits = hits
-        self.totalCount = totalCount
-        self.isSearching = isSearching
-        self.selectedID = selectedID
-        self.onSelect = onSelect
-        self.emptyMessage = emptyMessage
-        self.emptySymbol = emptySymbol
-        self.onNeedMore = onNeedMore
-        self.onRefresh = onRefresh
-        self.isChecking = isChecking
-        self.header = header
-    }
-
-    private let columns = [GridItem(.adaptive(minimum: 230), spacing: 12)]
+    private static var columns: [GridItem] { [GridItem(.adaptive(minimum: 230), spacing: 12)] }
 
     var body: some View {
         if totalCount == 0 {
             VStack(spacing: 0) {
-                header()
+                header
                 emptyState
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else {
             ScrollView {
-                header()
-                LazyVGrid(columns: columns, spacing: 12) {
+                header
+                LazyVGrid(columns: Self.columns, spacing: 12) {
                     ForEach(hits) { hit in
                         // The nil check first on purpose: `Package.id` interpolates a fresh string,
                         // and with the pane closed — which is most of the time, including every
@@ -133,7 +115,8 @@ struct PackageGridView<Header: View>: View {
                                    homepage: "https://iterm2.com/", version: "3.5.11",
                                    deprecated: false, disabled: false),
                   matchedCommand: nil)
-    ], totalCount: 2, isSearching: false, onSelect: { _ in }, onNeedMore: {})
+    ], totalCount: 2, isSearching: false, onSelect: { _ in }, onNeedMore: {},
+       header: { EmptyView() })
     .environment(AppModel())
     .frame(width: 600, height: 400)
 }

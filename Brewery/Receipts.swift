@@ -185,7 +185,7 @@ nonisolated enum Receipts {
     static func appURL(named name: String) -> URL? {
         let candidates = [
             URL(filePath: "/Applications", directoryHint: .isDirectory),
-            FileManager.default.homeDirectoryForCurrentUser.appending(path: "Applications", directoryHint: .isDirectory)
+            URL.homeDirectory.appending(path: "Applications", directoryHint: .isDirectory)
         ]
         for directory in candidates {
             let url = directory.appending(path: name, directoryHint: .isDirectory)

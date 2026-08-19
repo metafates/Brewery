@@ -23,7 +23,7 @@ nonisolated enum FontPreview {
         var id: String { postScriptName }
     }
 
-    static let defaultDirectory = FileManager.default.homeDirectoryForCurrentUser
+    static let defaultDirectory = URL.homeDirectory
         .appending(path: "Library/Fonts", directoryHint: .isDirectory)
 
     /// Where brew put one font artifact. The artifact's *name* is a source-relative path
