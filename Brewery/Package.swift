@@ -251,6 +251,13 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         return x == y ? lhs.name < rhs.name : x > y
     }
 
+    /// Newest first; a keg with no receipt has no date to claim and sorts last; ties fall back
+    /// to the canonical name order.
+    static func installDateOrder(_ lhs: Package, _ rhs: Package, dates: [Package.ID: Date]) -> Bool {
+        let (x, y) = (dates[lhs.id] ?? .distantPast, dates[rhs.id] ?? .distantPast)
+        return x == y ? displayOrder(lhs, rhs) : x > y
+    }
+
     /// Largest first; unmeasured packages sort last rather than blocking the listing on the
     /// sweep. Lived in `ContentView` (v11's Size sort) until the (v20) report lists needed it.
     static func sizeOrder(_ lhs: Package, _ rhs: Package, sizes: [Package.ID: Int64]) -> Bool {

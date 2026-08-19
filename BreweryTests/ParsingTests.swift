@@ -129,9 +129,13 @@ struct OutdatedParsingTests {
     }
 
     @Test("malformed payload throws")
-    func malformedPayload() {
-        #expect(throws: (any Error).self) {
+    func malformedPayload() throws {
+        let error = try #require(#expect(throws: DecodingError.self) {
             try BrewClient.parseOutdated(Data("not json".utf8))
+        })
+        guard case .dataCorrupted = error else {
+            Issue.record("expected dataCorrupted, got \(error)")
+            return
         }
     }
 }
@@ -334,6 +338,6 @@ struct CatalogDecodingTests {
         #expect(restored.packages == cache.packages)
         #expect(restored.fetchedAt == cache.fetchedAt)
         #expect(CatalogStore.isStale(restored.fetchedAt))
-        #expect(!CatalogStore.isStale(.now))
+        #expect(CatalogStore.isStale(.now) == false)
     }
 }

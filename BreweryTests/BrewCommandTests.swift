@@ -258,17 +258,17 @@ struct BrewCommandTests {
                 // lists casks alongside formulae.
                 #expect(arguments == ["list", "--formula", "--versions"])
             case .listCasks, .outdated, .update:
-                #expect(!arguments.contains("--formula"))
+                #expect(arguments.contains("--formula") == false)
             case .servicesList:
                 #expect(arguments == ["services", "list", "--json"])
             case .serviceStart, .serviceStop:
                 // Exactly one named service, no flags — `--all` would be a different blast radius.
                 #expect(arguments.count == 3, "\(arguments)")
-                #expect(!arguments.contains { $0.hasPrefix("-") })
+                #expect(arguments.contains { $0.hasPrefix("-") } == false)
             case .tap, .untap:
                 // One named tap, nothing else: no --force (uninstalls packages!), no remotes.
                 #expect(arguments.count == 2, "\(arguments)")
-                #expect(!arguments.contains { $0.hasPrefix("-") })
+                #expect(arguments.contains { $0.hasPrefix("-") } == false)
             case .trustTap, .untrustTap:
                 // The explicit --tap type flag is the whole point (brew infers otherwise).
                 #expect(arguments.count == 3)
@@ -288,7 +288,7 @@ struct BrewCommandTests {
                 // `conflicts "--formula", "--zap"` (cmd/uninstall.rb:38).
                 #expect(arguments.count == 4, "\(arguments)")
                 #expect(Array(arguments.prefix(3)) == ["uninstall", "--cask", "--zap"])
-                #expect(!arguments.contains("--formula"))
+                #expect(arguments.contains("--formula") == false)
             case .cleanup:
                 // One word, ever: a name would narrow it to per-formula mode, a flag would
                 // widen what it deletes (`--prune=all` wipes the whole cache). Neither exists.
@@ -300,7 +300,7 @@ struct BrewCommandTests {
                 // (keg-only override) must stay unrepresentable.
                 #expect(arguments.count == 2, "\(arguments)")
                 #expect(arguments.first == "link")
-                #expect(!arguments.contains { $0.hasPrefix("-") })
+                #expect(arguments.contains { $0.hasPrefix("-") } == false)
             }
         }
     }

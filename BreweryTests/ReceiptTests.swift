@@ -301,7 +301,7 @@ struct CaskAppTests {
         """
         let receipt = Receipts.parse(Data(json.utf8))
         #expect(receipt.apps.isEmpty)
-        #expect(!receipt.onRequest)
+        #expect(receipt.onRequest == false)
     }
 
     // MARK: - Zap availability (v15)

@@ -72,17 +72,17 @@ struct IconMarkerTests {
 
     @Test("past the TTL the host is asked again")
     func expired() {
-        #expect(!IconStore.isMarkerFresh(birthtime: Self.now.addingTimeInterval(-Self.week - 1),
-                                         now: Self.now,
-                                         ttl: Self.week))
+        #expect(IconStore.isMarkerFresh(birthtime: Self.now.addingTimeInterval(-Self.week - 1),
+                                        now: Self.now,
+                                        ttl: Self.week) == false)
     }
 
     /// Only a clock change produces this, and treating it as fresh would pin the entry forever.
     @Test("a birthtime in the future counts as expired")
     func future() {
-        #expect(!IconStore.isMarkerFresh(birthtime: Self.now.addingTimeInterval(60),
-                                         now: Self.now,
-                                         ttl: Self.week))
+        #expect(IconStore.isMarkerFresh(birthtime: Self.now.addingTimeInterval(60),
+                                        now: Self.now,
+                                        ttl: Self.week) == false)
     }
 }
 
@@ -93,7 +93,7 @@ struct BannerSourceTests {
         let fira = try #require(IconStore.bannerSource(
             homepage: URL(string: "https://github.com/tonsky/FiraCode")))
         #expect(fira.url.absoluteString == "https://opengraph.githubassets.com/brewery/tonsky/FiraCode")
-        #expect(!fira.key.isEmpty)
+        #expect(fira.key.isEmpty == false)
 
         // www, a .git suffix and a deep path all fold to the first two segments.
         let deep = try #require(IconStore.bannerSource(
@@ -164,7 +164,7 @@ struct IconFileNameTests {
 
     @Test("nothing can escape the icons directory")
     func traversal() {
-        #expect(!IconStore.fileName(for: "../../etc/passwd").contains("/"))
+        #expect(IconStore.fileName(for: "../../etc/passwd").contains("/") == false)
         #expect(IconStore.fileName(for: "..").isEmpty)
         #expect(IconStore.fileName(for: ".").isEmpty)
         #expect(IconStore.fileName(for: "").isEmpty)

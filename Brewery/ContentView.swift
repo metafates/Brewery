@@ -665,7 +665,7 @@ struct ContentView: View {
                     break   // the compose order is already the canonical alphabetical
                 case .dateInstalled:
                     let dates = model.installed.compactMapValues(\.installedAt)
-                    packages.sort { Self.byInstallDate($0, $1, dates: dates) }
+                    packages.sort { Package.installDateOrder($0, $1, dates: dates) }
                 case .size:
                     let sizes = model.diskSizes
                     packages.sort { Package.sizeOrder($0, $1, sizes: sizes) }
@@ -918,13 +918,6 @@ struct ContentView: View {
     // MARK: - Search
 
     private var section: SidebarSection { model.selection ?? .discover }
-
-    /// Newest first; a keg with no receipt has no date to claim and sorts last; ties fall back
-    /// to the canonical name order. Static and pure so the ordering has tests.
-    nonisolated static func byInstallDate(_ a: Package, _ b: Package, dates: [Package.ID: Date]) -> Bool {
-        let (x, y) = (dates[a.id] ?? .distantPast, dates[b.id] ?? .distantPast)
-        return x == y ? Package.displayOrder(a, b) : x > y
-    }
 
     /// The Size sort's sweep trigger: active only where the sort is visible, re-keyed by the
     /// installed count so a new keg gets measured.

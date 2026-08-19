@@ -289,7 +289,7 @@ struct CatalogV3Tests {
 
         let resolved = try #require(php.resolvedCaveats(prefix: URL(fileURLWithPath: "/opt/homebrew")))
         #expect(resolved.contains("/opt/homebrew/opt/php/lib/httpd/modules/libphp.so"))
-        #expect(!resolved.contains("$HOMEBREW_PREFIX"))
+        #expect(resolved.contains("$HOMEBREW_PREFIX") == false)
 
         // A directory URL carries a trailing slash that would otherwise double up in the path.
         let directory = php.resolvedCaveats(prefix: URL(fileURLWithPath: "/opt/homebrew", isDirectory: true))
@@ -340,10 +340,16 @@ struct CatalogV3Tests {
         #expect(CatalogCache(fetchedAt: .now, packages: []).version == CatalogStore.cacheVersion)
 
         // What the shipped v2 file looks like: no `version` key at all, so the decode throws — which
-        // is exactly the "no cache" branch `loadCache` takes.
-        #expect(throws: (any Error).self) {
+        // is exactly the "no cache" branch `loadCache` takes. The missing key is the invariant:
+        // any other decode failure would pass a broad throws-check for the wrong reason.
+        let error = try #require(#expect(throws: DecodingError.self) {
             try JSONDecoder().decode(CatalogCache.self, from: Data(#"{"fetchedAt":0,"packages":[]}"#.utf8))
+        })
+        guard case .keyNotFound(let key, _) = error else {
+            Issue.record("expected keyNotFound(version), got \(error)")
+            return
         }
+        #expect(key.stringValue == "version")
 
         // A stamped but older cache decodes fine and is rejected on the version check instead.
         let older = try JSONDecoder().decode(CatalogCache.self,
@@ -357,12 +363,12 @@ struct CatalogV3Tests {
     func fontClassification() throws {
         let casks = try CatalogStore.decodeCasks(Data(Self.caskJSON.utf8))
         #expect(casks[0].isFont)
-        #expect(!casks[1].isFont)
+        #expect(casks[1].isFont == false)
 
         // A formula is never a font, whatever it is called.
         let fontconfig = Package(kind: .formula, name: "font-util", displayName: nil, desc: nil,
                                  homepage: nil, version: "1.4.1", deprecated: false, disabled: false)
-        #expect(!fontconfig.isFont)
+        #expect(fontconfig.isFont == false)
     }
 }
 
@@ -371,10 +377,10 @@ struct LicenseDecodingTests {
 
     @Test("A formula's SPDX license is carried through")
     func decodesLicense() throws {
-        let json = """
+        let json = Data("""
         [{"name":"wget","desc":"Internet file retriever","homepage":"https://www.gnu.org/software/wget/",
           "versions":{"stable":"1.25.0"},"license":"GPL-3.0-or-later","deprecated":false,"disabled":false}]
-        """.data(using: .utf8)!
+        """.utf8)
         let package = try #require(try CatalogStore.decodeFormulae(json).first)
         #expect(package.license == "GPL-3.0-or-later")
         #expect(package.licenseLabel == "GPL-3.0-or-later")
@@ -384,10 +390,10 @@ struct LicenseDecodingTests {
     /// One surprising entry must not take the whole catalog down with it.
     @Test("An unexpected license shape decodes as nil rather than throwing")
     func toleratesUnexpectedLicenseShape() throws {
-        let json = """
+        let json = Data("""
         [{"name":"a","versions":{"stable":"1"},"license":{"any_of":["MIT","Apache-2.0"]}},
          {"name":"b","versions":{"stable":"2"},"license":"MIT"}]
-        """.data(using: .utf8)!
+        """.utf8)
         let packages = try CatalogStore.decodeFormulae(json)
         #expect(packages.count == 2)
         #expect(packages[0].licenseLabel == nil)
@@ -396,9 +402,9 @@ struct LicenseDecodingTests {
 
     @Test("Casks carry no license")
     func casksHaveNoLicense() throws {
-        let json = """
+        let json = Data("""
         [{"token":"iterm2","name":["iTerm2"],"version":"3.5.11","homepage":"https://iterm2.com/"}]
-        """.data(using: .utf8)!
+        """.utf8)
         let package = try #require(try CatalogStore.decodeCasks(json).first)
         #expect(package.licenseLabel == nil)
     }

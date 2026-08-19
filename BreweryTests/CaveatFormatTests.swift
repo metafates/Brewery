@@ -45,7 +45,7 @@ struct CaveatFormatTests {
     }
 
     @Test("attributed prose: code spans get the mono chip, bare URLs become links")
-    func attributed() {
+    func attributed() throws {
         let result = CaveatFormat.attributed("Run `tlmgr` first, see https://example.com/docs for details")
 
         func run(containing text: String) -> AttributedString.Runs.Run? {
@@ -59,10 +59,11 @@ struct CaveatFormatTests {
 
         #expect(run(containing: "https://example.com/docs")?.link?.host() == "example.com")
 
-        // Prose stays un-chipped and un-linked.
-        let prose = run(containing: "first")
-        #expect(prose?.font == nil)
-        #expect(prose?.link == nil)
+        // Prose stays un-chipped and un-linked. `#require` first: a nil run would satisfy
+        // the two nil-checks while proving nothing.
+        let prose = try #require(run(containing: "first"))
+        #expect(prose.font == nil)
+        #expect(prose.link == nil)
     }
 
     @Test("all-prose, all-code, tabs, and trailing blank lines")

@@ -59,9 +59,9 @@ struct ServicesTests {
         #expect(ServiceHealth.scheduled.isLoaded)
         #expect(ServiceHealth.error.isLoaded)
         #expect(ServiceHealth.stopped.isLoaded)
-        #expect(!ServiceHealth.none.isLoaded)
-        #expect(!ServiceHealth.unknown.isLoaded)
-        #expect(!ServiceHealth.other.isLoaded)
+        #expect(ServiceHealth.none.isLoaded == false)
+        #expect(ServiceHealth.unknown.isLoaded == false)
+        #expect(ServiceHealth.other.isLoaded == false)
     }
 
     // MARK: - Catalog service block

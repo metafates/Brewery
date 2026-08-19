@@ -60,11 +60,12 @@ struct DoctorReportTests {
     }
 
     @Test("absent remediation, affects and links are tolerated")
-    func sparseFinding() {
+    func sparseFinding() throws {
         let report = DoctorReport.parse(#"{ "tier": 1, "findings": [ { "text": "bare" } ] }"#)
-        #expect(report?.findings.first?.text == "bare")
-        #expect(report?.findings.first?.remediation == nil)
-        #expect(report?.findings.first?.affects == nil)
+        let finding = try #require(report?.findings.first)
+        #expect(finding.text == "bare")
+        #expect(finding.remediation == nil)
+        #expect(finding.affects == nil)
     }
 
     @Test("JSON bracketed by stray prose lines is recovered; garbage is not")
@@ -135,14 +136,13 @@ struct RemedyTests {
         #expect(Remedy.classify("brew reinstall --cask --force megacmd") == .chip(command: "brew reinstall --cask --force megacmd"))
     }
 
-    @Test("shell, sudo, git and redirects never go native")
-    func shell() {
-        for command in ["sudo rm -rf /Library/Developer",
-                        "git -C \"/opt/homebrew\" stash -u && git clean -d -f",
-                        "echo 'export PATH' >> ~/.zshrc",
-                        "sudo xcodebuild -license",
-                        "xcode-select --install"] {
-            #expect(Remedy.classify(command) == .chip(command: command))
-        }
+    @Test("shell, sudo, git and redirects never go native",
+          arguments: ["sudo rm -rf /Library/Developer",
+                      "git -C \"/opt/homebrew\" stash -u && git clean -d -f",
+                      "echo 'export PATH' >> ~/.zshrc",
+                      "sudo xcodebuild -license",
+                      "xcode-select --install"])
+    func shell(command: String) {
+        #expect(Remedy.classify(command) == .chip(command: command))
     }
 }

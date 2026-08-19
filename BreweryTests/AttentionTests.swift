@@ -34,7 +34,7 @@ struct AttentionTests {
     @Test("a healthy package explains nothing")
     func healthy() {
         #expect(package().deprecationExplanation == nil)
-        #expect(!package().needsAttention)
+        #expect(package().needsAttention == false)
     }
 
     @Test("deprecated with slug, date and an explicit disable date — the full sentence")

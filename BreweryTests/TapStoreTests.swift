@@ -41,7 +41,8 @@ struct TapStoreTests {
         #expect(parsed.homepage == "https://charm.land/")
         #expect(parsed.version == "0.17.0")
         #expect(parsed.license == "MIT")
-        #expect(!parsed.deprecated && !parsed.disabled)
+        #expect(parsed.deprecated == false)
+        #expect(parsed.disabled == false)
     }
 
     @Test("implicit version and compound license stay honest: absent version, first quoted license")
@@ -182,11 +183,11 @@ struct TapStoreTests {
         let state = TapStore.TrustStore.parse(Data(json.utf8))
 
         #expect(state.isTrusted("oven-sh/bun"))          // lowercased on both sides
-        #expect(!state.isTrusted("charmbracelet/tap"))   // only items are trusted there
+        #expect(state.isTrusted("charmbracelet/tap") == false)   // only items are trusted there
         #expect(state.trustedItemCount(in: "charmbracelet/tap") == 2)
         #expect(state.trustedItemCount(in: "some/tap") == 1)
         // A URL-shaped tap entry matches no user/repo name — conservative untrusted.
-        #expect(!state.isTrusted("foo/bar"))
+        #expect(state.isTrusted("foo/bar") == false)
     }
 
     @Test("consent asked exactly when installing would grant new trust (v10)")
@@ -194,11 +195,11 @@ struct TapStoreTests {
         let state = TrustState(taps: ["oven-sh/bun"],
                                trustedItems: ["charmbracelet/tap/gum"])
 
-        #expect(!state.needsConsent(tap: "oven-sh/bun", name: "bun"))         // tap trusted
-        #expect(!state.needsConsent(tap: "charmbracelet/tap", name: "gum"))   // item trusted
-        #expect(!state.needsConsent(tap: "charmbracelet/tap", name: "Gum"))   // case folds
+        #expect(state.needsConsent(tap: "oven-sh/bun", name: "bun") == false)         // tap trusted
+        #expect(state.needsConsent(tap: "charmbracelet/tap", name: "gum") == false)   // item trusted
+        #expect(state.needsConsent(tap: "charmbracelet/tap", name: "Gum") == false)   // case folds
         #expect(state.needsConsent(tap: "charmbracelet/tap", name: "crush"))  // neither
-        #expect(!state.needsConsent(tap: "homebrew/core", name: "wget"))      // implicit trust
+        #expect(state.needsConsent(tap: "homebrew/core", name: "wget") == false)      // implicit trust
     }
 
     @Test("malformed or missing trust data reads as nothing trusted")
@@ -238,12 +239,12 @@ struct TapStoreTests {
     func tapNameValidation() {
         #expect(AppModel.isValidTapName("oven-sh/bun"))
         #expect(AppModel.isValidTapName("Some_User/repo.name"))
-        #expect(!AppModel.isValidTapName("oven-sh"))
-        #expect(!AppModel.isValidTapName("a/b/c"))
-        #expect(!AppModel.isValidTapName("https://github.com/x/y"))
-        #expect(!AppModel.isValidTapName("-flag/repo"))   // dash-prefix is doubly rejected
-        #expect(!AppModel.isValidTapName(""))
-        #expect(!AppModel.isValidTapName("user/repo name"))
+        #expect(AppModel.isValidTapName("oven-sh") == false)
+        #expect(AppModel.isValidTapName("a/b/c") == false)
+        #expect(AppModel.isValidTapName("https://github.com/x/y") == false)
+        #expect(AppModel.isValidTapName("-flag/repo") == false)   // dash-prefix is doubly rejected
+        #expect(AppModel.isValidTapName("") == false)
+        #expect(AppModel.isValidTapName("user/repo name") == false)
     }
 
     // MARK: - Effective-tap plumbing

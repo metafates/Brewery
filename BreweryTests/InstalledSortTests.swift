@@ -21,12 +21,12 @@ struct InstalledSortTests {
         let (old, new, undated) = (package("old"), package("new"), package("undated"))
         let dates = ["formula:old": Date(timeIntervalSince1970: 1_000),
                      "formula:new": Date(timeIntervalSince1970: 2_000)]
-        let sorted = [old, undated, new].sorted { ContentView.byInstallDate($0, $1, dates: dates) }
+        let sorted = [old, undated, new].sorted { Package.installDateOrder($0, $1, dates: dates) }
         #expect(sorted.map(\.name) == ["new", "old", "undated"])
 
         // Equal dates fall back to the canonical name order.
         let tied = ["formula:old": Date(timeIntervalSince1970: 5), "formula:new": Date(timeIntervalSince1970: 5)]
-        #expect([old, new].sorted { ContentView.byInstallDate($0, $1, dates: tied) }.map(\.name) == ["new", "old"])
+        #expect([old, new].sorted { Package.installDateOrder($0, $1, dates: tied) }.map(\.name) == ["new", "old"])
     }
 
     @Test("size: largest first, unmeasured last, names break ties")
