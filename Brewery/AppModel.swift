@@ -70,6 +70,12 @@ final class AppModel {
     /// clears it after showing.
     var failureToPresent: BrewOperation?
 
+    /// The current batch's outcome, for the one success knock when the queue drains in the
+    /// background. Failure already bounces through `failureToPresent`; a mixed batch must
+    /// bounce once, not twice.
+    private var batchHadSuccessfulMutation = false
+    private var batchHadFailure = false
+
     /// One search query per sidebar section, so queries never leak across tabs and each survives
     /// switching away and back. It lives here rather than in the view because switching sections
     /// tears the detail column down, taking any `@State` query with it.
@@ -1285,7 +1291,19 @@ final class AppModel {
             if operation.command == .cleanup { DiskUsage.cache.removeAll() }
             await self.refreshState()
         }
+        if state == .succeeded, operation.command.isMutating { batchHadSuccessfulMutation = true }
+        if state == .failed { batchHadFailure = true }
         pump()
+        // An install runs for minutes and people go elsewhere while it does: failure bounces
+        // the Dock, and success while the app is inactive said nothing. One knock when the
+        // batch drains — never alongside a failure's, which already fired.
+        if !isQueueActive {
+            if batchHadSuccessfulMutation, !batchHadFailure, !NSApp.isActive {
+                NSApp.requestUserAttention(.informationalRequest)
+            }
+            batchHadSuccessfulMutation = false
+            batchHadFailure = false
+        }
     }
 
     /// Cancel sends SIGINT — the path brew traps and cleans up after.
