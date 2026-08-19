@@ -148,56 +148,6 @@ struct TapsView: View {
     }
 }
 
-/// The shared leading tile — the tap owner's GitHub avatar (v10: being GitHub repos is what
-/// makes tap identity *fetchable*, the Sources-list grammar of Login Items and account
-/// lists), the spigot glyph while it loads or when the remote isn't GitHub. Same fallback
-/// discipline as `PackageIconView`: dimmed glyph while loading, crossfade on arrival.
-private struct TapTile: View {
-    let name: String
-    var remote: String? = nil
-
-    @State private var image: NSImage?
-    @State private var isLoading = false
-
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
-    }
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .clipShape(shape)
-                    .transition(.opacity)
-            } else {
-                shape
-                    .fill(.quaternary.opacity(0.6))
-                    .overlay {
-                        Image(systemName: "spigot")
-                            .foregroundStyle(.secondary)
-                    }
-                    .opacity(isLoading ? 0.6 : 1)
-                    .transition(.opacity)
-            }
-        }
-        .frame(width: 32, height: 32)
-        .animation(.easeOut(duration: 0.2), value: image == nil)
-        .accessibilityHidden(true)
-        .task(id: "\(name)|\(remote ?? "")") {
-            guard let source = IconStore.avatarSource(tapName: name, remote: remote) else {
-                image = nil
-                return
-            }
-            isLoading = true
-            image = await IconStore.shared.image(key: source.key, url: source.url)
-            isLoading = false
-        }
-    }
-}
-
 private struct BuiltInTapRow: View {
     let row: TapsView.BuiltIn
 

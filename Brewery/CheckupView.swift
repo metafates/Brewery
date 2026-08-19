@@ -150,27 +150,39 @@ struct CheckupView: View {
         let offersTaps = remedies.contains { if case .untap = $0 { true } else { false } }
         let affected = model.resolvedAffected(finding.affects ?? []).filter { !seen.contains($0.id) }
 
+        // v25.1 — the finding's prose renders as blocks (the caveats renderer): paragraphs stay
+        // attributed text, indented command runs become copyable chips, and the two findings
+        // whose lists the app can do better than a chip get their structure back — the PATH
+        // finding's shadowed tools become the providing packages as rows, the tap-trust
+        // finding's tap list becomes tap rows that open the tap page, where the native
+        // confirmation-gated Trust action already lives (navigate, don't duplicate).
+        let structure = FindingFormat.classify(finding.text)
+        let textBlocks = CaveatFormat.blocks(of: finding.text)
+        let remedyBlocks = FindingFormat.remediationBlocks(
+            text: finding.remediation?.text ?? "",
+            commands: finding.remediation?.commands ?? [],
+            links: finding.links ?? [])
+
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
                     // The Attention rule: warnings wear the banner's colour, not the tint.
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
-                Text(finding.text)
-                    .font(.callout)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(textBlocks.enumerated()), id: \.offset) { _, block in
+                        findingBlock(block, structure: structure)
+                    }
+                }
             }
 
             // The prose introduces the commands, so it hides only when every command went
             // native — the action rows then say it themselves. A text-only remediation (the
             // untrusted-taps finding) keeps its prose: the text is all brew offered.
-            if !chips.isEmpty || remedies.isEmpty, let remedy = finding.remediation?.text, !remedy.isEmpty {
-                Text(remedy)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+            if !chips.isEmpty || remedies.isEmpty {
+                ForEach(Array(remedyBlocks.enumerated()), id: \.offset) { _, block in
+                    remediationBlock(block)
+                }
             }
             ForEach(chips, id: \.self) { command in
                 CodeChip(code: command)
@@ -238,6 +250,93 @@ struct CheckupView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentBox()
+    }
+
+    /// One block of the finding's own text. Code blocks are where the structure lives: the
+    /// special findings' lists become rows, a lone URL becomes a link, and *anything* that
+    /// fails its shape check — a future brew rewording, a list the resolver couldn't place —
+    /// degrades to the copyable chip. Degrade, never crash, never hide.
+    @ViewBuilder private func findingBlock(_ block: CaveatFormat.Block,
+                                           structure: FindingFormat.Structure) -> some View {
+        switch block {
+        case .text(let paragraph):
+            Text(CaveatFormat.attributed(paragraph))
+                .font(.callout)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        case .code(let code):
+            if structure == .pathShadowing, FindingFormat.toolList(inCode: code) != nil,
+               !model.checkupShadowed.isEmpty {
+                shadowedRows
+            } else if structure == .untrustedTaps, let taps = FindingFormat.tapList(inCode: code) {
+                tapRows(taps)
+            } else if let url = FindingFormat.soleURL(inCode: code) {
+                Link(url.absoluteString, destination: url)
+                    .font(.callout)
+                    .pointerStyle(.link)
+            } else {
+                CodeChip(code: code)
+            }
+        }
+    }
+
+    /// Remediation prose blocks — already deduplicated against the chips and links by
+    /// `FindingFormat.remediationBlocks`.
+    @ViewBuilder private func remediationBlock(_ block: CaveatFormat.Block) -> some View {
+        switch block {
+        case .text(let paragraph):
+            Text(CaveatFormat.attributed(paragraph))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        case .code(let code):
+            if let url = FindingFormat.soleURL(inCode: code) {
+                Link(url.absoluteString, destination: url)
+                    .font(.callout)
+                    .pointerStyle(.link)
+            } else {
+                CodeChip(code: code)
+            }
+        }
+    }
+
+    /// The PATH finding's tool list, resolved: one row per providing package, the affected
+    /// commands in the detail slot, selection into the inspector — the report-page grammar.
+    /// Tools the resolver couldn't place stay visible as a chip beneath.
+    private var shadowedRows: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(model.checkupShadowed) { entry in
+                RelatedRow(package: entry.package,
+                           version: model.installed[entry.package.id]?.versions.last,
+                           detail: FindingFormat.shadowsSubtitle(entry.tools),
+                           inline: true) {
+                    model.select(entry.package)
+                }
+            }
+            if !model.checkupShadowedUnresolved.isEmpty {
+                CodeChip(code: model.checkupShadowedUnresolved.joined(separator: "\n"))
+            }
+        }
+    }
+
+    /// The tap-trust finding's tap list as navigation rows. No Trust button here: the
+    /// confirmation-gated native action lives on the tap page — one home per action.
+    private func tapRows(_ taps: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(taps, id: \.self) { tap in
+                PaneRow(title: tap,
+                        detail: "Untrusted — open to trust or remove",
+                        paneTells: false,
+                        action: { model.requestOpenTap(tap) }) {
+                    TapTile(name: tap,
+                            remote: model.tapInfos.first { $0.name == tap }?.remote,
+                            size: 22)
+                }
+                .help("Opens \(tap) in Taps")
+                .accessibilityHint("Opens the tap")
+            }
+        }
     }
 
     /// The Link button's three states, read from the queue: idle, busy, done. No dialog —

@@ -180,6 +180,79 @@ final class AppModel {
              "==> Downloading https://ghcr.io/v2/homebrew/core/ffmpeg/manifests/9.0.1"].forEach(single.append)
             operations = [single, done, running]
         }
+
+        // Shot-test seeding (v25.1): the tap-trust and PATH findings vanished from this
+        // machine once the login-shell overlay fixed the environment, so the structured
+        // rendering is exercised through canned findings shaped verbatim like brew's
+        // (diagnostic.rb pins the texts). Routed through `ingestCheckup` so the demo runs
+        // the same readlink resolution as a real report.
+        if ProcessInfo.processInfo.arguments.contains("-demo-checkup") {
+            Task { await seedDemoCheckup() }
+        }
+    }
+
+    private func seedDemoCheckup() async {
+        let report = DoctorReport(tier: .number(1), findings: [
+            .init(
+                text: """
+                /usr/bin occurs before /opt/homebrew/bin in your PATH.
+                This means that system-provided programs will be used instead of those
+                provided by Homebrew.
+
+                The following tools exist at both paths:
+                  gem
+                  git
+                  irb
+                  jq
+                  ruby
+                """,
+                tier: nil, affects: nil, links: nil,
+                remediation: .init(
+                    commands: ["fish_add_path /opt/homebrew/bin"],
+                    text: """
+                    Consider setting your PATH so that
+                    /opt/homebrew/bin occurs before /usr/bin. Here is a one-liner:
+                      fish_add_path /opt/homebrew/bin
+                    """)),
+            .init(
+                text: """
+                The following taps are not trusted:
+                  charmbracelet/tap
+                  oven-sh/bun
+
+                Homebrew is currently ignoring formulae, casks and commands from these taps because tap trust is required.
+                """,
+                tier: nil, affects: nil, links: ["https://docs.brew.sh/Tap-Trust"],
+                remediation: .init(
+                    commands: nil,
+                    text: """
+                    Prefer trusting only the specific formulae, casks or commands you need.
+                    Trust installed formulae from these taps with:
+                      brew trust --formula charmbracelet/tap/crush charmbracelet/tap/gum
+                      brew trust --formula oven-sh/bun/bun
+                    Trust other specific casks and commands with:
+                      brew trust --cask <user>/<tap>/<cask>
+                      brew trust --command <user>/<tap>/<command>
+                    Whole-tap trust is broader and includes all current and future formulae,
+                    casks and commands from the listed taps. Trust whole taps with:
+                      brew trust charmbracelet/tap oven-sh/bun
+                    Untap them with:
+                      brew untap charmbracelet/tap oven-sh/bun
+                    For more information, see:
+                      https://docs.brew.sh/Tap-Trust
+                    """)),
+            .init(
+                text: """
+                You have unlinked kegs in your Cellar.
+                Leaving kegs unlinked can lead to build-trouble and cause formulae that depend on
+                those kegs to fail to run properly once built.
+                """,
+                tier: nil, affects: nil, links: nil,
+                remediation: .init(commands: ["brew link deno", "brew link parallel"],
+                                   text: "Run `brew link` on these:\n  deno\n  parallel")),
+        ])
+        await ingestCheckup(report)
+        checkupRanAt = .now
     }
 
     // MARK: - Loading
@@ -804,6 +877,15 @@ final class AppModel {
     private(set) var checkupRanAt: Date?
     private(set) var isRunningCheckup = false
 
+    /// v25.1 — the PATH finding's shadowed tools, resolved to the packages that provide them.
+    struct ShadowedPackage: Equatable, Identifiable {
+        let package: Package
+        let tools: [String]
+        var id: Package.ID { package.id }
+    }
+    private(set) var checkupShadowed: [ShadowedPackage] = []
+    private(set) var checkupShadowedUnresolved: [String] = []
+
     /// Runs `brew doctor --json` inline — a read, never queued (`enqueue` would refuse it
     /// anyway: reads aren't mutating). Exit 1 means findings exist, not failure (doctor sets
     /// failed on the first finding), so success is judged by parse, not exit code. stderr is
@@ -820,17 +902,57 @@ final class AppModel {
                 onErrorLine: { stderr.lines.append($0) }
             let text = stdout.lines.joined(separator: "\n")
             if code == 0 || code == 1, let report = DoctorReport.parse(text) {
-                checkupOutcome = .report(report)
+                await ingestCheckup(report)
             } else if code == 0 || code == 1 {
                 let raw = text.isEmpty ? stderr.lines.joined(separator: "\n") : text
+                checkupShadowed = []
+                checkupShadowedUnresolved = []
                 checkupOutcome = .unreadable(raw: raw)
             } else {
+                checkupShadowed = []
+                checkupShadowedUnresolved = []
                 checkupOutcome = .failed
             }
         } catch {
+            checkupShadowed = []
+            checkupShadowedUnresolved = []
             checkupOutcome = .failed
         }
         checkupRanAt = .now
+    }
+
+    /// v25.1 — publishes a parsed report together with its precomputed shadow rows, in one
+    /// step: the view must never see the report without them. Resolution is readlink-primary
+    /// (`<prefix>/bin/<tool>` names its Cellar/Caskroom provider exactly — tap formulae
+    /// included, `gem` → whatever is actually linked), with the executables index as the
+    /// fallback for the odd plain-file entry, installed packages only.
+    private func ingestCheckup(_ report: DoctorReport) async {
+        var shadowed: [ShadowedPackage] = []
+        var unresolved: [String] = []
+        if let finding = report.findings.first(where: { FindingFormat.classify($0.text) == .pathShadowing }),
+           let tools = CaveatFormat.blocks(of: finding.text).lazy.compactMap({ block -> [String]? in
+               guard case .code(let code) = block else { return nil }
+               return FindingFormat.toolList(inCode: code)
+           }).first,
+           let prefix = client.prefix {
+            let destinations = await ShadowResolver.readLinks(
+                tools: tools, binDirectory: prefix.appending(path: "bin"))
+            let (groups, leftovers) = ShadowResolver.grouped(tools: tools) { tool in
+                if let destination = destinations[tool],
+                   let provider = ShadowResolver.provider(ofLinkDestination: destination) {
+                    return Package.packageID(kind: provider.kind, name: provider.name)
+                }
+                return commandIndex[tool]?.first { installed[$0] != nil }
+            }
+            shadowed = groups.compactMap { group in
+                package(for: group.id).map { ShadowedPackage(package: $0, tools: group.tools) }
+            }
+            unresolved = leftovers
+                + groups.filter { package(for: $0.id) == nil }.flatMap(\.tools)
+        }
+        checkupShadowed = shadowed
+        checkupShadowedUnresolved = unresolved
+        checkupOutcome = .report(report)
     }
 
     /// v21 — the one doctor remediation the app runs itself. No dialog: link is non-destructive
