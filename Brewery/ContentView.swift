@@ -307,9 +307,15 @@ struct ContentView: View {
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar {
+                    // Sections, not one glass run: the section-scoped tier (filter/sort/
+                    // Update All), then the app-wide pair, then the inspector toggle on its
+                    // own — the text-labelled action must not read as part of the icon
+                    // cluster (HIG Toolbars: group related items).
                     filterToolbar
+                    ToolbarSpacer(.fixed, placement: .primaryAction)
                     refreshToolbar
                     operationsToolbar
+                    ToolbarSpacer(.fixed, placement: .primaryAction)
                     inspectorToolbar
                 }
                 .searchable(text: $model.query, prompt: searchPrompt)
