@@ -103,14 +103,15 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     var emptyMessage: String? {
         switch self {
         case .discover: nil
-        case .installed: "No packages installed"
+        case .installed: "No Packages Installed"
         case .outdated: "Everything is up to date"
-        case .services: "No services"
-        case .taps: "This tap has no packages"
-        case .orphans: "No orphaned dependencies"
+        // ServicesView owns its own empty state; the grid never renders this section.
+        case .services: nil
+        case .taps: "No Packages"
+        case .orphans: "No Orphaned Dependencies"
         // Software Update's positive-empty grammar: the good outcome, stated plainly.
         case .attention: "Nothing needs attention"
-        case .storage: "No old versions on disk"
+        case .storage: "No Old Versions on Disk"
         // The view owns its own states — intro, running, clean, findings (Discover's rule).
         case .checkup: nil
         }
@@ -981,7 +982,7 @@ struct ContentView: View {
                 } label: {
                     filterLabel(active: filtersActive)
                 }
-                .help("Filter")
+                .help("Filter by kind, hide deprecated packages, or show only tap packages")
                 .accessibilityLabel("Filter")
             }
         }
@@ -1124,7 +1125,8 @@ struct ContentView: View {
                         Label("Operations", systemImage: "list.bullet.rectangle")
                     }
                 }
-                .help(model.lastOperationFailed ? "Operations — the last one failed" : "Operations")
+                .help(model.lastOperationFailed ? "Operations — the last one failed"
+                                                : "Show the queue of Homebrew operations")
                 .accessibilityLabel(operationsLabel)
                 .popover(isPresented: $model.showOperations, arrowEdge: .bottom) {
                     OperationsPopover()

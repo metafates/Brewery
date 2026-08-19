@@ -196,6 +196,9 @@ struct CleanupButton: View {
 /// the user wondering whether anything happened.
 struct CopyButton: View {
     let text: String
+    /// What the tooltip and VoiceOver call the content — "Copy" unless the chip genuinely
+    /// holds a command.
+    var label = "Copy"
 
     @State private var copied = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -222,8 +225,8 @@ struct CopyButton: View {
                 .foregroundStyle(.secondary)
         }
         .buttonStyle(.borderless)
-        .help("Copy")
-        .accessibilityLabel(copied ? "Copied" : "Copy command")
+        .help(label)
+        .accessibilityLabel(copied ? "Copied" : label)
     }
 }
 
@@ -306,7 +309,7 @@ struct CodeChip: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            CopyButton(text: code)
+            CopyButton(text: code, label: "Copy command")
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)

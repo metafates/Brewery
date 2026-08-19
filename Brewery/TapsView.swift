@@ -64,7 +64,7 @@ struct TapsView: View {
 
             Section {
                 if filteredInfos.isEmpty {
-                    Text(searchText.isEmpty ? "No taps added yet — use + to add one."
+                    Text(searchText.isEmpty ? "No taps yet — use the Add Tap button in the toolbar."
                                             : "No taps match the search.")
                         .foregroundStyle(.secondary)
                         .selectionDisabled()
@@ -79,7 +79,7 @@ struct TapsView: View {
                     }
                 }
             } header: {
-                Text("Your taps")
+                Text("Your Taps")
             }
         }
         .listStyle(.inset)
