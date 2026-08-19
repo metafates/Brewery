@@ -14,7 +14,7 @@ struct AttentionSummaryBar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let count = model.installedPackages(scope: .attention).count
+        let count = model.attentionCount
         if count > 0 {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")

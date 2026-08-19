@@ -609,6 +609,13 @@ final class AppModel {
 
     // MARK: - Derived state
 
+    /// The Attention bar's headline: one integer, counted off the catalog directly. The
+    /// scope-listing path builds merged()'s arrays and sets just to be counted, and the
+    /// synthesized tap-only entries it adds never carry needsAttention.
+    var attentionCount: Int {
+        catalog.count { installed[$0.id] != nil && $0.needsAttention }
+    }
+
     func status(for package: Package) -> PackageStatus {
         if isBusy(package) { return .busy }
         if let info = outdated[package.id] {
