@@ -14,6 +14,9 @@ import SwiftUI
 struct PackageIconView: View {
     let package: Package
     var size: CGFloat = 44
+    /// The card resolves launchable apps once per pass and shares them; other callers leave
+    /// this nil and the view stats the disk itself.
+    var resolvedApps: [URL]? = nil
 
     /// Icons grow with the text they sit next to.
     @ScaledMetric(relativeTo: .headline) private var scale = 1
@@ -71,7 +74,7 @@ struct PackageIconView: View {
     /// pane's Open target, so an app dragged to the Trash falls back to the favicon.
     private var installedAppPath: String? {
         guard package.kind == .cask else { return nil }
-        return model.launchableApps(for: package).first?.path
+        return (resolvedApps ?? model.launchableApps(for: package)).first?.path
     }
 
     var body: some View {

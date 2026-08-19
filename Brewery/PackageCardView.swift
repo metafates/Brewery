@@ -20,16 +20,23 @@ struct PackageCardView: View {
     private var package: Package { hit.package }
 
     var body: some View {
-        Button(action: onSelect) {
+        // Resolved once per pass, the DetailPage precedent: `status` walks the queue and the
+        // overlays, `apps` stats the disk, and the computed `Package.id` allocates a string
+        // per read — a keystroke re-renders 60 of these.
+        let id = package.id
+        let status = model.status(for: package)
+        let apps = model.launchableApps(for: package)
+
+        return Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 10) {
-                    PackageIconView(package: package)
+                    PackageIconView(package: package, resolvedApps: apps)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(package.title)
                             .font(.headline)
                             .lineLimit(1)
-                        statusLine
+                        statusLine(id: id)
                     }
 
                     Spacer(minLength: 0)
@@ -64,31 +71,31 @@ struct PackageCardView: View {
         // The UI tests' card query: frame-based filtering silently dropped short cards.
         .accessibilityIdentifier("PackageCard")
         .overlay(alignment: .bottomTrailing) {
-            actionButton
+            actionButton(id: id, status: status, apps: apps)
                 .padding(12)
-                .animation(.smooth(duration: 0.2), value: model.status(for: package))
+                .animation(.smooth(duration: 0.2), value: status)
         }
         // Right-click is a macOS reflex on any item (HIG Context menus: support them
         // consistently throughout the app — the tap rows already do). Small and relevant;
         // unavailable items are absent, not dimmed; everything here also exists in the main
         // interface, so the menu is pure convenience.
-        .contextMenu { contextItems }
+        .contextMenu { contextItems(id: id, status: status, apps: apps) }
     }
 
-    @ViewBuilder private var contextItems: some View {
-        switch model.status(for: package) {
+    @ViewBuilder private func contextItems(id: Package.ID, status: PackageStatus,
+                                           apps: [URL]) -> some View {
+        switch status {
         case .notInstalled where !package.disabled:
             // The ellipsis appears exactly when the trust-consent dialog will (the
             // dialog-promise rule).
             Button(model.installNeedsTrustConsent(package) ? "Install…" : "Install") {
                 model.install(package)
             }
-        case .outdated where model.outdated[package.id]?.pinned != true:
+        case .outdated where model.outdated[id]?.pinned != true:
             Button("Update") { model.upgrade(package) }
         case .installed:
             // Same rule as the action slot: only a single-bundle cask has something
             // unambiguous to open — the menu offered `first` of several, arbitrarily.
-            let apps = model.launchableApps(for: package)
             if apps.count == 1, let app = apps.first {
                 Button("Open") { model.openApp(at: app) }
             } else if apps.isEmpty, let font = model.installedFontURL(for: package) {
@@ -118,7 +125,7 @@ struct PackageCardView: View {
     /// Pills for identity, one ·-joined text run for everything else — the App Store metadata
     /// pattern. Mixing capsules and bare values in alternation read as clutter, and a value
     /// sandwiched between two pills read worst of all.
-    private var statusLine: some View {
+    private func statusLine(id: Package.ID) -> some View {
         HStack(spacing: 6) {
             TagLabel(package.kindLabel, help: package.kindExplanation)
             // The owner half only ("charmbracelet") — the identity people recognize, and all
@@ -129,7 +136,7 @@ struct PackageCardView: View {
                     .truncationMode(.middle)
                     .layoutPriority(-1)
             }
-            if let status = statusText {
+            if let status = statusText(id: id) {
                 status
             }
         }
@@ -139,13 +146,13 @@ struct PackageCardView: View {
 
     /// Version and state words as one concatenated `Text`, so per-segment colors survive and
     /// `lineLimit(1)` truncates the run as a unit.
-    private var statusText: Text? {
+    private func statusText(id: Package.ID) -> Text? {
         var segments: [Text] = []
 
-        if let info = model.outdated[package.id] {
+        if let info = model.outdated[id] {
             segments.append(Text("\(info.installed.last?.shortVersion ?? "") → \(info.current.shortVersion)")
                 .foregroundStyle(.orange))
-        } else if let version = model.installed[package.id]?.versions.last, !version.isEmpty {
+        } else if let version = model.installed[id]?.versions.last, !version.isEmpty {
             segments.append(Text(version.shortVersion).foregroundStyle(.secondary))
         } else if !package.version.isEmpty {
             // Casks report versions like "2.1.50,56f0a83" — only the part a human reads is shown.
@@ -157,10 +164,10 @@ struct PackageCardView: View {
         } else if package.deprecated {
             segments.append(Text("deprecated").foregroundStyle(.red))
         }
-        if model.outdated[package.id]?.pinned == true {
+        if model.outdated[id]?.pinned == true {
             segments.append(Text("pinned").foregroundStyle(.secondary))
         }
-        if isDependency {
+        if isDependency(id: id) {
             segments.append(Text("dependency").foregroundStyle(.secondary))
         }
 
@@ -171,8 +178,8 @@ struct PackageCardView: View {
     }
 
     /// Installed, but nobody asked for it directly — the detail sheet's "Required by" says who did.
-    private var isDependency: Bool {
-        model.installed[package.id]?.onRequest == false
+    private func isDependency(id: Package.ID) -> Bool {
+        model.installed[id]?.onRequest == false
     }
 
     /// From the *effective* tap, so an item installed from a tap stays labelled even when a
@@ -186,14 +193,14 @@ struct PackageCardView: View {
     /// The control swaps as the package's state does — Install, then a spinner, then a checkmark.
     /// Replacing them in place keeps that legible as one thing changing — as a crossfade when
     /// Reduce Motion is on, since a blur replace animates into and out of a blur.
-    private var actionButton: some View {
-        actionControl.transition(reduceMotion ? AnyTransition.opacity
-                                             : AnyTransition(.blurReplace))
+    private func actionButton(id: Package.ID, status: PackageStatus, apps: [URL]) -> some View {
+        actionControl(id: id, status: status, apps: apps)
+            .transition(reduceMotion ? AnyTransition.opacity : AnyTransition(.blurReplace))
     }
 
     @ViewBuilder
-    private var actionControl: some View {
-        switch model.status(for: package) {
+    private func actionControl(id: Package.ID, status: PackageStatus, apps: [URL]) -> some View {
+        switch status {
         case .notInstalled:
             // "Install…" exactly when the trust-consent dialog will appear first — a button
             // that opens a dialog promises it (HIG *Buttons*), and this one is knowable.
@@ -208,7 +215,7 @@ struct PackageCardView: View {
                       : "Install \(package.title)")
 
         case .outdated:
-            let pinned = model.outdated[package.id]?.pinned == true
+            let pinned = model.outdated[id]?.pinned == true
             Button("Update") { model.upgrade(package) }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -221,7 +228,6 @@ struct PackageCardView: View {
             // casks get it — bordered, so the one filled button on a card stays the
             // state-changing one. Formulae and multi-app casks keep the state label: nothing
             // unambiguous to open (the detail pane's Open menu handles the multi-app few).
-            let apps = model.launchableApps(for: package)
             if apps.count == 1, let app = apps.first {
                 Button("Open") { model.openApp(at: app) }
                     .buttonStyle(.bordered)
