@@ -288,11 +288,11 @@ final class AppModel {
         // broken dotfile) it's the capture timeout, paid once.
         _ = await client.shellEnvironment()
 
-        let state = Task { await self.refreshState() }
+        async let state: Void = refreshState()
         if cache.map({ CatalogStore.isStale($0.fetchedAt) }) ?? true {
             await loadCatalog()
         }
-        await state.value
+        await state
 
         // v8 — probes first (cached-metadata answers on screen in a second), then the freshness
         // rule corrects them: brew's own outdated computation runs against a cache our standing
@@ -323,11 +323,11 @@ final class AppModel {
         // v8.2 — forced: ⌘R is an explicit request, and explicit requests are never coalesced.
         _ = await checkForUpdatesIfStale(force: true)
 
-        let state = Task { await self.refreshState() }
+        async let state: Void = refreshState()
         if catalogFetchedAt.map(CatalogStore.isStale) ?? true {
             await loadCatalog()
         }
-        await state.value
+        await state
     }
 
     /// The v8 freshness rule: brew's metadata must be no older than brew's own API window
@@ -452,13 +452,15 @@ final class AppModel {
             return
         }
 
-        let installedTask = Task { try await self.client.listInstalled() }
-        let outdatedTask = Task { try await self.client.outdated() }
-        let servicesTask = Task { try await self.client.servicesList() }
+        // Three independent probes, structured: `async let` runs them concurrently and each
+        // read stays independently optional.
+        async let installedFetch = client.listInstalled()
+        async let outdatedFetch = client.outdated()
+        async let servicesFetch = client.servicesList()
 
-        let installedResult = try? await installedTask.value
-        let outdatedResult = try? await outdatedTask.value
-        let servicesResult = try? await servicesTask.value
+        let installedResult = try? await installedFetch
+        let outdatedResult = try? await outdatedFetch
+        let servicesResult = try? await servicesFetch
 
         let folded: [Package.ID: InstalledInfo]?
         if let installedResult {
@@ -590,17 +592,24 @@ final class AppModel {
         var iterator = targets.makeIterator()
         await withTaskGroup(of: (Package.ID, Int64?).self) { group in
             for _ in 0..<6 {
-                guard let (id, key, roots) = iterator.next() else { break }
-                group.addTask { (id, await DiskUsage.measuredBytes(key: key, roots: roots)) }
+                guard let (id, key, roots) = iterator.next(),
+                      group.addTaskUnlessCancelled(operation: {
+                          (id, await DiskUsage.measuredBytes(key: key, roots: roots))
+                      }) else { break }
             }
             while let (id, bytes) = await group.next() {
                 if let bytes { result[id] = bytes }
-                if let (nextID, key, roots) = iterator.next() {
-                    group.addTask { (nextID, await DiskUsage.measuredBytes(key: key, roots: roots)) }
-                }
+                guard let (nextID, key, roots) = iterator.next() else { continue }
+                guard group.addTaskUnlessCancelled(operation: {
+                    (nextID, await DiskUsage.measuredBytes(key: key, roots: roots))
+                }) else { break }
             }
         }
 
+        // A cancelled sweep (the sort switched away, the section closed) must not publish a
+        // partial map — that would wipe already-measured sizes and bump the generation for a
+        // listing rebuild built on the wipe.
+        guard !Task.isCancelled else { return }
         if result != diskSizes {
             diskSizes = result
             sizesGeneration &+= 1

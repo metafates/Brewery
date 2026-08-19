@@ -20,13 +20,25 @@ nonisolated enum DiskUsage {
         "\(id)|\(version ?? "")"
     }
 
+    /// In-flight measurements by key: the pane's Size row, the orphan bar and the size sweep
+    /// can ask for the same keg concurrently, and check-then-act across the await let both
+    /// miss and both walk. Unstructured and uncancellable like IconStore's fetch — a pane
+    /// closing mid-walk must not abandon a measurement other callers await.
+    @MainActor private static var inFlight: [String: Task<Int64?, Never>] = [:]
+
     /// Cache-or-measure for one package's roots — the one memoized read behind the pane's
     /// Size row and the orphan bar's total.
     @MainActor static func measuredBytes(key: String, roots: [URL]) async -> Int64? {
         if let cached = cache[key] { return cached }
-        guard let measured = await bytes(at: roots) else { return nil }
-        cache[key] = measured
-        return measured
+        if let existing = inFlight[key] { return await existing.value }
+        let task = Task {
+            let measured = await bytes(at: roots)
+            if let measured { cache[key] = measured }
+            inFlight[key] = nil
+            return measured
+        }
+        inFlight[key] = task
+        return await task.value
     }
     /// Logical bytes under the given roots — regular files only, symlinks counted as links and
     /// never followed (a keg's bin links would double-count or escape the root). nil when no
@@ -38,7 +50,9 @@ nonisolated enum DiskUsage {
     @concurrent static func bytes(at roots: [URL]) async -> Int64? {
         var total: Int64 = 0
         var found = false
+        var visited = 0
         for root in roots {
+            guard !Task.isCancelled else { return nil }
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory) else {
                 continue
@@ -51,6 +65,11 @@ nonisolated enum DiskUsage {
             let enumerator = FileManager.default.enumerator(
                 at: root, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
             while let item = enumerator?.nextObject() as? URL {
+                // A large keg is tens of thousands of files; a cancelled caller (the Storage
+                // bar's direct cache/logs walks) should stop paying for an answer nobody
+                // will read. nil, never a truncated total.
+                visited += 1
+                if visited % 512 == 0, Task.isCancelled { return nil }
                 total += size(of: item)
             }
         }

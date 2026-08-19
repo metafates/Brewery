@@ -121,7 +121,9 @@ nonisolated enum LoginEnvironment {
         guard let data else {
             reader.cancel()
             process.terminate()
-            Task.detached {
+            // Plain Task, not detached: a delayed side effect needs no fresh isolation
+            // domain, and this context is already nonisolated.
+            Task {
                 try? await Task.sleep(for: .seconds(1))
                 if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             }

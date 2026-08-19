@@ -52,7 +52,7 @@ actor IconStore {
 
     /// Icons are decoration: a slow lookup must never hold a connection slot the way the default
     /// 60 s timeout does. Its own session so these limits cannot affect catalog downloads.
-    private static let session: URLSession = {
+    private nonisolated static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         // Every icon comes from one host, so only the session's first lookup can be slow — after it
         // resolves, the OS has the answer. The budget therefore has to outlast one bad resolution
@@ -357,7 +357,10 @@ actor IconStore {
     /// error or a body we cannot decode. That earns a marker; a transport failure (nil) does
     /// not — and neither do rate limiting or server trouble (v10): a 429 from the banner CDN
     /// with a week-long marker would hide a real image over a burst of browsing.
-    private static func download(url: URL) async -> Data? {
+    /// `nonisolated` like the seven sibling statics: an actor's statics carry no instance
+    /// isolation and would otherwise pick up the module's MainActor default, scheduling two
+    /// main-actor hops around every fetch.
+    private nonisolated static func download(url: URL) async -> Data? {
         // Images no longer route through URLCache: this store *is* the cache.
         let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         guard let (data, response) = try? await session.data(for: request) else { return nil }
