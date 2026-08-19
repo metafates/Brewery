@@ -53,24 +53,18 @@ struct UninstallFunnelTests {
         #expect(model.isPinned(wget))
     }
 
-    @Test("confirmedUninstall picks .zap only for a cask whose receipt has a zap stanza")
+    @Test("the zap choice picks .zap only for a cask whose receipt has a zap stanza")
     func zapNeedsTheStanza() {
-        let model = AppModel()
-        model.installed[iterm.id] = InstalledInfo(versions: ["3.5.11"], hasZap: true)
-        model.confirmedUninstall(iterm, zap: true)
-        #expect(model.operations.contains { $0.command == .zap(name: "iterm2") })
-
-        let plain = AppModel()
-        plain.installed[iterm.id] = InstalledInfo(versions: ["3.5.11"])  // hasZap: false
-        plain.confirmedUninstall(iterm, zap: true)
-        #expect(plain.operations.contains { $0.command == .uninstall(name: "iterm2", cask: true) })
-        #expect(!plain.operations.contains { $0.command == .zap(name: "iterm2") })
-
+        #expect(AppModel.uninstallCommand(name: "iterm2", kind: .cask, zap: true, hasZap: true)
+                == .zap(name: "iterm2"))
+        #expect(AppModel.uninstallCommand(name: "iterm2", kind: .cask, zap: true, hasZap: false)
+                == .uninstall(name: "iterm2", cask: true))
         // A formula ignores the zap flag outright.
-        let formula = AppModel()
-        formula.installed[wget.id] = InstalledInfo(versions: ["1.25.0"], hasZap: true)
-        formula.confirmedUninstall(wget, zap: true)
-        #expect(formula.operations.contains { $0.command == .uninstall(name: "wget", cask: false) })
+        #expect(AppModel.uninstallCommand(name: "wget", kind: .formula, zap: true, hasZap: true)
+                == .uninstall(name: "wget", cask: false))
+        // No zap consent, no zap — stanza or not.
+        #expect(AppModel.uninstallCommand(name: "iterm2", kind: .cask, zap: false, hasZap: true)
+                == .uninstall(name: "iterm2", cask: true))
     }
 
     @Test("the enqueue name guard covers the new cases")

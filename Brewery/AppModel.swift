@@ -1012,12 +1012,21 @@ final class AppModel {
     /// The dialog's affirmative paths. `zap` holds only for a cask whose receipt records a zap
     /// stanza — the one case where `--zap` does more than plain uninstall.
     func confirmedUninstall(_ package: Package, zap: Bool = false) {
-        let command: BrewCommand = if zap, package.kind == .cask, installed[package.id]?.hasZap == true {
-            .zap(name: qualifiedName(for: package))
-        } else {
-            .uninstall(name: qualifiedName(for: package), cask: package.kind == .cask)
-        }
+        let command = AppModel.uninstallCommand(name: qualifiedName(for: package),
+                                                kind: package.kind,
+                                                zap: zap,
+                                                hasZap: installed[package.id]?.hasZap == true)
         enqueue(command, title: "Uninstalling \(package.title)", targetID: package.id)
+    }
+
+    /// Pure core of the zap choice, `blockingDependentIDs`'s shape: testable without enqueuing.
+    nonisolated static func uninstallCommand(name: String, kind: PackageKind,
+                                             zap: Bool, hasZap: Bool) -> BrewCommand {
+        if zap, kind == .cask, hasZap {
+            .zap(name: name)
+        } else {
+            .uninstall(name: name, cask: kind == .cask)
+        }
     }
 
     /// Who would make brew refuse this uninstall: formulae listing it as a runtime dependency
