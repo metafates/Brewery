@@ -79,6 +79,10 @@ struct StorageSummaryBar: View {
                 part.bytes.map { (color: part.color, bytes: $0) }
             }
             let total = max(measured.reduce(Int64(0)) { $0 + $1.bytes }, 1)
+            // Proportions against the width actually available for fill: the 2 pt gaps come
+            // off first, or the 3 pt minimum slivers push the last segment past the trailing
+            // edge and clip it.
+            let track = proxy.size.width - 2 * CGFloat(max(measured.count - 1, 0))
             HStack(spacing: 2) {
                 if measured.isEmpty {
                     Rectangle().fill(.quaternary)
@@ -86,8 +90,7 @@ struct StorageSummaryBar: View {
                     ForEach(measured.enumerated(), id: \.offset) { _, part in
                         Rectangle()
                             .fill(part.color.gradient)
-                            .frame(width: max(3, proxy.size.width
-                                * CGFloat(part.bytes) / CGFloat(total)))
+                            .frame(width: max(3, track * CGFloat(part.bytes) / CGFloat(total)))
                     }
                 }
             }
