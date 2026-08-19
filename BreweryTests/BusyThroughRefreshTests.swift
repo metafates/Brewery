@@ -64,3 +64,26 @@ struct BusyThroughRefreshTests {
         #expect(model.status(for: wget) == .outdated(installed: "1.24.0", current: "1.25.0"))
     }
 }
+
+/// The superseded-refresh case: only a refresh that started *after* an operation finished may
+/// release its hold — an older run's release would drop busy against pre-mutation overlays.
+@MainActor
+struct RefreshHoldReleaseTests {
+    @Test func onlyOperationsStampedBeforeTheRunAreReleased() {
+        let model = AppModel()
+        let old = BrewOperation(command: .update, title: "old", targetID: nil)
+        old.state = .succeeded
+        old.awaitingRefresh = true
+        old.awaitingRefreshSince = 1
+        let fresh = BrewOperation(command: .update, title: "fresh", targetID: nil)
+        fresh.state = .succeeded
+        fresh.awaitingRefresh = true
+        fresh.awaitingRefreshSince = 5
+        model.operations = [old, fresh]
+
+        model.releaseRefreshHolds(before: 3)
+
+        #expect(old.awaitingRefresh == false)
+        #expect(fresh.awaitingRefresh)
+    }
+}

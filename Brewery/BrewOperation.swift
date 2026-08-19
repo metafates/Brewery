@@ -30,6 +30,11 @@ final class BrewOperation: Identifiable {
     /// busy state on `state` alone flashed the stale answer — "Install", a beat after
     /// installing — until the probes caught up.
     var awaitingRefresh = false
+    /// The refresh generation current when this operation finished. The hold releases only
+    /// when a refresh that *started after* the completion publishes — the operation's own
+    /// fire-and-forget refresh can be superseded and bail before publishing, and dropping
+    /// the hold then would flash the pre-mutation overlays (the blink bug, resurrected).
+    var awaitingRefreshSince = 0
     private(set) var lines: [String] = []
 
     init(command: BrewCommand, title: String, targetID: Package.ID?) {

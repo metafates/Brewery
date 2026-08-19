@@ -446,6 +446,8 @@ final class AppModel {
             outdated = [:]
             dependents = [:]
             serviceStatuses = [:]
+            // This branch publishes too (empty overlays), so it releases holds the same way.
+            releaseRefreshHolds(before: generation)
             // Persisted too: brew gone is a state, not an error — the next launch must not
             // resurrect a graveyard of Installed badges.
             persistStateSnapshot()
@@ -485,6 +487,7 @@ final class AppModel {
         // A refresh started later holds the fresher answer; the sweep is slow enough that a ⌘R or a
         // post-mutation refresh can overtake this one, and a late write would mix the two.
         guard generation == refreshGeneration else { return }
+        releaseRefreshHolds(before: generation)
         if let folded {
             installed = folded
             dependents = Receipts.invertDependents(folded)
@@ -634,6 +637,15 @@ final class AppModel {
             return .installed(version: info.versions.last ?? package.version)
         }
         return .notInstalled
+    }
+
+    /// Releases the busy holds of operations that finished before the given refresh run.
+    /// Called from a publish block only: the overlays on screen now postdate those operations.
+    func releaseRefreshHolds(before generation: Int) {
+        for operation in operations
+        where operation.awaitingRefresh && operation.awaitingRefreshSince < generation {
+            operation.awaitingRefresh = false
+        }
     }
 
     /// A bare `brew upgrade` touches every outdated formula and cask except the pinned ones, so a
@@ -1223,6 +1235,7 @@ final class AppModel {
         operation.state = state
         // Set in the same synchronous block as `state`, so no frame sees the gap between them.
         operation.awaitingRefresh = true
+        operation.awaitingRefreshSince = refreshGeneration
         if state == .failed, failureToPresent == nil {
             failureToPresent = operation
         }
@@ -1230,14 +1243,15 @@ final class AppModel {
         runningTask = nil
         // Success or failure, a mutation can have changed what is installed — and until that
         // refresh lands, the operation keeps holding its card: dropping busy on completion
-        // alone showed the pre-mutation overlays for the second the probes take.
+        // alone showed the pre-mutation overlays for the second the probes take. The hold is
+        // released by whichever refresh actually publishes (releaseRefreshHolds), not here —
+        // this run can be superseded and bail without publishing.
         Task {
             // v18 — cleanup shrinks Cellar racks under unchanged id|version cache keys, so the
             // whole session cache goes; it refills lazily. (The size-sort order corrects on the
             // next sweep — its trigger key is unchanged by cleanup, a documented residual.)
             if operation.command == .cleanup { DiskUsage.cache.removeAll() }
             await self.refreshState()
-            operation.awaitingRefresh = false
         }
         pump()
     }
