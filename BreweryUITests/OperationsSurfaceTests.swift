@@ -13,21 +13,34 @@ import XCTest
 /// exist mid-mutation, and a test must not mutate the machine.
 final class OperationsSurfaceTests: XCTestCase {
 
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
     @MainActor
     func testOperationsButtonAndLogWindow() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo-operation"] + UITestSeed.pinnedState
+        // The bare flag goes last: the argument-domain parser pairs `-key value`, so a
+        // leading `-demo-operation` would swallow the first seed key as its value.
+        app.launchArguments = UITestSeed.pinnedState + ["-demo-operation"]
         app.launch()
 
-        // The single-window rule survives the log WindowGroup: no File > New Window. Wait for
-        // the opened menu itself — an absence assert against an unopened menu is always green.
+        // The single-window rule survives the log WindowGroup: the main window has no New
+        // command. ("New Log Window" is the log scene's own framework contribution —
+        // accepted, since suppressing it removes the whole File menu, Close included.)
+        // Menu items are in the AX tree without opening the menu; Close is the positive
+        // control proving the File menu's contents are queryable at all.
+        // One enumeration, no re-resolution: menu-item queries under a menuBarItem answer to
+        // `title`, and predicate/subscript re-resolution against them is flaky where a plain
+        // bound-element walk is not.
         let fileMenu = app.menuBars.menuBarItems["File"]
         XCTAssertTrue(fileMenu.waitForExistence(timeout: 10))
-        fileMenu.click()
-        let fileItems = fileMenu.menus.firstMatch
-        XCTAssertTrue(fileItems.waitForExistence(timeout: 5))
-        XCTAssertFalse(fileItems.menuItems["New Window"].exists)
-        app.typeKey(.escape, modifierFlags: [])
+        sleep(2)
+        let fileItems = fileMenu.menuItems.allElementsBoundByIndex.map(\.title)
+        XCTAssertTrue(fileItems.contains("Close"),
+                      "The File menu's items never became queryable: \(fileItems)")
+        XCTAssertFalse(fileItems.contains("New Window"),
+                       "The main window must not be duplicable: \(fileItems)")
 
         // Exposed as a button even with the spinner-and-count label.
         let operationsButton = app.buttons

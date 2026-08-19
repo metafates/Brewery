@@ -147,8 +147,11 @@ struct BreweryApp: App {
 
         // One auxiliary window per operation's log (HIG *Windows*: "consider providing the
         // option to view content in a new window"), opened from the operations popover and
-        // listed in the Window menu by its operation title. Value-only (no default value), so
-        // the scene never answers File ▸ New Window — the single-window rule above holds.
+        // listed in the Window menu by its operation title. The scene contributes File ▸
+        // New Log Window (even without a default value) — accepted: it opens the designed
+        // No Operation state, and every way of suppressing it (.commandsRemoved(), an empty
+        // .newItem group) takes the whole File menu — Close ⌘W included — down with it.
+        // The single-window rule still holds: the *main* window has no New command.
         // Restoration is off: operations are session state, and a restored log of a dead
         // queue would be an empty shell.
         WindowGroup("Log", id: "operation-log", for: BrewOperation.ID.self) { $operationID in
