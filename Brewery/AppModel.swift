@@ -206,6 +206,11 @@ final class AppModel {
             catalogFetchedAt = cache.fetchedAt
         }
 
+        // v25 — the overlay must land before the first probes and tap scan: it was pre-warmed
+        // in the client's init, so this await typically resolves instantly; worst case (a
+        // broken dotfile) it's the capture timeout, paid once.
+        _ = await client.shellEnvironment()
+
         let state = Task { await self.refreshState() }
         if cache.map({ CatalogStore.isStale($0.fetchedAt) }) ?? true {
             await loadCatalog()
@@ -392,7 +397,8 @@ final class AppModel {
         if let repository = client.repository {
             scan = await TapStore.scan(repository: repository,
                                        installed: Set((folded ?? installed).keys),
-                                       installs90d: tapInstalls90d)
+                                       installs90d: tapInstalls90d,
+                                       environment: client.effectiveEnvironment)
         } else {
             scan = nil
         }

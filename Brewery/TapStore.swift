@@ -82,7 +82,8 @@ nonisolated enum TapStore {
     /// subset captured by `CatalogStore`.
     @concurrent static func scan(repository: URL,
                                  installed: Set<Package.ID>,
-                                 installs90d: [String: Int]) async -> TapScan {
+                                 installs90d: [String: Int],
+                                 environment: [String: String]) async -> TapScan {
         var result = TapScan()
         let root = tapsRoot(repository: repository)
         let fm = FileManager.default
@@ -108,7 +109,7 @@ nonisolated enum TapStore {
                     lastChecked: fetchHeadDate(of: repoDir)))
             }
         }
-        result.trust = TrustStore.read()
+        result.trust = TrustStore.read(environment: environment)
         return result
     }
 
@@ -334,19 +335,34 @@ nonisolated enum TapStore {
 
     // MARK: - Trust
 
-    /// Reads brew 6's trust store. Pure parsing is split out for tests; the file lives at the
-    /// XDG config home (brew's default on this platform) with `~/.homebrew` as the fallback.
+    /// Reads brew 6's trust store. Pure parsing is split out for tests. v25 — the path follows
+    /// brew's own resolution (bin/brew:163-170, trust.rb:27-34): `$XDG_CONFIG_HOME/homebrew`,
+    /// else `$HOMEBREW_XDG_CONFIG_HOME/homebrew`, else `~/.homebrew` — evaluated against the
+    /// same environment the brew children get, so Taps and Checkup can never disagree about
+    /// trust again. The two historical locations stay as deduped fallback probes for the
+    /// capture-failed case: reading a file brew would also read is never wrong here, absence
+    /// just renders as untrusted.
     enum TrustStore {
-        static var candidates: [URL] {
-            let home = FileManager.default.homeDirectoryForCurrentUser
-            return [
-                home.appending(path: ".config/homebrew/trust.json"),
-                home.appending(path: ".homebrew/trust.json"),
-            ]
+        static func candidates(environment: [String: String], home: URL) -> [URL] {
+            var result: [URL] = []
+            if let xdg = environment["XDG_CONFIG_HOME"] {
+                result.append(URL(filePath: xdg).appending(path: "homebrew/trust.json"))
+            } else if let xdg = environment["HOMEBREW_XDG_CONFIG_HOME"] {
+                result.append(URL(filePath: xdg).appending(path: "homebrew/trust.json"))
+            } else {
+                result.append(home.appending(path: ".homebrew/trust.json"))
+            }
+            for probe in [home.appending(path: ".config/homebrew/trust.json"),
+                          home.appending(path: ".homebrew/trust.json")]
+            where !result.contains(where: { $0.path == probe.path }) {
+                result.append(probe)
+            }
+            return result
         }
 
-        static func read() -> TrustState {
-            for url in candidates {
+        static func read(environment: [String: String]) -> TrustState {
+            for url in candidates(environment: environment,
+                                  home: FileManager.default.homeDirectoryForCurrentUser) {
                 if let data = try? Data(contentsOf: url) {
                     return parse(data)
                 }

@@ -32,6 +32,35 @@ final class BrewClient {
 
     init() {
         discover()
+        // v25 — warm the login-shell capture so it overlaps bootstrap's snapshot/cache load;
+        // the first brew child then awaits an already-resolved task in the common case.
+        Task { _ = await shellEnvironment() }
+    }
+
+    // MARK: - Login-shell overlay (v25)
+
+    private var overlayTask: Task<[String: String], Never>?
+
+    /// Resolved copy for synchronous readers; empty until capture completes or when it failed.
+    private(set) var shellOverlay: [String: String] = [:]
+
+    /// The login-shell overlay, captured once per launch. The task is created synchronously on
+    /// first access, so concurrent callers (bootstrap's parallel probes) all await one capture.
+    func shellEnvironment() async -> [String: String] {
+        if let overlayTask { return await overlayTask.value }
+        let task = Task {
+            let overlay = await LoginEnvironment.capture()
+            shellOverlay = overlay
+            return overlay
+        }
+        overlayTask = task
+        return await task.value
+    }
+
+    /// The environment the *next* brew child gets — which is therefore the environment the
+    /// freshness and storage helpers must resolve HOMEBREW_CACHE/LOGS against.
+    var effectiveEnvironment: [String: String] {
+        ProcessInfo.processInfo.environment.merging(shellOverlay) { _, shell in shell }
     }
 
     /// Apple silicon prefix first, then Intel. Re-run on ⌘R so installing brew needs no relaunch.
@@ -50,11 +79,12 @@ final class BrewClient {
              onLine: @MainActor @Sendable @escaping (String) -> Void,
              onErrorLine: (@MainActor @Sendable (String) -> Void)? = nil) async throws -> Int32 {
         guard let executable = path else { throw BrewError.notFound }
+        let overlay = await shellEnvironment()
 
         let process = Process()
         process.executableURL = executable
         process.arguments = command.arguments
-        process.environment = Self.environment(for: command)
+        process.environment = Self.environment(for: command, overlay: overlay)
         process.standardInput = FileHandle.nullDevice
 
         let output = Pipe()
@@ -151,8 +181,20 @@ final class BrewClient {
         }
     }
 
-    private static func environment(for command: BrewCommand) -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
+    private static func environment(for command: BrewCommand,
+                                    overlay: [String: String]) -> [String: String] {
+        merged(base: ProcessInfo.processInfo.environment,
+               overlay: overlay,
+               askpass: command.isMutating ? askpassPath() : nil)
+    }
+
+    /// v25 — merge order is the contract: the GUI base, then the login-shell overlay (terminal
+    /// parity — a shell HOMEBREW_CACHE must reach the child), then the app's forced vars last,
+    /// because they are safety guarantees and must beat any shell export.
+    static func merged(base: [String: String],
+                       overlay: [String: String],
+                       askpass: String?) -> [String: String] {
+        var environment = base.merging(overlay) { _, shell in shell }
         environment["HOMEBREW_NO_ENV_HINTS"] = "1"
         environment["HOMEBREW_NO_ASK"] = "1"
         environment["HOMEBREW_NO_AUTO_UPDATE"] = "1"
@@ -164,7 +206,7 @@ final class BrewClient {
         environment["HOMEBREW_NO_AUTOREMOVE"] = "1"
         // Services-only: silences a stderr domain warning that fires whenever uid ≠ euid.
         environment["HOMEBREW_SERVICES_NO_DOMAIN_WARNING"] = "1"
-        if command.isMutating, let askpass = askpassPath() {
+        if let askpass {
             environment["SUDO_ASKPASS"] = askpass
         }
         return environment
@@ -181,7 +223,7 @@ final class BrewClient {
     /// so terminal-side updates count too. nil — no payload at all — reads as maximally stale.
     func metadataDate() -> Date? {
         Self.newestMetadataDate(in: Self.apiDirectory(
-            environment: ProcessInfo.processInfo.environment,
+            environment: effectiveEnvironment,
             home: FileManager.default.homeDirectoryForCurrentUser))
     }
 
@@ -211,7 +253,7 @@ final class BrewClient {
     /// (cleanup.rb:427), so our own Clean Up refreshes this too. nil — never cleaned.
     func cleanedDate() -> Date? {
         let marker = Self.cacheDirectory(
-            environment: ProcessInfo.processInfo.environment,
+            environment: effectiveEnvironment,
             home: FileManager.default.homeDirectoryForCurrentUser).appending(path: ".cleaned")
         return try? marker.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }

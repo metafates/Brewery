@@ -211,6 +211,29 @@ struct TapStoreTests {
         #expect(TrustState().trustedItemCount(in: "any/tap") == 0)
     }
 
+    @Test("trust store path follows brew's resolution against the child environment (v25)")
+    func trustCandidates() {
+        let home = URL(filePath: "/Users/u")
+        func paths(_ environment: [String: String]) -> [String] {
+            TapStore.TrustStore.candidates(environment: environment, home: home).map(\.path)
+        }
+
+        // XDG set → its path first; the historical probes follow, deduped.
+        #expect(paths(["XDG_CONFIG_HOME": "/Users/u/.config"]) == [
+            "/Users/u/.config/homebrew/trust.json",
+            "/Users/u/.homebrew/trust.json",
+        ])
+        // brew's own fallback var, only consulted when XDG_CONFIG_HOME is absent.
+        #expect(paths(["HOMEBREW_XDG_CONFIG_HOME": "/xdg"]).first == "/xdg/homebrew/trust.json")
+        #expect(paths(["XDG_CONFIG_HOME": "/a", "HOMEBREW_XDG_CONFIG_HOME": "/b"]).first
+                == "/a/homebrew/trust.json")
+        // Neither set → ~/.homebrew first (brew's rule), ~/.config kept as a probe.
+        #expect(paths([:]) == [
+            "/Users/u/.homebrew/trust.json",
+            "/Users/u/.config/homebrew/trust.json",
+        ])
+    }
+
     @Test("tap name validation: user/repo only — no URLs, flags or extra segments")
     func tapNameValidation() {
         #expect(AppModel.isValidTapName("oven-sh/bun"))

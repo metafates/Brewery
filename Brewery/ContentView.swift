@@ -373,7 +373,7 @@ private struct StorageSummaryBar: View {
         }
         // Cache and logs are mutable directories under stable names — the session cache would
         // serve stale bytes, so these bypass it.
-        let environment = ProcessInfo.processInfo.environment
+        let environment = model.client.effectiveEnvironment
         let home = FileManager.default.homeDirectoryForCurrentUser
         cacheBytes = await DiskUsage.bytes(
             at: [BrewClient.cacheDirectory(environment: environment, home: home)])
