@@ -405,13 +405,23 @@ final class BrewClient {
         }
     }
 
-    private static let askpassScript = """
-        #!/bin/sh
-        /usr/bin/osascript \\
-          -e 'display dialog "Brewery needs administrator access to continue." default answer "" with hidden answer with title "Brewery"' \\
-          -e 'text returned of result'
+    /// Mirrors the system auth prompt's grammar: app icon, why access is needed, what happens
+    /// to the password, and a verb ("Allow") instead of OK. The AppleScript sits inside
+    /// single-quoted sh, so an icon path containing a single quote falls back to no icon.
+    private static var askpassScript: String {
+        var icon = ""
+        if let icns = Bundle.main.url(forResource: "AppIcon", withExtension: "icns")?.path,
+           !icns.contains("'") {
+            icon = " with icon POSIX file \"\(icns)\""
+        }
+        return """
+            #!/bin/sh
+            /usr/bin/osascript \\
+              -e 'display dialog "Brewery is trying to modify software that requires administrator privileges.\\n\\nEnter your password to allow this. It goes directly to macOS and is never seen or stored by Brewery." default answer "" with hidden answer with title "Brewery"\(icon) buttons {"Cancel", "Allow"} default button "Allow" cancel button "Cancel"' \\
+              -e 'text returned of result'
 
-        """
+            """
+    }
 }
 
 /// Accumulator for `capture`; a class so the `@Sendable` line callback can append into it.

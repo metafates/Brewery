@@ -420,9 +420,11 @@ private func pump()   // if nothing running: run first queued op; on finish, ref
 ```sh
 #!/bin/sh
 /usr/bin/osascript \
-  -e 'display dialog "Brewery needs administrator access to continue." default answer "" with hidden answer with title "Brewery"' \
+  -e 'display dialog "Brewery is trying to modify software that requires administrator privileges.\n\nEnter your password to allow this. It goes directly to macOS and is never seen or stored by Brewery." default answer "" with hidden answer with title "Brewery" with icon POSIX file "<bundle>/AppIcon.icns" buttons {"Cancel", "Allow"} default button "Allow" cancel button "Cancel"' \
   -e 'text returned of result'
 ```
+
+**(v25.3)** The dialog copies the system auth prompt's grammar (HIG *Alerts*: title states the situation, informative text adds value, no bare OK): app icon, one line of why, one line on where the password goes, default button "Allow". It stays an osascript `display dialog` — sudo execs the helper as a detached child, so a native in-app sheet would need a fifo/URL-scheme round-trip for a prompt that appears a few times a year; not worth the plumbing. The icon path is interpolated from `Bundle.main` at write time and dropped if it contains a single quote (it sits inside single-quoted sh).
 
 ## Catalog pipeline
 
