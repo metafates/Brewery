@@ -1366,6 +1366,12 @@ final class AppModel {
         operations.contains { $0.state == .running && $0.command.isMutating }
     }
 
+    /// The quit guard's question: anything mutating that quitting would abandon — running,
+    /// or queued behind the pump's freshness hold.
+    var hasUnfinishedMutations: Bool {
+        operations.contains { !$0.isFinished && $0.command.isMutating }
+    }
+
     /// Quit path: drop what has not started, then interrupt what has.
     func interruptRunning() {
         operations.removeAll { $0.state == .queued }

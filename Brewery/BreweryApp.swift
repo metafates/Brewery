@@ -251,11 +251,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model, model.isMutating else { return .terminateNow }
+        guard let model, model.hasUnfinishedMutations else { return .terminateNow }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "A Homebrew operation is still running."
+        alert.messageText = "A Homebrew operation is still in progress."
         alert.informativeText = "Quitting now stops it, which can leave a partial installation behind."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Keep Running")
@@ -276,10 +276,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
-    }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
     }
 
     /// Short and focused, per the Dock menu guidance: the two things worth asking of a package
