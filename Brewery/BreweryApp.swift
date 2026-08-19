@@ -160,7 +160,47 @@ struct BreweryApp: App {
 
                 Divider()
 
+                // The whole-Homebrew verbs that lived only on content buttons. Each ellipsis
+                // item opens the same confirmation its button does — the dialog runs before
+                // the model, everywhere.
+                Button("Run Checkup") {
+                    model.selection = .checkup
+                    Task { await model.runCheckup() }
+                }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .disabled(model.isQueueActive || model.isRunningCheckup)
+
+                Button("Clean Up…") { model.confirmingCleanup = true }
+                    .disabled(model.cleanupPending)
+
+                Button("Remove All Orphans…") { model.confirmingAutoremove = true }
+                    .disabled(model.autoremovePending || model.orphanIDs.isEmpty)
+
+                Divider()
+
+                // ⌘. — the platform's cancel key, aimed at the app's one running operation:
+                // the popover row and the log window's toolbar act on the same one.
+                Button("Cancel Operation") {
+                    if let running = model.operations.first(where: { $0.state == .running }) {
+                        model.cancel(running)
+                    }
+                }
+                .keyboardShortcut(".", modifiers: .command)
+                .disabled(!model.operations.contains { $0.state == .running })
+
+                Divider()
+
                 Button("Add Tap…") { model.requestAddTap() }
+
+                // The Uninstall command's dynamic-title grammar; built-in pages have no
+                // TapInfo and stay disabled.
+                Button(model.selectedTap.map { "Remove \($0)…" } ?? "Remove Tap…") {
+                    if let tap = model.selectedTap,
+                       let info = model.tapInfos.first(where: { $0.name == tap }) {
+                        model.pendingTapRemoval = info
+                    }
+                }
+                .disabled(!model.tapInfos.contains { $0.name == model.selectedTap })
             }
             CommandGroup(after: .pasteboard) {
                 Divider()

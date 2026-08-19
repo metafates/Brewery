@@ -412,6 +412,25 @@ struct ContentView: View {
                 Text("This removes the tap's local copy — you can add it back anytime. If the tap is trusted, it stays trusted when you re-add it.")
             }
         }
+        .confirmationDialog(CleanupDialog.title,
+                            isPresented: $model.confirmingCleanup, titleVisibility: .visible) {
+            Button(CleanupDialog.confirm, role: .destructive) { model.cleanUp() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(CleanupDialog.message)
+        }
+        // Pluralized by hand: the ^[](inflect:) markdown renders fine in a bar's Text but
+        // arrives raw in a dialog title, wrapped in Text or not.
+        .confirmationDialog(
+            model.orphanIDs.count == 1
+                ? "Remove 1 orphaned dependency?"
+                : "Remove \(model.orphanIDs.count) orphaned dependencies?",
+            isPresented: $model.confirmingAutoremove, titleVisibility: .visible) {
+            Button("Remove All", role: .destructive) { model.autoremove() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("These are dependencies nothing needs anymore. You can install any of them again later.")
+        }
         .task(id: searchKey) {
             let ranked = section
             guard isSearching else {

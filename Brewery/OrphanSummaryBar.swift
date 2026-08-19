@@ -15,7 +15,6 @@ import SwiftUI
 struct OrphanSummaryBar: View {
     @Environment(AppModel.self) private var model
     @State private var bytes: Int64?
-    @State private var confirming = false
 
     private var ids: [Package.ID] { model.orphanIDs.sorted() }
 
@@ -43,21 +42,10 @@ struct OrphanSummaryBar: View {
 
                 Spacer(minLength: 12)
 
-                Button("Remove All…") { confirming = true }
+                // The dialog lives on ContentView's root — the Homebrew menu opens the same one.
+                Button("Remove All…") { model.confirmingAutoremove = true }
                     .disabled(model.autoremovePending)
                     .help("Removes dependencies nothing needs anymore")
-                    // Pluralized by hand: the ^[](inflect:) markdown renders fine in the
-                    // bar's Text but arrives raw in a dialog title, wrapped in Text or not.
-                    .confirmationDialog(
-                        ids.count == 1
-                            ? "Remove 1 orphaned dependency?"
-                            : "Remove \(ids.count) orphaned dependencies?",
-                        isPresented: $confirming, titleVisibility: .visible) {
-                        Button("Remove All", role: .destructive) { model.autoremove() }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("These are dependencies nothing needs anymore. You can install any of them again later.")
-                    }
             }
             .contentBox()
             .task(id: ids) {

@@ -174,21 +174,14 @@ struct CleanupButton: View {
     var isSmall: Bool = false
 
     @Environment(AppModel.self) private var model
-    @State private var confirming = false
 
     var body: some View {
-        Button("Clean Up…") { confirming = true }
+        // The dialog lives on ContentView's root — the Homebrew menu opens the same one.
+        Button("Clean Up…") { model.confirmingCleanup = true }
             .buttonStyle(.bordered)
             .controlSize(isSmall ? .small : .regular)
             .disabled(model.cleanupPending)
             .help("Removes files Homebrew no longer needs")
-            .confirmationDialog(CleanupDialog.title,
-                                isPresented: $confirming, titleVisibility: .visible) {
-                Button(CleanupDialog.confirm, role: .destructive) { model.cleanUp() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(CleanupDialog.message)
-            }
     }
 }
 

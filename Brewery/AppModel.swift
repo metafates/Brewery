@@ -1039,6 +1039,12 @@ final class AppModel {
         set { if !newValue { pendingTapRemoval = nil } }
     }
 
+    /// App-level like the removal funnels: the Homebrew menu must open the same dialogs the
+    /// content buttons do, from any section — a dialog can only present from a mounted view,
+    /// so both live on ContentView's root.
+    var confirmingCleanup = false
+    var confirmingAutoremove = false
+
     /// Every Uninstall surface funnels through here — pane button, card context menu, menu bar —
     /// and it only sets the pending package: the confirmation dialog runs before anything
     /// enqueues (the trust-write rule). Pinned packages never pass — brew's pinned refusal
