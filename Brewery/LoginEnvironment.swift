@@ -67,8 +67,10 @@ nonisolated enum LoginEnvironment {
 
     /// Runs the login shell once and returns the whitelisted overlay. Any failure — no shell,
     /// launch error, timeout, unparseable output — returns empty, which merges as a no-op:
-    /// capture failure costs nothing but the pre-v25 behavior.
-    static func capture(timeout: Duration = .seconds(3)) async -> [String: String] {
+    /// capture failure costs nothing but the pre-v25 behavior. `@concurrent` so the spawn and
+    /// the byte-by-byte pipe drain leave the caller's actor (the reader Task inherits this
+    /// context) instead of running on the main thread.
+    @concurrent static func capture(timeout: Duration = .seconds(3)) async -> [String: String] {
         guard let shell = loginShellPath() else { return [:] }
 
         let process = Process()

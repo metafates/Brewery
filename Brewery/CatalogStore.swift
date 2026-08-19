@@ -67,7 +67,9 @@ nonisolated struct CatalogStore {
 
     /// nil when there is no cache, when the schema stamp differs, or when decoding throws — which
     /// is exactly what a pre-v3 file (no `version` key) produces. Migration is a fresh download.
-    static func loadCache() -> CatalogCache? {
+    /// `@concurrent` for `fetch`'s reason: the warm-launch file is ~8 MB of JSON, which a plain
+    /// nonisolated func would decode inline on the main actor.
+    @concurrent static func loadCache() async -> CatalogCache? {
         guard let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(CatalogCache.self, from: data),
               cache.version == cacheVersion else { return nil }

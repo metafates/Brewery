@@ -276,7 +276,7 @@ final class AppModel {
             dependents = Receipts.invertDependents(snapshot.installed)
         }
 
-        let cache = CatalogStore.loadCache()
+        let cache = await CatalogStore.loadCache()
         if let cache {
             tapInstalls90d = cache.tapInstalls90d ?? [:]
             await setCoreCatalog(cache.packages)
