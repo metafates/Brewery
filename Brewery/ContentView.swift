@@ -256,9 +256,13 @@ struct ContentView: View {
         return Text("Install \(package.title) from \(tap)?")
     }
 
-    /// v15 — the uninstall dialog's title, same grammar.
+    /// v15 — the uninstall dialog's title, same grammar — except blocked, where there is no
+    /// question to ask: the dialog is informational (HIG Alerts), a statement with an OK.
     private var uninstallTitle: Text {
         guard let package = model.pendingUninstall else { return Text(verbatim: "") }
+        if !model.blockingDependents(for: package).isEmpty {
+            return Text("\(package.title) is still needed")
+        }
         return Text("Uninstall \(package.title)?")
     }
 
@@ -364,8 +368,12 @@ struct ContentView: View {
                         model.confirmedUninstall(package, zap: true)
                     }
                 }
+                Button("Cancel", role: .cancel) {}
+            } else {
+                // A confirmation with no yes is a statement: acknowledge, don't "cancel"
+                // nothing. The cancel role keeps Escape working.
+                Button("OK", role: .cancel) {}
             }
-            Button("Cancel", role: .cancel) {}
         } message: { package in
             Text(uninstallMessage(for: package))
         }

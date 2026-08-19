@@ -177,6 +177,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = "Quitting now stops it, which can leave a partial installation behind."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Keep Running")
+        // Return stays on Quit (Safari/Terminal's order), but the destructive choice says so,
+        // and Escape means the safe one — it meant nothing.
+        alert.buttons[0].hasDestructiveAction = true
+        alert.buttons[1].keyEquivalent = "\u{1b}"
         guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
 
         model.interruptRunning()

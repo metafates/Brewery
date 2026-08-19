@@ -91,8 +91,12 @@ struct TapsView: View {
         .confirmationDialog(removalTitle, isPresented: removalPresented, titleVisibility: .visible) {
             if let info = removing, model.installedCount(fromTap: info.name) == 0 {
                 Button("Remove Tap", role: .destructive) { model.removeTap(info.name) }
+                Button("Cancel", role: .cancel) {}
+            } else {
+                // Blocked removal is informational — a statement with an OK (the uninstall
+                // dialog's rule); the cancel role keeps Escape working.
+                Button("OK", role: .cancel) {}
             }
-            Button("Cancel", role: .cancel) {}
         } message: {
             if let info = removing {
                 if model.installedCount(fromTap: info.name) > 0 {
@@ -105,7 +109,10 @@ struct TapsView: View {
     }
 
     private var removalTitle: String {
-        removing.map { "Remove \($0.name)?" } ?? ""
+        guard let removing else { return "" }
+        return model.installedCount(fromTap: removing.name) > 0
+            ? "\(removing.name) is still in use"
+            : "Remove \(removing.name)?"
     }
 
     /// A drill trigger, not a persisted selection: the tap page replaces the list, and coming
