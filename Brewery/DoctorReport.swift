@@ -11,12 +11,17 @@ import Foundation
 /// machine-readable fix. Decoding is deliberately tolerant — the flag is hidden and every
 /// field but `text` is treated as optional — and `tier` is an int *or* a string ("unsupported").
 nonisolated struct DoctorReport: Decodable, Equatable {
-    struct Finding: Decodable, Equatable {
+    struct Finding: Decodable, Equatable, Identifiable {
         let text: String
         let tier: TierValue?
         let affects: [String]?
         let links: [String]?
         let remediation: Remediation?
+
+        /// Row identity for the findings list: brew emits one finding per distinct check,
+        /// so the text is unique per report — and stable across a search-filter change,
+        /// which positional identity was not.
+        var id: String { text }
     }
 
     struct Remediation: Decodable, Equatable {
@@ -185,6 +190,59 @@ nonisolated enum ShadowResolver {
             }
         }
         return result
+    }
+}
+
+/// Everything a finding box derives from one finding before it can lay anything out: the
+/// remediation commands classified and split into copy chips, Link rows and package rows
+/// (deduplicated — a package already shown with a Link button must not repeat), the native
+/// action flags, and the finding's prose as blocks. Pure and resolver-injected so the split
+/// has tests beside `FindingFormat`'s.
+nonisolated struct FindingPresentation {
+    let chips: [String]
+    let linkRows: [(name: String, package: Package?)]
+    let packageRows: [Package]
+    let offersCleanup: Bool
+    let offersTaps: Bool
+    let hasRemedies: Bool
+    /// IDs already shown as a Link or package row — the affects list filters against these.
+    let represented: Set<Package.ID>
+    let structure: FindingFormat.Structure
+    let textBlocks: [CaveatFormat.Block]
+    let remedyBlocks: [CaveatFormat.Block]
+
+    init(finding: DoctorReport.Finding, package: (Package.ID) -> Package?) {
+        let remedies = (finding.remediation?.commands ?? []).map(Remedy.classify)
+        chips = remedies.compactMap { if case .chip(let command) = $0 { command } else { nil } }
+        var seen: Set<Package.ID> = []
+        linkRows = remedies.compactMap { remedy -> (name: String, package: Package?)? in
+            guard case .link(let formula) = remedy else { return nil }
+            let id = Package.packageID(kind: .formula, name: BrewClient.shortName(formula))
+            seen.insert(id)
+            return (formula, package(id))
+        }
+        packageRows = remedies.flatMap { remedy -> [Package] in
+            guard case .packages(let names, let isCask) = remedy else { return [] }
+            return names.compactMap { name in
+                let candidates = isCask
+                    ? [Package.packageID(kind: .cask, name: name)]
+                    : [Package.packageID(kind: .formula, name: name),
+                       Package.packageID(kind: .cask, name: name)]
+                guard let found = candidates.lazy.compactMap(package).first,
+                      seen.insert(found.id).inserted else { return nil }
+                return found
+            }
+        }
+        offersCleanup = remedies.contains(.cleanup)
+        offersTaps = remedies.contains { if case .untap = $0 { true } else { false } }
+        hasRemedies = !remedies.isEmpty
+        represented = seen
+        structure = FindingFormat.classify(finding.text)
+        textBlocks = CaveatFormat.blocks(of: finding.text)
+        remedyBlocks = FindingFormat.remediationBlocks(
+            text: finding.remediation?.text ?? "",
+            commands: finding.remediation?.commands ?? [],
+            links: finding.links ?? [])
     }
 }
 

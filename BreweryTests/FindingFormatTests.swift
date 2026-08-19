@@ -152,3 +152,55 @@ struct ShadowResolverTests {
         #expect(unresolved == ["mystery"])
     }
 }
+
+/// The derivation layer the finding box lays out from — the remedy split and its dedup rules.
+@Suite("Finding presentation")
+struct FindingPresentationTests {
+    private static let mysql = Package(kind: .formula, name: "mysql", displayName: nil, desc: nil,
+                                       homepage: nil, version: "9.0", deprecated: false, disabled: false)
+    private static let git = Package(kind: .formula, name: "git", displayName: nil, desc: nil,
+                                     homepage: nil, version: "2.47", deprecated: false, disabled: false)
+
+    private func resolve(_ id: Package.ID) -> Package? {
+        [Self.mysql, Self.git].first { $0.id == id }
+    }
+
+    private func finding(commands: [String]) -> DoctorReport.Finding {
+        DoctorReport.Finding(text: "x", tier: nil, affects: nil, links: nil,
+                             remediation: .init(commands: commands, text: nil))
+    }
+
+    @Test("remedies split into chips, link rows, package rows, and the native-action flags")
+    func remedySplit() {
+        let presentation = FindingPresentation(
+            finding: finding(commands: ["brew link mysql", "brew install git", "brew cleanup",
+                                        "brew untap a/b", "sudo rm -rf /"]),
+            package: resolve)
+        #expect(presentation.chips == ["sudo rm -rf /"])
+        #expect(presentation.linkRows.map(\.name) == ["mysql"])
+        #expect(presentation.packageRows.map(\.name) == ["git"])
+        #expect(presentation.offersCleanup)
+        #expect(presentation.offersTaps)
+        #expect(presentation.hasRemedies)
+        #expect(presentation.represented == ["formula:mysql", "formula:git"])
+    }
+
+    @Test("a package already shown with a Link button never repeats as a package row")
+    func linkDedup() {
+        let presentation = FindingPresentation(
+            finding: finding(commands: ["brew link mysql", "brew install mysql"]),
+            package: resolve)
+        #expect(presentation.linkRows.map(\.name) == ["mysql"])
+        #expect(presentation.packageRows.isEmpty)
+    }
+
+    @Test("no remediation means no remedies — the prose keeps rendering")
+    func noRemedies() {
+        let presentation = FindingPresentation(
+            finding: DoctorReport.Finding(text: "x", tier: nil, affects: nil, links: nil,
+                                          remediation: nil),
+            package: resolve)
+        #expect(presentation.hasRemedies == false)
+        #expect(presentation.chips.isEmpty)
+    }
+}

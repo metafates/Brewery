@@ -125,7 +125,7 @@ nonisolated enum CaveatFormat {
         // speaks NSRange over the plain string; both index spaces count characters, so offsets
         // carry across.
         let plain = String(result.characters)
-        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+        if let detector = linkDetector {
             for match in detector.matches(in: plain, range: NSRange(plain.startIndex..., in: plain)) {
                 guard let url = match.url, let range = Range(match.range, in: plain) else { continue }
                 let lower = result.characters.index(
@@ -138,4 +138,10 @@ nonisolated enum CaveatFormat {
         }
         return result
     }
+
+    /// Compiled once: constructing NSDataDetector builds a regex engine, and `attributed`
+    /// runs per prose block per render. Matching is thread-safe (NSRegularExpression's
+    /// documented guarantee).
+    private static let linkDetector =
+        try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 }
