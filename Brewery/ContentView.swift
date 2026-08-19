@@ -328,7 +328,10 @@ struct ContentView: View {
                 // Return opens the top hit — the keyboard path from typing a name to reading about
                 // it, without reaching for the pointer.
                 .onSubmit(of: .search) {
-                    if let hit = displayedHits.first { select(hit.package) }
+                    // Only a landed ranking has a top hit; a browse listing's first card is
+                    // arbitrary, and Return must not claim it as the best match.
+                    guard isSearching, let hit = results[section]?.first else { return }
+                    select(hit.package)
                 }
                 // A pane, not a sheet: the listing stays live beside it, it resizes with the
                 // window, and nothing has to be dismissed before the next card can be clicked.
@@ -895,10 +898,27 @@ struct ContentView: View {
             return ""
         }
 
+        // The tap list renders tap rows, not packages — count what TapsView actually shows,
+        // before the search guard, or searching taps reports "0 results" of packages while
+        // matching rows sit on screen (the Checkup rule).
+        if section == .taps, model.selectedTap == nil {
+            let query = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else {
+                let taps = model.tapInfos.count + 2   // + the two built-in rows
+                return "\(taps) taps"
+            }
+            let lowered = query.lowercased()
+            let matches = model.tapInfos.count { $0.name.lowercased().contains(lowered) }
+                + ["homebrew/core", "homebrew/cask"].count { $0.contains(lowered) }
+            return "\(matches == 1 ? "1 result" : "\(matches) results") for “\(query)”"
+        }
+
         let count = displayedCount
         let formatted = count.formatted(.number)
         guard !isSearching, !isNarrowed else {
-            let results = count == 1 ? "1 result" : "\(formatted) results"
+            // The ranker stops at its cap; claiming the cap as the true total would lie.
+            let results = count == FuzzySearch.resultLimit ? "Top \(formatted) results"
+                        : count == 1 ? "1 result" : "\(formatted) results"
             let query = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
             // Finder's grammar (Searching “This Mac”): the count names its query, in curly
             // quotes. A filter-only narrowing has no query to name.
@@ -910,9 +930,8 @@ struct ContentView: View {
         case .outdated: return "\(formatted) outdated"
         case .services: return count == 1 ? "1 service" : "\(formatted) services"
         case .taps:
-            if model.selectedTap != nil { return count == 1 ? "1 package" : "\(formatted) packages" }
-            let taps = model.tapInfos.count + 2   // + the two built-in rows
-            return "\(taps) taps"
+            // The list is handled above; reaching here means a tap page's grid.
+            return count == 1 ? "1 package" : "\(formatted) packages"
         case .orphans: return count == 1 ? "1 orphan" : "\(formatted) orphans"
         case .attention: return count == 1 ? "1 needs attention" : "\(formatted) need attention"
         case .storage: return count == 1 ? "1 with old versions" : "\(formatted) with old versions"
