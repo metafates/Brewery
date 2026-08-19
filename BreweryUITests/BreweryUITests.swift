@@ -7,6 +7,23 @@
 
 import XCTest
 
+/// The persisted surface state, pinned through the argument domain: tests assume a Discover
+/// launch with default filters, and the argument domain evaporates with the process — nothing
+/// writes the user's real defaults. Bools are plist literals: argument-domain scalars arrive
+/// as strings otherwise, which `@AppStorage`'s `object(forKey:) as? Bool` read would miss.
+enum UITestSeed {
+    static let pinnedState = [
+        "-sidebar.section", "discover",
+        "-installed.showDependencies", "<false/>",
+        "-discover.kindFilter", "all",
+        "-discover.hideDeprecated", "<false/>",
+        "-discover.tapsOnly", "<false/>",
+        "-installed.kindFilter", "all",
+        "-installed.tapsOnly", "<false/>",
+        "-installed.sort", "name",
+    ]
+}
+
 /// Smoke + responsiveness. The unit tests cover the pure logic; these exist because the
 /// interaction cost of the grid — how long the app takes to answer a click or a keystroke —
 /// is invisible to them and is exactly where the app has hurt.
@@ -14,20 +31,25 @@ final class BreweryUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        // The app restores its last sidebar section and Installed scope (v9/v10). Tests
-        // assume a Discover launch, so an earlier test's parking spot must not leak into
-        // the next one's — in-suite order made three tests fail that passed solo.
-        let defaults = UserDefaults(suiteName: "one.metafates.Brewery")
-        defaults?.removeObject(forKey: "sidebar.section")
-        defaults?.removeObject(forKey: "installed.showDependencies")
     }
 
     private func launched() -> XCUIApplication {
         let app = XCUIApplication()
+        app.launchArguments += UITestSeed.pinnedState
         app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 60),
                       "The app launched but never showed a window.")
         return app
+    }
+
+    /// A fixed sleep under-waits a cold cache (the documented `cacheVersion` re-download) and
+    /// over-waits a warm one: wait for cards, then a short settle so the pinned timings still
+    /// measure interaction, not startup.
+    private func waitForCatalog(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Formula'"))
+                        .firstMatch.waitForExistence(timeout: 120),
+                      "Catalog never landed.")
+        sleep(2)
     }
 
     /// Focus the search field via the app's own ⌘F command. A synthetic `.click()` on the field
@@ -59,8 +81,7 @@ final class BreweryUITests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 60), "No search field.")
 
-        // Let the catalog land first, so this measures interaction and not startup.
-        sleep(20)
+        waitForCatalog(app)
 
         let start = Date()
         field.click()
@@ -75,7 +96,7 @@ final class BreweryUITests: XCTestCase {
         let app = launched()
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 60), "No search field.")
-        sleep(20)
+        waitForCatalog(app)
         app.typeKey("f", modifierFlags: .command)
 
         var worst: TimeInterval = 0
@@ -99,7 +120,7 @@ final class BreweryUITests: XCTestCase {
     func testScrollingIsResponsive() throws {
         let app = launched()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
-        sleep(20)
+        waitForCatalog(app)
 
         var worst: TimeInterval = 0
         for _ in 0..<5 {
@@ -118,7 +139,7 @@ extension BreweryUITests {
     func testFocusSearchOnEmptySection() throws {
         let app = launched()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
-        sleep(20)
+        waitForCatalog(app)
 
         // Scoped to the sidebar: since cards grew an "Installed" state label, bare staticText
         // queries can match a card and become ambiguous.
@@ -134,7 +155,11 @@ extension BreweryUITests {
         let field = app.searchFields.firstMatch
         let t1 = Date()
         field.click()
-        print("EMPTY_SECTION_FOCUS_SECONDS \(Date().timeIntervalSince(t1))")
+        let focusElapsed = Date().timeIntervalSince(t1)
+        print("EMPTY_SECTION_FOCUS_SECONDS \(focusElapsed)")
+        // The same pin as the Discover click: without it the experiment can never fail.
+        XCTAssertLessThan(focusElapsed, 1.0,
+                          "Focusing search on an empty section took \(focusElapsed)s.")
     }
 }
 
@@ -144,7 +169,7 @@ extension BreweryUITests {
     func testSearchResultsSurviveTabSwitch() throws {
         let app = launched()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
-        sleep(20)
+        waitForCatalog(app)
 
         let field = focusSearch(app, typing: "vim")
         sleep(2)
@@ -170,18 +195,16 @@ extension BreweryUITests {
 
 /// Regression: narrowing a search down to a single card must not shift the grid vertically.
 extension BreweryUITests {
-    /// Cards are the only large buttons on screen; toolbar items are small.
     private func topCardY(_ app: XCUIApplication) -> (y: CGFloat, count: Int) {
-        let cards = app.buttons.allElementsBoundByIndex
-            .map(\.frame)
-            .filter { $0.height > 100 && $0.width > 150 }
-        return (cards.map(\.origin.y).min() ?? -1, cards.count)
+        let frames = app.buttons.matching(identifier: "PackageCard")
+            .allElementsBoundByIndex.map(\.frame)
+        return (frames.map(\.origin.y).min() ?? -1, frames.count)
     }
 
     func testGridDoesNotShiftWhenNarrowingToOneResult() throws {
         let app = launched()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
-        sleep(20)
+        waitForCatalog(app)
 
         focusSearch(app, typing: "wget")
         sleep(2)
@@ -203,15 +226,13 @@ extension BreweryUITests {
 /// usable while the pane is open, the change bought nothing.
 extension BreweryUITests {
     private func cards(_ app: XCUIApplication) -> [XCUIElement] {
-        app.buttons.allElementsBoundByIndex.filter {
-            $0.frame.height > 100 && $0.frame.width > 150
-        }
+        app.buttons.matching(identifier: "PackageCard").allElementsBoundByIndex
     }
 
     func testGridStaysUsableWithThePaneOpen() throws {
         let app = launched()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
-        sleep(20)
+        waitForCatalog(app)
 
         focusSearch(app, typing: "openssl")
         sleep(2)
@@ -241,7 +262,7 @@ extension BreweryUITests {
     func testSectionShortcutsSwitchSections() throws {
         let app = launched()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
-        sleep(15)
+        waitForCatalog(app)
 
         let window = app.windows.firstMatch
         for (key, section) in [("2", "Installed"), ("3", "Outdated"), ("5", "Taps"), ("1", "Discover")] {
@@ -269,7 +290,7 @@ extension BreweryUITests {
     func testEmptySearchKeepsSidebar() throws {
         let app = launched()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
-        sleep(15)
+        waitForCatalog(app)
 
         focusSearch(app, typing: "zzzznotapackage")
         sleep(2)

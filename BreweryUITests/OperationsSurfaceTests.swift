@@ -16,14 +16,17 @@ final class OperationsSurfaceTests: XCTestCase {
     @MainActor
     func testOperationsButtonAndLogWindow() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo-operation"]
+        app.launchArguments = ["-demo-operation"] + UITestSeed.pinnedState
         app.launch()
 
-        // The single-window rule survives the log WindowGroup: no File > New Window.
+        // The single-window rule survives the log WindowGroup: no File > New Window. Wait for
+        // the opened menu itself — an absence assert against an unopened menu is always green.
         let fileMenu = app.menuBars.menuBarItems["File"]
         XCTAssertTrue(fileMenu.waitForExistence(timeout: 10))
         fileMenu.click()
-        XCTAssertFalse(app.menuBars.menuItems["New Window"].exists)
+        let fileItems = fileMenu.menus.firstMatch
+        XCTAssertTrue(fileItems.waitForExistence(timeout: 5))
+        XCTAssertFalse(fileItems.menuItems["New Window"].exists)
         app.typeKey(.escape, modifierFlags: [])
 
         // Exposed as a button even with the spinner-and-count label.

@@ -61,6 +61,8 @@ struct PackageCardView: View {
         }
         .buttonStyle(CardButtonStyle(isSelected: isSelected))
         .accessibilityHint("Shows package details")
+        // The UI tests' card query: frame-based filtering silently dropped short cards.
+        .accessibilityIdentifier("PackageCard")
         .overlay(alignment: .bottomTrailing) {
             actionButton
                 .padding(12)
