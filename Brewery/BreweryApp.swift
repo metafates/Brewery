@@ -13,13 +13,28 @@ import TipKit
 struct BreweryApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
-    /// v11 — the same key `ContentView` binds; `@AppStorage` is how a `Commands` builder and a
-    /// view share a preference without threading it through the model.
+    /// v11 — the same keys `ContentView` binds; `@AppStorage` is how a `Commands` builder and
+    /// a view share a preference without threading it through the model.
     @AppStorage("installed.sort") private var installedSort: InstalledSort = .name
+    @AppStorage("discover.kindFilter") private var kindFilter: KindFilter = .all
+    @AppStorage("discover.hideDeprecated") private var hideDeprecated = false
+    @AppStorage("discover.tapsOnly") private var tapsOnly = false
+    @AppStorage("installed.kindFilter") private var installedKindFilter: KindFilter = .all
+    @AppStorage("installed.tapsOnly") private var installedTapsOnly = false
+    @AppStorage("installed.showDependencies") private var showDependencies = false
 
     init() {
         // One-time coaching tips (Discover's kinds explainer); dismissal persists.
         try? Tips.configure()
+    }
+
+    /// The section on screen decides which section's keys the Filter commands drive.
+    private var currentKindFilter: Binding<KindFilter> {
+        model.selection == .installed ? $installedKindFilter : $kindFilter
+    }
+
+    private var currentTapsOnly: Binding<Bool> {
+        model.selection == .installed ? $installedTapsOnly : $tapsOnly
     }
 
     var body: some Scene {
@@ -70,6 +85,25 @@ struct BreweryApp: App {
             }
             CommandGroup(after: .sidebar) {
                 Divider()
+                // The Sort By rule, applied to its Filter twin: every toolbar action needs a
+                // menu bar command. One stable item set (the menu bar's same-items rule): one
+                // Kind picker bound to the section on screen, each toggle disabled where its
+                // section isn't current, the whole menu disabled elsewhere.
+                Menu("Filter") {
+                    Picker("Kind", selection: currentKindFilter) {
+                        ForEach(KindFilter.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Toggle("Hide Deprecated", isOn: $hideDeprecated)
+                        .disabled(model.selection != .discover)
+                    Toggle("From Taps Only", isOn: currentTapsOnly)
+                    Toggle("Show Dependencies", isOn: $showDependencies)
+                        .disabled(model.selection != .installed)
+                }
+                .disabled(model.selection != .discover && model.selection != .installed)
                 // v11 — the sort menu's menu-bar twin. Always present, disabled outside
                 // Installed ("always show the same set of menu items" — the menu bar's rule),
                 // Toggles for the you-are-here checkmark (the destinations' pattern), ⌃⌘1…3 —
@@ -95,6 +129,8 @@ struct BreweryApp: App {
                 Button(model.showOperations ? "Hide Operations" : "Show Operations") {
                     model.showOperations.toggle()
                 }
+                // ⌥⌘L, Safari's Downloads — the popover this app grew from.
+                .keyboardShortcut("l", modifiers: [.command, .option])
                 .disabled(model.operations.isEmpty)
             }
             // The app's own commands earn their own menu: they act on Homebrew, not on the view.
