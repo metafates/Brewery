@@ -1,6 +1,6 @@
 # Brewery
 
-macOS app: SwiftUI, Xcode 26 project, single scheme `Brewery`. No third-party dependencies. See `ARCHITECTURE.md` — it is the spec, not an afterthought: features are designed there first (versioned inline as v1…v7), each grounded in facts verified against the Homebrew source, then implemented. A local brew checkout for verifying such facts lives at `/Users/vzbarashchenko/Code/github/brew` — cite `file:line` from it rather than trusting memory; brew 6.x changed a lot (tap trust gate, services in core).
+macOS app: SwiftUI, Xcode 26 project, single scheme `Brewery`. No third-party dependencies. See `ARCHITECTURE.md` — it is the spec, not an afterthought: features are designed there first, each grounded in facts verified against the Homebrew source, then implemented — and the document is a current-state spec, rewritten in place as the system changes (no inline version numbering; history lives in git). A local brew checkout for verifying such facts lives at `/Users/vzbarashchenko/Code/github/brew` — cite `file:line` from it rather than trusting memory; brew 6.x changed a lot (tap trust gate, services in core).
 
 ## Build & test (all headless, no Xcode GUI needed)
 
