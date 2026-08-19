@@ -205,9 +205,6 @@ struct ContentView: View {
     /// filters: it is a view preference, and the View ▸ Sort By commands share it by key.
     @AppStorage("installed.sort") private var installedSort: InstalledSort = .name
 
-    /// The Taps section's in-column drill-down: nil shows the tap list, a name shows that tap's
-    /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs.
-    @State private var selectedTap: String?
     /// The tap page's kind filter. Deliberately transient (@State, reset per page): a persisted
     /// filter that silently empties the next tap's page would read as data loss.
     @State private var tapKindFilter: KindFilter = .all
@@ -225,7 +222,6 @@ struct ContentView: View {
     /// The inputs each cached listing was built from, so revisiting a tab with nothing changed
     /// skips the rebuild outright instead of paying it on every switch.
     @State private var builtKeys: [SidebarSection: BrowseKey] = [:]
-    @State private var showAddTap = false
     @FocusState private var searchFocused: Bool
 
     /// How many cards are handed to the grid. It grows as the end of the list is reached and resets
@@ -389,7 +385,7 @@ struct ContentView: View {
             // Discover browses by popularity, not by name: an alphabetical walk of 16k packages
             // opens on "0 A.D." and never reaches anything anyone installs. Installed and Outdated
             // are inventories, where alphabetical is the order you scan.
-            if section == .discover || (section == .taps && TapStore.coreTaps.contains(selectedTap ?? "")) {
+            if section == .discover || (section == .taps && TapStore.coreTaps.contains(model.selectedTap ?? "")) {
                 packages.sort(by: Package.popularityOrder)
             }
             // v11 — Installed's chosen order, every scope. Search results stay relevance-ranked
@@ -416,24 +412,8 @@ struct ContentView: View {
             await model.measureSizes()
         }
         .onChange(of: searchKey.window) { window = Self.windowStep }
-        .onChange(of: model.selection) { if section != .taps { selectedTap = nil } }
-        .onChange(of: selectedTap) { tapKindFilter = .all }
+        .onChange(of: model.selectedTap) { tapKindFilter = .all }
         .onChange(of: model.findRequests) { searchFocused = true }
-        // Homebrew ▸ Add Tap… lands on the tap list first: the popover hangs off a toolbar button
-        // that a drilled-in tap page does not show.
-        .onChange(of: model.addTapRequests) {
-            selectedTap = nil
-            showAddTap = true
-        }
-        // v14 — the pane's Browse All escape lands on the tap's own grid. The selection
-        // change has already fired by the time this runs, so the reset guard has passed.
-        .onChange(of: model.openTapRequests) {
-            selectedTap = model.requestedTap
-        }
-        // v21 — Checkup's Show in Taps lands on the *list*: Remove Tap… lives on its rows.
-        .onChange(of: model.showTapListRequests) {
-            selectedTap = nil
-        }
         .onChange(of: model.failureToPresent?.id) { _, failure in
             guard failure != nil else { return }
             model.showOperations = true
@@ -462,11 +442,11 @@ struct ContentView: View {
             // mounted, keeping its scroll position for the way back.
             ZStack {
                 TapsView(searchText: searchText, onSelect: openTap)
-                    .opacity(selectedTap == nil ? 1 : 0)
+                    .opacity(model.selectedTap == nil ? 1 : 0)
                     // Disabled, not just covered: the hidden rows must leave the Tab order.
-                    .disabled(selectedTap != nil)
-                    .accessibilityHidden(selectedTap != nil)
-                if let tap = selectedTap {
+                    .disabled(model.selectedTap != nil)
+                    .accessibilityHidden(model.selectedTap != nil)
+                if let tap = model.selectedTap {
                     packageGrid(tap: tap)
                         // Opaque, so the mounted list never shows through between the cards.
                         .background(.background)
@@ -516,7 +496,7 @@ struct ContentView: View {
         if let package = model.selectedPackage {
             // The pane's back yields ⌘[ while a tap page shows its own — one shortcut, one owner.
             PackageDetailView(package: package,
-                              ownsBackShortcut: !(section == .taps && selectedTap != nil))
+                              ownsBackShortcut: !(section == .taps && model.selectedTap != nil))
                 .id(package.id)
         } else {
             // Reachable: ⌘I opens the pane whether or not anything is selected.
@@ -614,7 +594,7 @@ struct ContentView: View {
     /// it asynchronously, and a page that lands empty and fills a beat later reads as a bug.
     private func openTap(_ tap: String) {
         browseHits[.taps] = browseListing(for: tap)
-        selectedTap = tap
+        model.selectedTap = tap
         // Computed after the assignment, so the key names the new tap: what was just built is
         // exactly what the browse task would rebuild — record it so the task skips.
         builtKeys[.taps] = browseKey
@@ -676,13 +656,13 @@ struct ContentView: View {
 
     /// A tap page titles the window with its tap's name.
     private var title: String {
-        if section == .taps, let tap = selectedTap { return tap }
+        if section == .taps, let tap = model.selectedTap { return tap }
         return section.title
     }
 
     /// On a tap page the search field searches that tap's packages, not the tap list.
     private var searchPrompt: String {
-        if section == .taps, selectedTap != nil { return "Search Packages" }
+        if section == .taps, model.selectedTap != nil { return "Search Packages" }
         return section.searchPrompt
     }
 
@@ -713,7 +693,7 @@ struct ContentView: View {
         case .installed: installedFiltered(model.installedPackages(scope: showDependencies ? .all : .onRequest))
         case .outdated: model.outdatedPackages
         case .services: model.servicePackages
-        case .taps: tapPagePackages(for: selectedTap)
+        case .taps: tapPagePackages(for: model.selectedTap)
         case .orphans: model.installedPackages(scope: .orphans)
         case .attention: model.installedPackages(scope: .attention)
         case .storage: model.installedPackages(scope: .storage)
@@ -833,7 +813,7 @@ struct ContentView: View {
                   tapsOnly: tapsOnly,
                   installedTapsOnly: installedTapsOnly,
                   installedSort: installedSort,
-                  selectedTap: selectedTap,
+                  selectedTap: model.selectedTap,
                   tapKindFilter: tapKindFilter,
                   catalogGeneration: model.catalogGeneration,
                   installedCount: model.installed.count,
@@ -853,7 +833,7 @@ struct ContentView: View {
                                       tapsOnly: tapsOnly,
                                       installedTapsOnly: installedTapsOnly,
                                       installedSort: installedSort,
-                                      selectedTap: selectedTap,
+                                      selectedTap: model.selectedTap,
                                       tapKindFilter: tapKindFilter),
                   catalogGeneration: model.catalogGeneration,
                   commandCount: model.commandIndex.count,
@@ -928,7 +908,7 @@ struct ContentView: View {
         case .outdated: return "\(formatted) outdated"
         case .services: return count == 1 ? "1 service" : "\(formatted) services"
         case .taps:
-            if selectedTap != nil { return count == 1 ? "1 package" : "\(formatted) packages" }
+            if model.selectedTap != nil { return count == 1 ? "1 package" : "\(formatted) packages" }
             let taps = model.tapInfos.count + 2   // + the two built-in rows
             return "\(taps) taps"
         case .orphans: return count == 1 ? "1 orphan" : "\(formatted) orphans"
@@ -946,7 +926,7 @@ struct ContentView: View {
         case .discover: filtersActive
         case .installed: installedKindFilter != .all || installedTapsOnly
         case .outdated, .services, .orphans, .attention, .storage, .checkup: false
-        case .taps: selectedTap != nil && tapKindFilter != .all
+        case .taps: model.selectedTap != nil && tapKindFilter != .all
         }
     }
 
@@ -957,11 +937,11 @@ struct ContentView: View {
     /// make the user update one card at a time.
     @ToolbarContentBuilder private var filterToolbar: some ToolbarContent {
         if section == .taps {
-            if selectedTap != nil {
+            if model.selectedTap != nil {
                 // In-column drill-down: back belongs in the navigation slot.
                 ToolbarItem(placement: .navigation) {
                     Button {
-                        selectedTap = nil
+                        model.selectedTap = nil
                     } label: {
                         Label("Taps", systemImage: "chevron.backward")
                     }
@@ -980,13 +960,13 @@ struct ContentView: View {
             } else {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        showAddTap = true
+                        model.showAddTap = true
                     } label: {
                         Label("Add Tap", systemImage: "plus")
                     }
                     .help("Add a package catalog from GitHub")
                     .accessibilityLabel("Add Tap")
-                    .popover(isPresented: $showAddTap, arrowEdge: .bottom) {
+                    .popover(isPresented: Bindable(model).showAddTap, arrowEdge: .bottom) {
                         AddTapPopover(onAdd: { model.addTap($0) })
                     }
                 }

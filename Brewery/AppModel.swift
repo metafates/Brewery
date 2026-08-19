@@ -85,8 +85,18 @@ final class AppModel {
         rawValue: UserDefaults.standard.string(forKey: "sidebar.section") ?? "") ?? .discover {
         didSet {
             if let selection { UserDefaults.standard.set(selection.rawValue, forKey: "sidebar.section") }
+            // Leaving Taps closes its drill-down; landing anywhere is a whole section.
+            if selection != .taps { selectedTap = nil }
         }
     }
+
+    /// The Taps section's in-column drill-down: nil shows the tap list, a name shows that tap's
+    /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs. Model
+    /// state for `selection`'s own reason: menu commands need to read and steer it — the
+    /// request-counter channel this replaces existed only because they couldn't.
+    var selectedTap: String?
+    /// The Add Tap popover, anchored to the tap list's + toolbar button.
+    var showAddTap = false
     var showOperations = false
     /// Open by default: the first card click then describes into a pane that is already laid
     /// out, instead of reflowing the whole grid to make room (Mail's reading-pane grammar —
@@ -117,19 +127,6 @@ final class AppModel {
     /// Bumped by the ⌘F menu command. `ContentView` observes it and moves focus to the search
     /// field — the automatic ⌘F binding has historically been unreliable on macOS.
     private(set) var findRequests = 0
-
-    /// Same channel for Homebrew ▸ Add Tap…: the popover is anchored to a toolbar button that only
-    /// exists on the tap list, so the view has to leave any drill-down before presenting it.
-    private(set) var addTapRequests = 0
-
-    /// v14 — the pane's Browse All escape: the Taps section drills into this tap on request.
-    private(set) var openTapRequests = 0
-    private(set) var requestedTap: String?
-
-    /// v21 — the Checkup report's "Show in Taps": the tap *list*, not a tap page — Remove
-    /// Tap… lives on the list row's context menu, and stranding the user one level below the
-    /// affordance the finding points at would be a dead end.
-    private(set) var showTapListRequests = 0
 
     let client = BrewClient()
 
@@ -1312,21 +1309,24 @@ final class AppModel {
         findRequests += 1
     }
 
+    /// Homebrew ▸ Add Tap… lands on the tap list first: the popover hangs off a toolbar
+    /// button that a drilled-in tap page does not show.
     func requestAddTap() {
         selection = .taps
-        addTapRequests += 1
+        selectedTap = nil
+        showAddTap = true
     }
 
+    /// v14 — the pane's Browse All escape: the Taps section drills into this tap.
     func requestOpenTap(_ tap: String) {
         selection = .taps
-        requestedTap = tap
-        openTapRequests += 1
+        selectedTap = tap
     }
 
     /// v21 — Checkup's "Show in Taps": the list, where Remove Tap… lives.
     func requestShowTapList() {
         selection = .taps
-        showTapListRequests += 1
+        selectedTap = nil
     }
 }
 
