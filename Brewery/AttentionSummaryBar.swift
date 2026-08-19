@@ -18,7 +18,7 @@ struct AttentionSummaryBar: View {
         if count > 0 {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 26))
+                    .font(.largeTitle)
                     // The banner's warning colour, not the tint: this bar is the same fact.
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)

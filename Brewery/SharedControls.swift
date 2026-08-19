@@ -198,6 +198,7 @@ struct CopyButton: View {
     let text: String
 
     @State private var copied = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button {
@@ -212,7 +213,9 @@ struct CopyButton: View {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
                 // The z-axis story: the old glyph recedes, the new one arrives — and the same
                 // motion plays the reset. Doubled speed; a confirmation should be a blink.
-                .contentTransition(.symbolEffect(.replace.downUp, options: .speed(2)))
+                // Reduce Motion swaps in place — the checkmark is the feedback, not the ride.
+                .contentTransition(reduceMotion ? .identity
+                                                : .symbolEffect(.replace.downUp, options: .speed(2)))
                 // Both glyphs live in one fixed box — without it the swap reflows the row by
                 // the width difference between the two symbols.
                 .frame(width: 18, height: 16)
@@ -275,7 +278,9 @@ struct WorkingCapsule: View {
             .font(.callout.weight(.medium))
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
-            .glassEffect()
+            // A standard material, not Liquid Glass: glass belongs to the chrome layer, and
+            // this chip renders in content — including over the veil's blurred cards.
+            .background(.regularMaterial, in: .capsule)
             .accessibilityElement(children: .combine)
     }
 }
@@ -305,7 +310,7 @@ struct CodeChip: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
+        .background(.quinary, in: .rect(cornerRadius: 6))
     }
 }
 
@@ -320,11 +325,17 @@ struct TapTile: View {
     var remote: String? = nil
     var size: CGFloat = 32
 
+    /// Tiles grow with the text beside them — PackageIconView's rule, so the two species
+    /// sharing a row grammar scale together.
+    @ScaledMetric(relativeTo: .headline) private var scale = 1
+
     @State private var image: NSImage?
     @State private var isLoading = false
 
+    private var side: CGFloat { size * scale }
+
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+        RoundedRectangle(cornerRadius: side * 0.22, style: .continuous)
     }
 
     var body: some View {
@@ -338,7 +349,7 @@ struct TapTile: View {
                     .transition(.opacity)
             } else {
                 shape
-                    .fill(.quaternary.opacity(0.6))
+                    .fill(.quinary)
                     .overlay {
                         Image(systemName: "spigot")
                             .foregroundStyle(.secondary)
@@ -347,7 +358,7 @@ struct TapTile: View {
                     .transition(.opacity)
             }
         }
-        .frame(width: size, height: size)
+        .frame(width: side, height: side)
         .animation(.easeOut(duration: 0.2), value: image == nil)
         .accessibilityHidden(true)
         .task(id: "\(name)|\(remote ?? "")") {

@@ -25,7 +25,7 @@ struct OrphanSummaryBar: View {
                 Image(systemName: "arrow.3.trianglepath")
                     // The Discover tip's scale (TipView's glyph) — the report bars share its
                     // banner grammar, so they share its metrics.
-                    .font(.system(size: 26))
+                    .font(.largeTitle)
                     .foregroundStyle(.tint)
                     .accessibilityHidden(true)
 

@@ -1103,7 +1103,8 @@ struct ContentView: View {
                             // down rather than as unrelated numbers replacing each other.
                             Text(model.activeCount, format: .number)
                                 .monospacedDigit()
-                                .contentTransition(.numericText(value: Double(model.activeCount)))
+                                .contentTransition(reduceMotion ? .identity
+                                                                 : .numericText(value: Double(model.activeCount)))
                                 .animation(.smooth(duration: 0.25), value: model.activeCount)
                         }
                         // Opaque to accessibility: a bare ProgressView in a button's label

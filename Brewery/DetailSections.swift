@@ -456,7 +456,7 @@ struct DetailBanner: View {
     /// replaces the quiet fill without a reflow.
     private var placeholder: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(.quaternary.opacity(0.5))
+            .fill(.quinary)
             .aspectRatio(2, contentMode: .fit)
             .accessibilityHidden(true)
     }

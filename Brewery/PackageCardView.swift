@@ -162,7 +162,8 @@ struct PackageCardView: View {
         if package.disabled {
             segments.append(Text("disabled").foregroundStyle(.red))
         } else if package.deprecated {
-            segments.append(Text("deprecated").foregroundStyle(.red))
+            // Orange like the pane's banner: deprecated still installs, disabled doesn't.
+            segments.append(Text("deprecated").foregroundStyle(.orange))
         }
         if model.outdated[id]?.pinned == true {
             segments.append(Text("pinned").foregroundStyle(.secondary))
