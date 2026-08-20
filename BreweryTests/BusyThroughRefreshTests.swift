@@ -48,6 +48,21 @@ struct BusyThroughRefreshTests {
         #expect(model.operations.map(\.title) == ["Installing wget", "Updating all packages"])
     }
 
+    @Test func upgradeAllNeverHoldsAPinnedCard() {
+        let model = AppModel()
+        model.outdated[wget.id] = OutdatedInfo(installed: ["1.24.0"], current: "1.25.0",
+                                               pinned: false)
+        // Pinned through the ledger scan, not the payload: brew re-reads pins at upgrade
+        // time, so a scan-known pin must exempt the card even while the payload lags.
+        model.pinned.insert(wget.id)
+        let operation = BrewOperation(command: .upgradeAll,
+                                      title: "Updating all packages", targetID: nil)
+        operation.state = .running
+        model.operations.append(operation)
+
+        #expect(model.status(for: wget) == .outdated(installed: "1.24.0", current: "1.25.0"))
+    }
+
     @Test func finishedUpgradeAllHoldsEveryOutdatedCard() {
         let model = AppModel()
         model.outdated[wget.id] = OutdatedInfo(installed: ["1.24.0"], current: "1.25.0",

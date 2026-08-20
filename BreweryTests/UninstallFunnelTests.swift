@@ -53,6 +53,20 @@ struct UninstallFunnelTests {
         #expect(model.isPinned(wget))
     }
 
+    @Test("a scan-pinned, up-to-date package never reaches the dialog either")
+    func scanPinnedBlocked() {
+        let model = AppModel()
+        model.installed[wget.id] = InstalledInfo(versions: ["1.25.0"])
+        // No outdated entry at all — the ledger scan is the only pin source here.
+        model.pinned.insert(wget.id)
+
+        model.uninstall(wget)
+
+        #expect(model.pendingUninstall == nil)
+        #expect(model.uninstallableSelection == nil)
+        #expect(model.isPinned(wget))
+    }
+
     @Test("the zap choice picks .zap only for a cask whose receipt has a zap stanza")
     func zapNeedsTheStanza() {
         #expect(AppModel.uninstallCommand(name: "iterm2", kind: .cask, zap: true, hasZap: true)

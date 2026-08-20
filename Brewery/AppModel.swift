@@ -48,6 +48,10 @@ final class AppModel {
     /// formula that defines a service has an entry, whatever its state.
     var serviceStatuses: [String: ServiceStatus] = [:]
 
+    /// The pin-ledger scan (`PinStore.scan`) — the outdated payload's `pinned` flag only
+    /// covers outdated packages, so `isPinned` unions this with it.
+    var pinned: Set<Package.ID> = []
+
     var operations: [BrewOperation] = []
     var brewMissing = false
 
@@ -294,6 +298,7 @@ final class AppModel {
             installed = snapshot.installed
             outdated = snapshot.outdated
             serviceStatuses = snapshot.serviceStatuses
+            pinned = snapshot.pinned ?? []
             dependents = Receipts.invertDependents(snapshot.installed)
         }
 
@@ -467,6 +472,7 @@ final class AppModel {
             outdated = [:]
             dependents = [:]
             serviceStatuses = [:]
+            pinned = []
             // This branch publishes too (empty overlays), so it releases holds the same way.
             releaseRefreshHolds(before: generation)
             // Persisted too: brew gone is a state, not an error — the next launch must not
@@ -475,15 +481,18 @@ final class AppModel {
             return
         }
 
-        // Three independent probes, structured: `async let` runs them concurrently and each
-        // read stays independently optional.
+        // Four independent probes, structured: `async let` runs them concurrently and each
+        // read stays independently optional (the pin scan cannot fail — a missing ledger is
+        // an empty set).
         async let installedFetch = client.listInstalled()
         async let outdatedFetch = client.outdated()
         async let servicesFetch = client.servicesList()
+        async let pinnedScan = PinStore.scan(prefix: client.prefix)
 
         let installedResult = try? await installedFetch
         let outdatedResult = try? await outdatedFetch
         let servicesResult = try? await servicesFetch
+        let pinnedResult = await pinnedScan
 
         let folded: [Package.ID: InstalledInfo]?
         if let installedResult {
@@ -515,6 +524,7 @@ final class AppModel {
         }
         if let outdatedResult { outdated = outdatedResult }
         if let servicesResult { serviceStatuses = servicesResult }
+        pinned = pinnedResult
         // Recompose only on a real change — scans are usually identical, and an unchanged catalog
         // must not invalidate the view layer's keys.
         if let scan, scan != tapScan {
@@ -530,7 +540,7 @@ final class AppModel {
     /// only costs the next launch its head start.
     private func persistStateSnapshot() {
         let snapshot = StateSnapshot(installed: installed, outdated: outdated,
-                                     serviceStatuses: serviceStatuses)
+                                     serviceStatuses: serviceStatuses, pinned: pinned)
         Task { await snapshot.save() }
     }
 
@@ -678,7 +688,7 @@ final class AppModel {
             if operation.targetID == package.id { return true }
             if operation.command == .upgradeAll,
                operation.state == .running || operation.awaitingRefresh,
-               let info = outdated[package.id], !info.pinned {
+               outdated[package.id] != nil, !isPinned(package) {
                 return true
             }
         }
@@ -1133,8 +1143,11 @@ final class AppModel {
 
     /// Read-only pin state, hoisted from the pane so the pane, the card's context
     /// menu and the menu bar all read one rule.
+    /// The union of the pin-ledger scan and the outdated payload's flag: the scan covers
+    /// pins on current packages, the flag bridges the gap between a pin landing and the
+    /// next scan publishing.
     func isPinned(_ package: Package) -> Bool {
-        outdated[package.id]?.pinned == true
+        pinned.contains(package.id) || outdated[package.id]?.pinned == true
     }
 
     /// The menu bar command's target: the selected package, if uninstalling it would work.

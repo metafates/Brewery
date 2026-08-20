@@ -32,13 +32,29 @@ struct StateSnapshotTests {
             ],
             outdated: ["formula:wget": OutdatedInfo(installed: ["1.24.0"], current: "1.25.0", pinned: true)],
             serviceStatuses: ["redis": ServiceStatus(health: .started, exitCode: nil),
-                              "postgresql@17": ServiceStatus(health: .error, exitCode: 1)])
+                              "postgresql@17": ServiceStatus(health: .error, exitCode: 1)],
+            pinned: ["formula:wget", "cask:iterm2"])
         await snapshot.save(to: url)
 
         let loaded = StateSnapshot.load(from: url)
         #expect(loaded?.installed == snapshot.installed)
         #expect(loaded?.outdated == snapshot.outdated)
         #expect(loaded?.serviceStatuses == snapshot.serviceStatuses)
+        #expect(loaded?.pinned == snapshot.pinned)
+    }
+
+    @Test("a snapshot written before the pinned key still loads — no bump for optional additions")
+    func missingPinnedKey() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("""
+        {"version": \(StateSnapshot.currentVersion), "installed": {}, "outdated": {},
+         "serviceStatuses": {}}
+        """.utf8).write(to: url)
+
+        let loaded = StateSnapshot.load(from: url)
+        #expect(loaded != nil)
+        #expect(loaded?.pinned == nil)
     }
 
     @Test("a version mismatch reads as no snapshot")
