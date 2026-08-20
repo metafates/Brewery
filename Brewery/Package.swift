@@ -267,13 +267,21 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
 
     var title: String { displayName ?? name }
 
-    /// The "@4" of charles@4 when a display name hides it: a versioned cask shares its
-    /// display name with the unversioned package, and two cards must never read identically
-    /// at a glance. nil when the title already shows the raw name (formulae — python@3.14
-    /// wears its version in full) or the name is unversioned.
-    var titleVersionSuffix: String? {
-        guard displayName != nil, let at = name.lastIndex(of: "@") else { return nil }
-        return String(name[at...])
+    /// The card title split for hierarchy: base emphasized, the versioned token's @-suffix
+    /// secondary. Raw names split in place (python + @3.14); display names gain the suffix
+    /// only when they don't already state it — "Mozilla Firefox Beta" says what @beta says,
+    /// and the duplicate was truncating the actual name ("…Nightly@nigh…"). The comparison
+    /// normalizes case and punctuation: "Developer Edition" states @developer-edition.
+    var titleParts: (base: String, suffix: String?) {
+        guard let at = name.lastIndex(of: "@"), at != name.startIndex else { return (title, nil) }
+        let suffix = String(name[at...])
+        guard let displayName else { return (String(name[..<at]), suffix) }
+        let stated = Self.lettersAndDigits(displayName).hasSuffix(Self.lettersAndDigits(suffix))
+        return stated ? (displayName, nil) : (displayName, suffix)
+    }
+
+    private static func lettersAndDigits(_ text: String) -> String {
+        text.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     /// SPDX identifier, formulae only — casks carry no license in the API.

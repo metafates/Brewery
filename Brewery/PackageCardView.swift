@@ -35,7 +35,9 @@ struct PackageCardView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         // The versioned-token suffix rides the title dimmed (HIG Typography:
                         // hierarchy via color) — identity, but subordinate to the name.
-                        Text("\(package.title)\(Text(package.titleVersionSuffix ?? "").foregroundStyle(.secondary))")
+                        // No inserted space: formulae render their literal identifier, and
+                        // one grammar serves both kinds; the dim break is the separator.
+                        Text("\(package.titleParts.base)\(Text(package.titleParts.suffix ?? "").foregroundStyle(.secondary))")
                             .font(.headline)
                             .lineLimit(1)
                         statusLine(id: id)

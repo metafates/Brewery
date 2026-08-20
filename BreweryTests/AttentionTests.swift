@@ -163,24 +163,38 @@ struct AttentionTests {
 }
 
 
-/// The card-title disambiguator: charles@4's display name hides its version, charles's
-/// doesn't differ — the suffix is what keeps their cards distinct at a glance.
-struct TitleVersionSuffixTests {
+/// The card-title hierarchy split (the charles@4 disambiguator, minus the Firefox
+/// redundancy): a suffix appears only when the display name does not already state it,
+/// and raw names split in place so the discriminator dims without misquoting the token.
+struct TitlePartsTests {
     private func package(name: String, displayName: String?) -> Package {
         Package(kind: .cask, name: name, displayName: displayName, desc: nil,
                 homepage: nil, version: "1", deprecated: false, disabled: false)
     }
 
-    @Test func versionedCaskExposesItsSuffix() {
-        #expect(package(name: "charles@4", displayName: "Charles").titleVersionSuffix == "@4")
+    @Test func hiddenVersionSurfaces() {
+        let parts = package(name: "charles@4", displayName: "Charles").titleParts
+        #expect(parts.base == "Charles" && parts.suffix == "@4")
     }
 
-    @Test func unversionedCaskHasNone() {
-        #expect(package(name: "charles", displayName: "Charles").titleVersionSuffix == nil)
+    @Test func statedVariantIsNotRepeated() {
+        let parts = package(name: "firefox@beta", displayName: "Mozilla Firefox Beta").titleParts
+        #expect(parts.base == "Mozilla Firefox Beta" && parts.suffix == nil)
     }
 
-    @Test func rawNameTitlesAlreadyShowTheVersion() {
-        // Formulae and display-name-less casks render the token itself — no suffix to add.
-        #expect(package(name: "python@3.14", displayName: nil).titleVersionSuffix == nil)
+    @Test func statementSurvivesPunctuationAndCase() {
+        let parts = package(name: "firefox@developer-edition",
+                            displayName: "Mozilla Firefox Developer Edition").titleParts
+        #expect(parts.suffix == nil)
+    }
+
+    @Test func rawNamesSplitInPlace() {
+        let parts = package(name: "python@3.14", displayName: nil).titleParts
+        #expect(parts.base == "python" && parts.suffix == "@3.14")
+    }
+
+    @Test func unversionedNamesStayWhole() {
+        #expect(package(name: "wget", displayName: nil).titleParts == ("wget", nil))
+        #expect(package(name: "charles", displayName: "Charles").titleParts == ("Charles", nil))
     }
 }
