@@ -91,7 +91,7 @@ struct PackageCardView: View {
             Button(model.installNeedsTrustConsent(package) ? "Install…" : "Install") {
                 model.install(package)
             }
-        case .outdated where model.outdated[id]?.pinned != true:
+        case .outdated where !model.isPinned(package):
             Button("Update") { model.upgrade(package) }
         case .installed:
             // Same rule as the action slot: only a single-bundle cask has something
@@ -165,7 +165,7 @@ struct PackageCardView: View {
             // Orange like the pane's banner: deprecated still installs, disabled doesn't.
             segments.append(Text("deprecated").foregroundStyle(.orange))
         }
-        if model.outdated[id]?.pinned == true {
+        if model.isPinned(package) {
             segments.append(Text("pinned").foregroundStyle(.secondary))
         }
         if isDependency(id: id) {
@@ -216,12 +216,12 @@ struct PackageCardView: View {
                       : "Install \(package.title)")
 
         case .outdated:
-            let pinned = model.outdated[id]?.pinned == true
+            let pinned = model.isPinned(package)
             Button("Update") { model.upgrade(package) }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(pinned)
-                .help(pinned ? "\(package.title) is pinned, so Brewery leaves it alone."
+                .help(pinned ? AppModel.pinnedUpdateHelp(package.title)
                              : "Update \(package.title)")
 
         case .installed:

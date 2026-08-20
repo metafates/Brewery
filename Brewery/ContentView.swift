@@ -429,7 +429,13 @@ struct ContentView: View {
             Button("Remove All", role: .destructive) { model.autoremove() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("These are dependencies nothing needs anymore. You can install any of them again later.")
+            // brew's autoremove selection is pin-blind: a pinned orphan is listed, then the
+            // uninstall refusal skips it — exit 0. Disclose rather than desync the count.
+            Text(model.orphanIDs.contains(where: { id in
+                model.package(for: id).map(model.isPinned) == true
+            })
+            ? "These are dependencies nothing needs anymore. You can install any of them again later. Pinned packages will be skipped."
+            : "These are dependencies nothing needs anymore. You can install any of them again later.")
         }
         .task(id: searchKey) {
             let ranked = section

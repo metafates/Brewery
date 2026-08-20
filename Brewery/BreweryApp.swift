@@ -164,6 +164,15 @@ struct BreweryApp: App {
                 .keyboardShortcut(.delete)
                 .disabled(model.uninstallableSelection == nil)
 
+                // No ellipsis: no dialog follows — pin is non-destructive and mutually
+                // inverse (the service-toggle rule); the title names the verb that will run.
+                Button(model.pinTargetSelection.map {
+                    model.isPinned($0) ? "Unpin \($0.title)" : "Pin \($0.title)"
+                } ?? "Pin") {
+                    if let package = model.pinTargetSelection { model.togglePin(package) }
+                }
+                .disabled(model.pinTargetSelection == nil)
+
                 Divider()
 
                 // The whole-Homebrew verbs that lived only on content buttons. Each ellipsis

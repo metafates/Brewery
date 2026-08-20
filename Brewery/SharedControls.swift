@@ -125,6 +125,9 @@ struct PackageMenuItems: View {
         }
         switch model.status(for: package) {
         case .installed, .outdated:
+            // State-named, Show/Hide's grammar; no ellipsis — no dialog follows (the
+            // service-toggle rule). Busy packages fall out of this case entirely.
+            Button(model.isPinned(package) ? "Unpin" : "Pin") { model.togglePin(package) }
             if !model.isPinned(package) {
                 Divider()
                 Button("Uninstall…", role: .destructive) { model.uninstall(package) }

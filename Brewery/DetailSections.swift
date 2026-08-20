@@ -298,8 +298,17 @@ struct DetailHeader: View {
             }
             .accessibilityElement(children: .combine)
         case let .installed(version):
-            Text("Version \(version.shortVersion) installed")
-                .foregroundStyle(.secondary)
+            // A pin on a current package finally says so — it is also why Uninstall is
+            // missing from the menus.
+            HStack(spacing: 6) {
+                Text("Version \(version.shortVersion) installed")
+                    .foregroundStyle(.secondary)
+                if isPinned {
+                    Text("pinned")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
         case .notInstalled, .busy:
             if !package.version.isEmpty {
                 Text("Version \(package.version.shortVersion)")
@@ -327,7 +336,7 @@ struct DetailHeader: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(isPinned)
                 .help(isPinned
-                      ? "\(package.title) is pinned, so Brewery leaves it alone."
+                      ? AppModel.pinnedUpdateHelp(package.title)
                       : "Update \(package.title)")
                 .accessibilityLabel("Update \(package.title)")
         case .notInstalled:
@@ -359,6 +368,7 @@ struct DetailHeader: View {
             }
             switch model.status(for: package) {
             case .installed, .outdated:
+                Button(isPinned ? "Unpin" : "Pin") { model.togglePin(package) }
                 if !isPinned {
                     Divider()
                     Button("Uninstall…", role: .destructive) { model.uninstall(package) }

@@ -1158,6 +1158,34 @@ final class AppModel {
         return package
     }
 
+    /// Pin and unpin, one toggle: no dialog — non-destructive and mutually inverse, the
+    /// service-toggle rule. Only something on disk can be pinned (pinning a not-installed
+    /// name is brew's one pin failure, exit 1), and never mid-operation.
+    func togglePin(_ package: Package) {
+        guard installed[package.id] != nil || outdated[package.id] != nil,
+              status(for: package) != .busy else { return }
+        let command: BrewCommand = isPinned(package)
+            ? .unpin(name: qualifiedName(for: package), cask: package.kind == .cask)
+            : .pin(name: qualifiedName(for: package), cask: package.kind == .cask)
+        enqueue(command,
+                title: "\(isPinned(package) ? "Unpinning" : "Pinning") \(package.title)",
+                targetID: package.id)
+    }
+
+    /// The menu bar's Pin/Unpin target — `uninstallableSelection`'s shape minus the pin
+    /// check, since the command works both ways.
+    var pinTargetSelection: Package? {
+        guard let package = selectedPackage,
+              installed[package.id] != nil || outdated[package.id] != nil,
+              status(for: package) != .busy else { return nil }
+        return package
+    }
+
+    /// One string for the card's and the pane's disabled Update — they must not drift.
+    nonisolated static func pinnedUpdateHelp(_ title: String) -> String {
+        "\(title) is pinned, so updates skip it. Unpin it to update."
+    }
+
     // MARK: - Services
 
     /// The Services section's rows: exactly what brew reports as available, as packages —
