@@ -38,7 +38,13 @@ final class AppModel {
     /// session's state for the second the probes take instead of a grid of Install buttons;
     /// the probes then correct it silently.
     var installed: [Package.ID: InstalledInfo] = [:]
-    var outdated: [Package.ID: OutdatedInfo] = [:]
+    var outdated: [Package.ID: OutdatedInfo] = [:] {
+        // Dock reporting lives in the model, not a view: the badge must keep counting
+        // after the last window closes.
+        didSet {
+            NSApp.dockTile.badgeLabel = outdated.isEmpty ? nil : outdated.count.formatted(.number)
+        }
+    }
 
     /// "Who requires X", inverted from the receipt dependency lists and rebuilt on every refresh,
     /// in the same step as the installed overlay it is derived from.
@@ -169,6 +175,7 @@ final class AppModel {
     /// (and time out) on every single ⌘R; with it, once per window.
     private var lastMetadataAttempt: Date?
     private var runningTask: Task<Void, Never>?
+    private var backgroundCheckTask: Task<Void, Never>?
     private var refreshGeneration = 0
 
     init() {
@@ -291,6 +298,9 @@ final class AppModel {
     func bootstrap() async {
         guard !didBootstrap else { return }
         didBootstrap = true
+        // Before the first await: bootstrap may be cancelled with its caller, and the
+        // periodic check must outlive whatever started it.
+        startBackgroundChecks()
 
         // Last session's overlays before anything else, so the first frame shows
         // last-known install state instead of Install buttons; the probes below correct it.
@@ -390,6 +400,46 @@ final class AppModel {
     private var metadataIsStale: Bool {
         guard let date = metadataCheckedAt else { return true }
         return Date.now.timeIntervalSince(date) > BrewClient.metadataWindow
+    }
+
+    // MARK: - Background check
+
+    /// The menu bar presence's clock: with the window closed the app still answers for
+    /// updates, so every 6 hours — and on wake — the gentle bootstrap-shaped pass runs:
+    /// the staleness-gated metadata check plus a re-probe. Never the forced `refresh()`,
+    /// whose veil would drop over an open window under the user's cursor.
+    /// `BackgroundCheckTests` pins the interval — a dev-time short cadence must not ship.
+    nonisolated static let backgroundCheckInterval: Duration = .seconds(6 * 60 * 60)
+
+    /// Pure so the gate is testable without a client: a tick yields to an active queue or a
+    /// user-initiated refresh; staleness and attempt-backoff live in `checkForUpdatesIfStale`.
+    nonisolated static func shouldBackgroundCheck(queueActive: Bool, refreshing: Bool) -> Bool {
+        !queueActive && !refreshing
+    }
+
+    private func startBackgroundChecks() {
+        guard backgroundCheckTask == nil else { return }
+        backgroundCheckTask = Task { [weak self] in
+            // ContinuousClock runs through system sleep, so a long sleep fires this tick
+            // immediately on wake — same guards as the wake trigger, harmless double.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.backgroundCheckInterval)
+                await self?.backgroundCheck()
+            }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.backgroundCheck() }
+        }
+    }
+
+    private func backgroundCheck() async {
+        guard Self.shouldBackgroundCheck(queueActive: isQueueActive, refreshing: isRefreshing) else {
+            return
+        }
+        _ = await checkForUpdatesIfStale()
+        await refreshState()
     }
 
     func retryCatalog() async {
@@ -1318,6 +1368,10 @@ final class AppModel {
         operation.awaitingRefreshSince = refreshGeneration
         if state == .failed, failureToPresent == nil {
             failureToPresent = operation
+            // An install runs for minutes and people go elsewhere while it does. A popover
+            // opening behind another app is not feedback; one Dock bounce is. Model-side,
+            // beside the flag it accompanies: the window may not exist at all.
+            if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
         }
 
         runningTask = nil

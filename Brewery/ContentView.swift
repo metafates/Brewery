@@ -496,13 +496,13 @@ struct ContentView: View {
         }
         .onChange(of: model.selectedTap) { tapKindFilter = .all }
         .onChange(of: model.findRequests) { searchFocused = true }
-        .onChange(of: model.failureToPresent?.id) { _, failure in
+        // `initial: true`, and the Dock bounce lives in the model beside the flag: a failure
+        // can land while no window exists, and a plain onChange would never see the value it
+        // was set to while this view was unmounted.
+        .onChange(of: model.failureToPresent?.id, initial: true) { _, failure in
             guard failure != nil else { return }
             model.showOperations = true
             model.failureToPresent = nil
-            // An install runs for minutes and people go elsewhere while it does. A popover opening
-            // behind another app is not feedback; one Dock bounce is.
-            if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
         }
     }
 

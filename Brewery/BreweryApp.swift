@@ -12,7 +12,10 @@ import TipKit
 @main
 struct BreweryApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var model = AppModel()
+    /// The delegate owns the model: bootstrap, the quit guard and the Dock menu must all
+    /// work with zero windows (silent login launch, the background check), and the delegate
+    /// is the one object guaranteed to exist for the process's whole life.
+    private var model: AppModel { appDelegate.model }
     /// The same keys `ContentView` binds; `@AppStorage` is how a `Commands` builder and
     /// a view share a preference without threading it through the model.
     @AppStorage("installed.sort") private var installedSort: InstalledSort = .name
@@ -48,13 +51,6 @@ struct BreweryApp: App {
                 // the minimum: a pane that squeezes the grid to one card is not a pane worth having.
                 .frame(minWidth: 1000, minHeight: 600)
                 .environment(model)
-                .task { await model.bootstrap() }
-                .onAppear { appDelegate.model = model }
-                // The App Store and Software Update badge the Dock with how many updates wait;
-                // the sidebar already says it, and this says it while Brewery is not frontmost.
-                .onChange(of: model.outdated.count, initial: true) { _, count in
-                    NSApp.dockTile.badgeLabel = count > 0 ? count.formatted(.number) : nil
-                }
         }
         // Opens using the display instead of hugging the 900×600 floor: a grid of cards is exactly
         // the content macOS asks you to give more room, not less.
@@ -260,10 +256,15 @@ struct BreweryApp: App {
 /// Quitting mid-install would leave a half-written keg behind, so the terminate path asks first
 /// and then gives brew the same SIGINT that Cancel sends.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var model: AppModel?
+    let model = AppModel()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Bootstrap is the app's, not the window's: a login launch may never open one.
+        Task { await model.bootstrap() }
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model, model.hasUnfinishedMutations else { return .terminateNow }
+        guard model.hasUnfinishedMutations else { return .terminateNow }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -293,7 +294,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Short and focused, per the Dock menu guidance: the two things worth asking of a package
     /// manager without bringing its window forward.
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        guard let model else { return nil }
         let menu = NSMenu()
         menu.addItem(item(title: "Refresh", action: #selector(refreshFromDock)))
         let outdated = model.outdated.count
@@ -310,10 +310,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func refreshFromDock() {
-        Task { await model?.refresh() }
+        Task { await model.refresh() }
     }
 
     @objc private func updateAllFromDock() {
-        model?.upgradeAll()
+        model.upgradeAll()
     }
 }
