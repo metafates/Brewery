@@ -21,6 +21,9 @@ struct ReportListView<Header: View>: View {
     @Environment(AppModel.self) private var model
     let hits: [SearchHit]
     let isSearching: Bool
+    /// While a refresh re-derives the report, an empty listing shows the working capsule
+    /// instead of its claim — the veil recedes rows, it never blurs a claim.
+    var isChecking = false
     var selectedID: Package.ID?
     let onSelect: (Package) -> Void
     let onRefresh: () -> Void
@@ -123,6 +126,9 @@ struct ReportListView<Header: View>: View {
     @ViewBuilder private var emptyState: some View {
         if isSearching {
             ContentUnavailableView.search
+        } else if isChecking {
+            // Centered by the overlay it rides in.
+            WorkingCapsule(text: "Checking for updates…")
         } else {
             ContentUnavailableView {
                 // The section's own glyph — one shippingbox meant four things (the Services

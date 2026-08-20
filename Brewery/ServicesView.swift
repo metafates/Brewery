@@ -11,6 +11,9 @@ import SwiftUI
 struct ServicesView: View {
     let hits: [SearchHit]
     let isSearching: Bool
+    /// While a refresh re-probes services, an empty section shows the working capsule instead
+    /// of claiming "No Services" — the veil recedes rows, it never blurs a claim.
+    var isChecking = false
     /// The row the inspector is describing — a list that leads to a detail pane has to keep saying
     /// which item the pane is about.
     var selectedID: Package.ID?
@@ -51,6 +54,9 @@ struct ServicesView: View {
     @ViewBuilder private var emptyState: some View {
         if isSearching {
             ContentUnavailableView.search
+        } else if isChecking {
+            WorkingCapsule(text: "Checking for updates…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ContentUnavailableView {
                 Label("No Services", systemImage: "server.rack")

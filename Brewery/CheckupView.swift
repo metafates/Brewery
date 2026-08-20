@@ -19,22 +19,29 @@ struct CheckupView: View {
 
     var body: some View {
         Group {
-            switch model.checkupOutcome {
-            case nil:
-                intro
-            case .report(let report) where report.findings.isEmpty:
-                clean
-            case .report(let report):
-                findingsList(report)
-            case .unreadable(let raw):
-                unreadable(raw)
-            case .failed:
-                failed
+            if model.isRunningCheckup, !model.checkupHasContent {
+                // A claim state has nothing that stays valid while doctor runs — the wait
+                // replaces the claim (Software Update's grammar) instead of blurring it.
+                WorkingCapsule(text: "Checking…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                switch model.checkupOutcome {
+                case nil:
+                    intro
+                case .report(let report) where report.findings.isEmpty:
+                    clean
+                case .report(let report):
+                    findingsList(report)
+                case .unreadable(let raw):
+                    unreadable(raw)
+                case .failed:
+                    failed
+                }
             }
         }
-        // The app's one waiting grammar: the previous content recedes under the same
+        // The app's one waiting grammar: previous *findings* recede under the same
         // veil ⌘R uses, instead of being swapped for a bespoke running screen.
-        .refreshVeil(model.isRunningCheckup, text: "Checking…")
+        .refreshVeil(model.isRunningCheckup && model.checkupHasContent, text: "Checking…")
     }
 
     // MARK: - States

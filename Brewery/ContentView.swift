@@ -534,23 +534,28 @@ struct ContentView: View {
                         .background(.background)
                 }
             }
-            .refreshVeil(model.isRefreshing)
+            // An empty tap page replaces its state with the capsule (the grid's
+            // isChecking); the veil recedes listings, it never blurs a claim.
+            .refreshVeil(model.isRefreshing && (model.selectedTap == nil || displayedCount > 0))
         } else if section == .services {
             // State rows, not catalog cards — a handful of items, no windowing needed.
             ServicesView(hits: displayedHits,
                          isSearching: isSearching,
+                         isChecking: model.isRefreshing,
                          selectedID: inspectedID,
                          onSelect: { select($0) },
                          onRefresh: { refresh() })
-                .refreshVeil(model.isRefreshing)
+                .refreshVeil(model.isRefreshing && !displayedHits.isEmpty)
         } else if section == .checkup {
-            // Findings, not packages — the view owns its four states.
+            // Findings, not packages — the view owns its four states. ⌘R recedes only
+            // recedable content; the claim states stay crisp (⌘R does not re-run doctor).
             CheckupView(searchText: model.query)
-                .refreshVeil(model.isRefreshing)
+                .refreshVeil(model.isRefreshing && model.checkupHasContent)
         } else if section == .orphans || section == .attention || section == .storage {
             // Reports are state rows, not catalog cards (the Services rule generalized).
             ReportListView(hits: displayedHits,
                            isSearching: isSearching,
+                           isChecking: model.isRefreshing,
                            selectedID: inspectedID,
                            onSelect: { select($0) },
                            onRefresh: { refresh() },
@@ -565,10 +570,10 @@ struct ContentView: View {
                     StorageSummaryBar()
                 }
             }
-            .refreshVeil(model.isRefreshing)
+            .refreshVeil(model.isRefreshing && !displayedHits.isEmpty)
         } else {
             packageGrid()
-                .refreshVeil(model.isRefreshing)
+                .refreshVeil(model.isRefreshing && displayedCount > 0)
         }
     }
 
@@ -599,7 +604,10 @@ struct ContentView: View {
                         emptySymbol: section.symbol,
                         onNeedMore: { window += Self.windowStep },
                         onRefresh: emptyState?.isFiltered == true ? nil : emptyStateRefresh,
-                        isChecking: section == .outdated && model.isCheckingForUpdates,
+                        // ⌘R counts too: an empty listing under the veil showed the capsule
+                        // floating over a blurred claim — replaced, never blurred.
+                        isChecking: (section == .outdated && model.isCheckingForUpdates)
+                            || (model.isRefreshing && displayedCount == 0),
                         onClearFilters: emptyState?.isFiltered == true ? { clearFilters() } : nil,
                         header: {
                             if let tap {

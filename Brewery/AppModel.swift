@@ -1034,6 +1034,18 @@ final class AppModel {
     /// Session-only, deliberately never snapshotted: a checkup describes this boot of the
     /// machine, and a stale verdict restored at launch would be a lie with a green checkmark.
     private(set) var checkupOutcome: CheckupOutcome?
+
+    /// Whether the Checkup page is showing content worth receding under the refresh veil —
+    /// findings or raw output. The claim states (intro, clean, failed) are not: the veil
+    /// recedes data that stays valid while re-checked, and a blurred claim under a working
+    /// capsule contradicts it — those are replaced by the capsule instead.
+    var checkupHasContent: Bool {
+        switch checkupOutcome {
+        case .report(let report): !report.findings.isEmpty
+        case .unreadable: true
+        case .failed, nil: false
+        }
+    }
     private(set) var checkupRanAt: Date?
     private(set) var isRunningCheckup = false
 
