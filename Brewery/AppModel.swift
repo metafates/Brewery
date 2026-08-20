@@ -795,7 +795,8 @@ final class AppModel {
         case let .install(name, _), let .upgrade(name, _),
              let .serviceStart(name), let .serviceStop(name),
              let .tap(name), let .untap(name), let .trustTap(name), let .untrustTap(name),
-             let .uninstall(name, _), let .zap(name), let .link(name):
+             let .uninstall(name, _), let .zap(name), let .link(name),
+             let .pin(name, _), let .unpin(name, _):
             guard !name.isEmpty, !name.hasPrefix("-") else { return }
         default:
             // Argument-less commands only. A new case that carries a name MUST join the list

@@ -120,6 +120,9 @@ struct BrewCommandTests {
         .cleanup,
         .doctor,
         .link(name: "deno"),
+        .pin(name: "wget", cask: false),
+        .pin(name: "iterm2", cask: true),
+        .unpin(name: "wget", cask: false),
     ] }
 
     /// One tag per `BrewCommand` case. The switch is exhaustive on purpose: adding a case to
@@ -128,7 +131,7 @@ struct BrewCommandTests {
     enum CommandKind: CaseIterable {
         case listFormulae, listCasks, outdated, update, install, upgrade, upgradeAll
         case servicesList, serviceStart, serviceStop, tap, untap, trustTap, untrustTap
-        case autoremove, uninstall, zap, cleanup, doctor, link
+        case autoremove, uninstall, zap, cleanup, doctor, link, pin, unpin
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -153,6 +156,8 @@ struct BrewCommandTests {
         case .cleanup: .cleanup
         case .doctor: .doctor
         case .link: .link
+        case .pin: .pin
+        case .unpin: .unpin
         }
     }
 
@@ -180,7 +185,11 @@ struct BrewCommandTests {
         // `link` is admitted: named but non-destructive — bare link creates symlinks, refuses
         // conflicts and rolls back (keg.rb:574-576); `--overwrite` (the deleting variant) is
         // in the forbidden list below; names come verbatim from doctor's own remediation.
-        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup", "doctor", "link"]
+        // `pin`/`unpin` are admitted on link's bar: named, non-destructive, and mutually
+        // inverse — brew defines unpin as pin's exact undo (cmd/unpin.rb), so neither needs a
+        // dialog (the service-toggle rule) — and kind-pinned like install, since the explicit
+        // --formula/--cask switches shipped with cask pinning itself (brew 5.1.12).
+        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup", "doctor", "link", "pin", "unpin"]
         for command in Self.everyCommand {
             let first = command.arguments.first ?? ""
             #expect(allowed.contains(first), "unexpected subcommand \"\(first)\" in \(command.arguments)")
@@ -207,6 +216,20 @@ struct BrewCommandTests {
         #expect(BrewCommand.link(name: hostile).arguments == ["link", hostile])
     }
 
+    @Test("pin/unpin: exact argv both kinds, hostile names stay one element, local-state only")
+    func pinArgv() {
+        #expect(BrewCommand.pin(name: "wget", cask: false).arguments == ["pin", "--formula", "wget"])
+        #expect(BrewCommand.pin(name: "iterm2", cask: true).arguments == ["pin", "--cask", "iterm2"])
+        #expect(BrewCommand.unpin(name: "wget", cask: false).arguments == ["unpin", "--formula", "wget"])
+        #expect(BrewCommand.unpin(name: "iterm2", cask: true).arguments == ["unpin", "--cask", "iterm2"])
+        #expect(BrewCommand.pin(name: "wget", cask: false).isMutating)
+        // Pins are local symlinks — no session brew update first (link's rule).
+        #expect(BrewCommand.pin(name: "wget", cask: false).touchesPackages == false)
+        #expect(BrewCommand.unpin(name: "wget", cask: false).touchesPackages == false)
+        let hostile = "wget; rm -rf /"
+        #expect(BrewCommand.pin(name: hostile, cask: false).arguments == ["pin", "--formula", hostile])
+    }
+
     @Test("cleanup is exactly one word — no prune, no scrub, no names can ever ride along")
     func cleanupArgv() {
         #expect(BrewCommand.cleanup.arguments == ["cleanup"])
@@ -225,8 +248,10 @@ struct BrewCommandTests {
         // `cleanupArgv`/`explicitKindToken`). The ban on `services cleanup` (deletes plists)
         // survives structurally: the services argvs are pinned flag-less with canonical verbs,
         // so "cleanup" can never appear as a services subcommand. "--prune" and "--scrub"/"-s"
-        // join the ban so no future case can widen cleanup's blast radius.
-        let forbidden = ["remove", "rm", "pin", "unpin", "zap", "--force",
+        // join the ban so no future case can widen cleanup's blast radius. "pin"/"unpin" left
+        // the list when they joined the whitelist (argvs pinned in `pinArgv` and
+        // `explicitKindToken`; the `--pinned` read flag never matched this rule anyway).
+        let forbidden = ["remove", "rm", "zap", "--force",
                          "--ignore-dependencies", "kill", "restart", "--all", "--file",
                          "--prune", "--scrub", "-s", "--overwrite", "--dry-run",
                          "--sudo-service-user", "--custom-remote", "--repair", "--eval-all"]
@@ -301,6 +326,11 @@ struct BrewCommandTests {
                 #expect(arguments.count == 2, "\(arguments)")
                 #expect(arguments.first == "link")
                 #expect(arguments.contains { $0.hasPrefix("-") } == false)
+            case .pin, .unpin:
+                // Exactly like install: explicit kind token, one name, nothing else.
+                #expect(arguments.count == 3, "\(arguments)")
+                #expect(arguments[1] == "--formula" || arguments[1] == "--cask",
+                        "\(arguments) has no explicit kind token")
             }
         }
     }

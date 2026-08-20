@@ -73,6 +73,8 @@ struct UninstallFunnelTests {
         model.enqueue(.uninstall(name: "-rf", cask: false), title: "x", targetID: nil)
         model.enqueue(.zap(name: "--zap"), title: "x", targetID: nil)
         model.enqueue(.uninstall(name: "", cask: true), title: "x", targetID: nil)
+        model.enqueue(.pin(name: "-rf", cask: false), title: "x", targetID: nil)
+        model.enqueue(.unpin(name: "", cask: true), title: "x", targetID: nil)
 
         // The guard runs before the staleness front-load, so a rejection appends nothing at all.
         #expect(model.operations.isEmpty)

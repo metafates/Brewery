@@ -10,8 +10,8 @@ import Foundation
 /// The complete set of brew invocations this app can express.
 ///
 /// Destructive operations are narrow and confirmed; everything else stays unrepresentable,
-/// not merely un-called: there is no `pin`, `--force` or `--ignore-dependencies` case, and no
-/// way to pass raw arguments. Every removal — uninstall, zap, untap, autoremove, cleanup —
+/// not merely un-called: there is no `--force` or `--ignore-dependencies` case, and no way
+/// to pass raw arguments. Every removal — uninstall, zap, untap, autoremove, cleanup —
 /// reaches the queue only after its confirmation dialog has run (the trust-write rule).
 /// `BrewClient.run` takes only a `BrewCommand`, so this enum is the app's single source of
 /// brew argv.
@@ -69,12 +69,20 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     case doctor
     // Cleanup joins under autoremove's bar: argument-less by construction (no names, no
     // `--prune`, no `-s` representable), scoped to what brew itself computes as stale — old
-    // kegs of installed formulae with linked/pinned/keepme versions kept (formula.rb:3657-3662),
+    // kegs of installed formulae with linked/pinned/keepme versions kept (formula.rb:3654-3658),
     // version-stale downloads, logs older than 30 days — and confirmed before enqueue. The one
     // sharp edge is pre-dulled: plain `brew cleanup` would also autoremove packages
     // (cleanup.rb:412), but the app's standing HOMEBREW_NO_AUTOREMOVE=1 gates exactly that
     // line, so this command removes files, never packages.
     case cleanup
+    // Pin joins on link's bar: named, non-destructive, and mutually inverse — brew defines
+    // unpin as pin's exact undo, so neither carries a confirmation (the service-toggle rule).
+    // Kind-pinned like install: the explicit --formula/--cask switches shipped with cask
+    // pinning itself (brew 5.1.12, cmd/pin.rb:21-26). Exit quirks recorded: a repeat pin
+    // warns and exits 0, pinning a not-installed package exits 1, and unpin never fails
+    // (cmd/unpin.rb:35-47).
+    case pin(name: String, cask: Bool)
+    case unpin(name: String, cask: Bool)
 
     var arguments: [String] {
         switch self {
@@ -122,6 +130,10 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["doctor", "--json"]
         case .cleanup:
             ["cleanup"]
+        case let .pin(name, cask):
+            ["pin", BrewCommand.kindFlag(cask: cask), name]
+        case let .unpin(name, cask):
+            ["unpin", BrewCommand.kindFlag(cask: cask), name]
         }
     }
 
@@ -133,7 +145,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         case .listFormulae, .listCasks, .outdated, .servicesList, .doctor:
             false
-        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap, .cleanup, .link:
+        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap, .cleanup, .link, .pin, .unpin:
             true
         }
     }
@@ -147,7 +159,8 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         // `brew update` first. uninstall/zap stay in the default (true), unlike autoremove:
         // cask uninstall and zap dispatch stanzas from the *current* recipe, so fresh metadata
         // keeps what brew executes aligned with what the pane showed.
-        case .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .cleanup, .link: false
+        // Pins are local symlinks in var/homebrew — fresh metadata changes nothing.
+        case .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .cleanup, .link, .pin, .unpin: false
         default: isMutating
         }
     }
