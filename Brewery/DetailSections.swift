@@ -431,16 +431,26 @@ struct DetailFontPreview: View {
     private var installedTaskID: String { "\(package.id)|\(model.installed[package.id] != nil)" }
 
     var body: some View {
-        Group {
-            if !faces.isEmpty {
-                Divider()
-                preview
+        // Only an installed font cask has files to demonstrate; anything else renders
+        // nothing and costs the pane's VStack no phantom spacing slot.
+        if package.isFont, model.installed[package.id] != nil {
+            Group {
+                if faces.isEmpty {
+                    // A `.task` on empty conditional content never fires — no node ever
+                    // appears — so faces could never load (the sections refactor silently
+                    // killed the preview this way). The zero-size anchor gives the task
+                    // a node; it lingers as one phantom spacing slot only while faces
+                    // resolve, or when the custom `--fontdir` ponytail resolves to none.
+                    Color.clear.frame(width: 0, height: 0)
+                } else {
+                    Divider()
+                    preview
+                }
             }
-        }
-        .task(id: installedTaskID) {
-            (faces, dropped) = ([], 0)
-            guard package.isFont, model.installed[package.id] != nil else { return }
-            (faces, dropped) = await FontPreview.resolve(names: fontNames, limit: Self.faceLimit)
+            .task(id: installedTaskID) {
+                (faces, dropped) = ([], 0)
+                (faces, dropped) = await FontPreview.resolve(names: fontNames, limit: Self.faceLimit)
+            }
         }
     }
 

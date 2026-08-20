@@ -277,7 +277,7 @@ The last-published overlays (`installed`/`outdated`/`serviceStatuses`/`pinned`) 
 | `PackageGridView.swift` | `ScrollView` + `LazyVGrid` of cards; `@ViewBuilder`-stored header slot |
 | `PackageCardView.swift` | One card; resolves `id`/status/launchable apps once per body |
 | `PackageDetailView.swift` | The inspector pane: manual page stack (package / commands / tap pages), links, caveats |
-| `DetailSections.swift` | The pane's stateful sections as their own views — header (size/license), font preview — each owning its `.task` so it invalidates only its own subtree |
+| `DetailSections.swift` | The pane's stateful sections as their own views — header (size/license), font preview — each owning its `.task` so it invalidates only its own subtree. A section with nothing to show until its task lands must anchor that task on a real node (zero-size `Color.clear`): `.task` on empty conditional content never fires, which silently killed the font preview once (`PaneRegressionUITests`) |
 | `PackageIconView.swift` | The icon view over `IconStore`: bundle icon / avatar / favicon / glyph resolution |
 | `ServicesView.swift` | Login Items-grammar service rows + shared `ServiceToggle` |
 | `TapsView.swift` | Tap list with real keyboard selection, tap page, add-tap popover, `TapTile` avatars |
