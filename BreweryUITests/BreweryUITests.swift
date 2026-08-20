@@ -23,6 +23,11 @@ enum UITestSeed {
         "-installed.pinnedOnly", "<false/>",
         "-installed.sort", "name",
         "-menubar.shown", "<true/>",
+        // Launched under the automation session, AppKit's window restoration wedges before
+        // creating any window (macOS 26.5.2: "Restoring windows" → restoration_storage →
+        // silence, and `windows.firstMatch` never exists). Tests want a fresh default window
+        // anyway — restoring the user's last frame would make geometry assertions flaky.
+        "-ApplePersistenceIgnoreState", "YES",
     ]
 }
 
