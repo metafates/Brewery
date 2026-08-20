@@ -539,14 +539,17 @@ final class AppModel {
         async let servicesFetch = client.servicesList()
         async let pinnedScan = PinStore.scan(prefix: client.prefix)
 
-        let installedResult = try? await installedFetch
+        let installedResult = await installedFetch
         let outdatedResult = try? await outdatedFetch
         let servicesResult = try? await servicesFetch
         let pinnedResult = await pinnedScan
 
+        let merged = Self.mergeInstalled(formulae: installedResult.formulae,
+                                         casks: installedResult.casks,
+                                         previous: installed)
         let folded: [Package.ID: InstalledInfo]?
-        if let installedResult {
-            folded = await withReceipts(installedResult)
+        if let merged {
+            folded = await withReceipts(merged)
         } else {
             folded = nil
         }
@@ -584,6 +587,26 @@ final class AppModel {
 
         // Persist what was just published; the next launch's first frame reads it back.
         persistStateSnapshot()
+    }
+
+    /// Per-kind degrade for the installed probe: a fresh side replaces its own entries
+    /// wholesale, a failed side keeps its previous ones — the two lists are independent brew
+    /// commands, and one crashing must not freeze the other's state (the harlequin bug: a
+    /// brew master regression in `list --cask` kept every uninstalled formula "Installed").
+    /// Both failed reads as offline: nil, and the caller keeps the whole overlay untouched.
+    /// Pure so `InstalledMergeTests` can pin the truth table.
+    nonisolated static func mergeInstalled(
+        formulae: [Package.ID: InstalledInfo]?,
+        casks: [Package.ID: InstalledInfo]?,
+        previous: [Package.ID: InstalledInfo]
+    ) -> [Package.ID: InstalledInfo]? {
+        guard formulae != nil || casks != nil else { return nil }
+        func previousEntries(_ kind: PackageKind) -> [Package.ID: InstalledInfo] {
+            previous.filter { Package.components(of: $0.key)?.0 == kind }
+        }
+        var result = formulae ?? previousEntries(.formula)
+        result.merge(casks ?? previousEntries(.cask)) { _, cask in cask }
+        return result
     }
 
     /// Fire-and-forget by design: the write is off the refresh critical path, and a failed one

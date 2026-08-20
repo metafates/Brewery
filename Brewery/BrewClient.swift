@@ -273,16 +273,17 @@ final class BrewClient {
 
     // MARK: - Read helpers
 
-    func listInstalled() async throws -> [Package.ID: InstalledInfo] {
+    /// Per kind, each side nil on failure: the two lists are independent brew commands, and a
+    /// crashing one must not discard the other's fresh answer — observed live when a brew
+    /// master regression raised `uninitialized constant Cask::CaskLoader` from `list --cask`
+    /// while `list --formula` was fine, which froze every formula's Installed state.
+    func listInstalled() async -> (formulae: [Package.ID: InstalledInfo]?,
+                                   casks: [Package.ID: InstalledInfo]?) {
         async let formulaOutput = capture(.listFormulae)
         async let caskOutput = capture(.listCasks)
-        let (formulae, casks) = try await (formulaOutput, caskOutput)
-
-        var result = Self.parseListVersions(formulae, kind: .formula)
-        for (id, info) in Self.parseListVersions(casks, kind: .cask) {
-            result[id] = info
-        }
-        return result
+        let formulae = (try? await formulaOutput).map { Self.parseListVersions($0, kind: .formula) }
+        let casks = (try? await caskOutput).map { Self.parseListVersions($0, kind: .cask) }
+        return (formulae, casks)
     }
 
     func outdated() async throws -> [Package.ID: OutdatedInfo] {
