@@ -176,6 +176,11 @@ final class AppModel {
     private var lastMetadataAttempt: Date?
     private var runningTask: Task<Void, Never>?
     private var backgroundCheckTask: Task<Void, Never>?
+    /// When the last background pass ran — the timer's ticks and the wake trigger share it, so
+    /// the interval is a cadence and not just the timer's period. Seeded at bootstrap, whose own
+    /// freshness check *is* the launch pass; leaving it nil would make the first lid-open run a
+    /// second one minutes later.
+    private var lastBackgroundCheck: Date?
     private var refreshGeneration = 0
 
     init() {
@@ -299,7 +304,9 @@ final class AppModel {
         guard !didBootstrap else { return }
         didBootstrap = true
         // Before the first await: bootstrap may be cancelled with its caller, and the
-        // periodic check must outlive whatever started it.
+        // periodic check must outlive whatever started it. The launch pass below is this
+        // cadence's first tick, so the clock starts here rather than at the first wake.
+        lastBackgroundCheck = .now
         startBackgroundChecks()
 
         // Last session's overlays before anything else, so the first frame shows
@@ -413,8 +420,20 @@ final class AppModel {
 
     /// Pure so the gate is testable without a client: a tick yields to an active queue or a
     /// user-initiated refresh; staleness and attempt-backoff live in `checkForUpdatesIfStale`.
-    nonisolated static func shouldBackgroundCheck(queueActive: Bool, refreshing: Bool) -> Bool {
-        !queueActive && !refreshing
+    ///
+    /// `last` is what makes the interval the *cadence* rather than just the timer's period. The
+    /// wake trigger shares this gate: brew's own staleness window is 450 s, so a lid-open eight
+    /// minutes later used to spend a `brew update` plus a full re-probe — every lid-open, all
+    /// day, on a laptop. The documented promise is every 6 hours, so wake advances that clock
+    /// instead of bypassing it. A `last` in the future (clock moved back) reads as due, not as
+    /// blocked forever.
+    nonisolated static func shouldBackgroundCheck(
+        queueActive: Bool, refreshing: Bool, last: Date?, now: Date
+    ) -> Bool {
+        guard !queueActive, !refreshing else { return false }
+        guard let last else { return true }
+        let elapsed = now.timeIntervalSince(last)
+        return elapsed < 0 || elapsed >= TimeInterval(backgroundCheckInterval.components.seconds)
     }
 
     private func startBackgroundChecks() {
@@ -435,9 +454,13 @@ final class AppModel {
     }
 
     private func backgroundCheck() async {
-        guard Self.shouldBackgroundCheck(queueActive: isQueueActive, refreshing: isRefreshing) else {
+        guard Self.shouldBackgroundCheck(queueActive: isQueueActive, refreshing: isRefreshing,
+                                         last: lastBackgroundCheck, now: .now) else {
             return
         }
+        // Stamped before the work, not after: the pass takes seconds, and a second wake
+        // landing mid-pass must see the clock already advanced.
+        lastBackgroundCheck = .now
         _ = await checkForUpdatesIfStale()
         await refreshState()
     }
