@@ -162,3 +162,25 @@ struct AttentionTests {
     }
 }
 
+
+/// The card-title disambiguator: charles@4's display name hides its version, charles's
+/// doesn't differ — the suffix is what keeps their cards distinct at a glance.
+struct TitleVersionSuffixTests {
+    private func package(name: String, displayName: String?) -> Package {
+        Package(kind: .cask, name: name, displayName: displayName, desc: nil,
+                homepage: nil, version: "1", deprecated: false, disabled: false)
+    }
+
+    @Test func versionedCaskExposesItsSuffix() {
+        #expect(package(name: "charles@4", displayName: "Charles").titleVersionSuffix == "@4")
+    }
+
+    @Test func unversionedCaskHasNone() {
+        #expect(package(name: "charles", displayName: "Charles").titleVersionSuffix == nil)
+    }
+
+    @Test func rawNameTitlesAlreadyShowTheVersion() {
+        // Formulae and display-name-less casks render the token itself — no suffix to add.
+        #expect(package(name: "python@3.14", displayName: nil).titleVersionSuffix == nil)
+    }
+}

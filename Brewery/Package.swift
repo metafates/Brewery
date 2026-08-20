@@ -267,6 +267,15 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
 
     var title: String { displayName ?? name }
 
+    /// The "@4" of charles@4 when a display name hides it: a versioned cask shares its
+    /// display name with the unversioned package, and two cards must never read identically
+    /// at a glance. nil when the title already shows the raw name (formulae — python@3.14
+    /// wears its version in full) or the name is unversioned.
+    var titleVersionSuffix: String? {
+        guard displayName != nil, let at = name.lastIndex(of: "@") else { return nil }
+        return String(name[at...])
+    }
+
     /// SPDX identifier, formulae only — casks carry no license in the API.
     var licenseLabel: String? { license?.isEmpty == false ? license : nil }
 

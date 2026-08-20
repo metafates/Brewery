@@ -33,7 +33,9 @@ struct PackageCardView: View {
                     PackageIconView(package: package, resolvedApps: apps)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(package.title)
+                        // The versioned-token suffix rides the title dimmed (HIG Typography:
+                        // hierarchy via color) — identity, but subordinate to the name.
+                        Text("\(package.title)\(Text(package.titleVersionSuffix ?? "").foregroundStyle(.secondary))")
                             .font(.headline)
                             .lineLimit(1)
                         statusLine(id: id)
