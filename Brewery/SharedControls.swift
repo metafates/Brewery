@@ -85,7 +85,7 @@ struct RelatedRow: View {
     let action: () -> Void
 
     var body: some View {
-        PaneRow(title: package.title,
+        PaneRow(title: fusedTitle,
                 detail: detail,
                 trailing: version?.isEmpty == false ? version?.shortVersion : nil,
                 paneTells: !inline,
@@ -94,13 +94,21 @@ struct RelatedRow: View {
         }
         .accessibilityLabel(label)
         .accessibilityHint("Shows package details")
-        .help("Show \(package.title)")
+        .help("Show \(fusedTitle)")
         // Every package row supports the same context-menu base.
         .contextMenu { PackageMenuItems(package: package) }
     }
 
+    /// The card's disambiguator, plain: a row listing Charles beside Charles@4 (the Other
+    /// Versions section is exactly that list) must not render them identically. Undimmed —
+    /// `PaneRow` takes a string — and only present when the display name hides it.
+    private var fusedTitle: String {
+        let parts = package.titleParts
+        return parts.base + (parts.suffix ?? "")
+    }
+
     private var label: String {
-        var parts = [package.title]
+        var parts = [fusedTitle]
         if let version, !version.isEmpty { parts.append("version \(version.shortVersion)") }
         if let detail, !detail.isEmpty { parts.append(detail) }
         return parts.joined(separator: ", ")

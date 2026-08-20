@@ -198,3 +198,31 @@ struct TitlePartsTests {
         #expect(package(name: "charles", displayName: "Charles").titleParts == ("Charles", nil))
     }
 }
+
+/// The pane's Other Versions family: same kind, same base, different token — numeric-aware
+/// order with the bare name first, and no cross-kind or cross-base strays.
+struct OtherVersionsTests {
+    private func package(kind: PackageKind = .formula, name: String) -> Package {
+        Package(kind: kind, name: name, displayName: nil, desc: nil,
+                homepage: nil, version: "1", deprecated: false, disabled: false)
+    }
+
+    @Test func familyGathersAcrossTheAtSign() {
+        let catalog = [package(name: "python"), package(name: "python@3.10"),
+                       package(name: "python@3.9"), package(name: "python-tk@3.10"),
+                       package(kind: .cask, name: "python@3.10")]
+        let related = Package.otherVersions(of: package(name: "python@3.11"), in: catalog)
+        #expect(related.map(\.name) == ["python", "python@3.9", "python@3.10"])
+    }
+
+    @Test func bareNamesFormFamiliesTooButNeverWithThemselves() {
+        let catalog = [package(name: "charles"), package(name: "charles@4")]
+        let fromBare = Package.otherVersions(of: package(name: "charles"), in: catalog)
+        #expect(fromBare.map(\.name) == ["charles@4"])
+    }
+
+    @Test func lonersHaveNoFamily() {
+        let catalog = [package(name: "wget"), package(name: "wget2")]
+        #expect(Package.otherVersions(of: package(name: "wget"), in: catalog).isEmpty)
+    }
+}

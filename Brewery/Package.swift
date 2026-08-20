@@ -284,6 +284,22 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         text.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
+    /// The @-family: same kind, same base name, different token — python@3.11's siblings
+    /// include bare python; charles's include charles@4. Bare-vs-bare can never match (equal
+    /// base means equal name means the same package), so only versioned lines form families.
+    /// Sorted with numeric awareness (3.9 before 3.10), the bare name naturally first.
+    static func otherVersions(of package: Package, in catalog: [Package]) -> [Package] {
+        let base = baseName(package.name)
+        return catalog
+            .filter { $0.kind == package.kind && $0.id != package.id && baseName($0.name) == base }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private static func baseName(_ name: String) -> Substring {
+        guard let at = name.lastIndex(of: "@"), at != name.startIndex else { return name[...] }
+        return name[..<at]
+    }
+
     /// SPDX identifier, formulae only — casks carry no license in the API.
     var licenseLabel: String? { license?.isEmpty == false ? license : nil }
 

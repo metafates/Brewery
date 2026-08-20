@@ -151,6 +151,9 @@ private struct DetailPage: View {
     let onPush: (PackageDetailView.Page) -> Void
 
     @Environment(AppModel.self) private var model
+    /// The @-family (python@3.11's siblings), built by the task below — a catalog-scale
+    /// query never runs in body.
+    @State private var otherVersions: [Package] = []
 
     var body: some View {
         // Resolved once per pass: both lists were read three times each (the `isEmpty` guards,
@@ -247,6 +250,11 @@ private struct DetailPage: View {
                     related("Required by", packages: requiredBy)
                 }
 
+                if !otherVersions.isEmpty {
+                    Divider()
+                    related("Other Versions", packages: otherVersions)
+                }
+
                 if let operation = model.latestOperation(for: package) {
                     Divider()
                     log(operation)
@@ -254,6 +262,11 @@ private struct DetailPage: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
+        }
+        // A catalog-scale query stays off the render path (the attentionCount rule): built
+        // once per page and per catalog change, into @State — the TapPage pattern.
+        .task(id: model.catalogGeneration) {
+            otherVersions = Package.otherVersions(of: package, in: model.catalog)
         }
     }
 
