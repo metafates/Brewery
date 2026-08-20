@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 /// The menu bar extra's status-item label: the mug, plus the outdated count as text while
@@ -80,6 +81,12 @@ struct MenuBarMenu: View {
 
         Divider()
 
+        // The app's first behavior preference, living where the behavior is visible.
+        // `SMAppService.status` is not observable and opening an extra's menu does not
+        // activate the app, so the checked state is read fresh here on every open — the
+        // only surface that shows it, so no other resync exists or is needed.
+        Toggle("Launch at Login", isOn: launchAtLogin)
+
         // Re-enabling lives in View ▸ Show Menu Bar Icon — never behind the icon that's gone.
         Button("Hide Menu Bar Icon") { menuBarShown = false }
 
@@ -111,6 +118,30 @@ struct MenuBarMenu: View {
     private func versionRun(for package: Package) -> String {
         guard let info = model.outdated[package.id] else { return "" }
         return "\(info.installed.last?.shortVersion ?? "") → \(info.current.shortVersion)"
+    }
+
+    /// Registration happens strictly on this explicit toggle — macOS shows a system
+    /// notification on register, so never speculatively — and is only meaningful from an
+    /// installed /Applications build (DerivedData registrations go stale). A denial or
+    /// `.requiresApproval` routes to System Settings, where the decision actually lives.
+    private var launchAtLogin: Binding<Bool> {
+        Binding(
+            get: { SMAppService.mainApp.status == .enabled },
+            set: { enable in
+                do {
+                    if enable {
+                        try SMAppService.mainApp.register()
+                    } else {
+                        try SMAppService.mainApp.unregister()
+                    }
+                } catch {
+                    SMAppService.openSystemSettingsLoginItems()
+                }
+                if SMAppService.mainApp.status == .requiresApproval {
+                    SMAppService.openSystemSettingsLoginItems()
+                }
+            }
+        )
     }
 
     /// A status-item click does not make the app frontmost — activate, then open.

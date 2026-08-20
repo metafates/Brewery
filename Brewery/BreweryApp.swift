@@ -298,6 +298,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Bootstrap is the app's, not the window's: a login launch may never open one.
         Task { await model.bootstrap() }
+
+        // Launched at login, the app is menu bar presence only — no window in the face
+        // of someone who just logged in. Detection reads the launch open-event in place:
+        // a login-item launch carries `keyAELaunchedAsLogInItem` in its property data.
+        // (Never `setEventHandler` for `kAEOpenApplication` — that replaces AppKit's own
+        // open handling and no launch shows a window at all.) SwiftUI's presentation
+        // order against this callback is not documented, so the close runs now and again
+        // on the next runloop turn; the app stays running either way.
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let launchedAsLoginItem = event?.eventID == AEEventID(kAEOpenApplication)
+            && event?.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue
+                == UInt32(keyAELaunchedAsLogInItem)
+        if launchedAsLoginItem {
+            closeMainWindows()
+            DispatchQueue.main.async { self.closeMainWindows() }
+        }
+    }
+
+    /// SwiftUI's `Window("main")` windows carry a "main-AppWindow-N" identifier.
+    private func closeMainWindows() {
+        for window in NSApp.windows
+        where window.identifier?.rawValue.hasPrefix("main") == true {
+            window.close()
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
