@@ -17,7 +17,18 @@ struct MenuBarLabel: View {
     var body: some View {
         let count = model.outdated.count
         Group {
-            if count > 0 {
+            if model.isQueueActive {
+                // The queue's tell, in the count's slot: a static state glyph, the menu
+                // bar's own grammar for "working" (Time Machine, the Finder sync arrows —
+                // system extras never animate continuously, and a rasterized label
+                // animates unreliably anyway). Static, so no Reduce Motion branch owed.
+                Label {
+                    Text(Image(systemName: "arrow.triangle.2.circlepath"))
+                } icon: {
+                    Image(systemName: "mug")
+                }
+                .labelStyle(.titleAndIcon)
+            } else if count > 0 {
                 Label(count.formatted(.number), systemImage: "mug")
                     .labelStyle(.titleAndIcon)
             } else {
@@ -27,7 +38,16 @@ struct MenuBarLabel: View {
         // A bare composed label degrades in the AX tree (the toolbar Operations button's
         // lesson) — one element, saying what the adornment means.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(count > 0 ? "Brewery, \(count) updates available" : "Brewery")
+        .accessibilityLabel(labelDescription(count: count))
+    }
+
+    private func labelDescription(count: Int) -> String {
+        if model.isQueueActive {
+            let active = model.activeCount
+            return active == 1 ? "Brewery, 1 operation running"
+                               : "Brewery, \(active) operations running"
+        }
+        return count > 0 ? "Brewery, \(count) updates available" : "Brewery"
     }
 }
 
