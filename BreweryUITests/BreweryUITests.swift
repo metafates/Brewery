@@ -20,6 +20,7 @@ enum UITestSeed {
         "-discover.tapsOnly", "<false/>",
         "-installed.kindFilter", "all",
         "-installed.tapsOnly", "<false/>",
+        "-installed.pinnedOnly", "<false/>",
         "-installed.sort", "name",
     ]
 }

@@ -202,6 +202,8 @@ struct ContentView: View {
     /// must not carry one tab's filter into the other.
     @AppStorage("installed.kindFilter") private var installedKindFilter: KindFilter = .all
     @AppStorage("installed.tapsOnly") private var installedTapsOnly = false
+    /// Pinned Only: the one place all pins are listable at once (user-requested).
+    @AppStorage("installed.pinnedOnly") private var installedPinnedOnly = false
     /// Installed's sort. `@AppStorage`, not model state, for the same reason as the
     /// filters: it is a view preference, and the View ▸ Sort By commands share it by key.
     @AppStorage("installed.sort") private var installedSort: InstalledSort = .name
@@ -787,12 +789,13 @@ struct ContentView: View {
     /// Installed's kind pre-filter — same position in the pipeline as Discover's: before ranking,
     /// and governing empty-query browsing too. A few hundred items, so no caching needed.
     private func installedFiltered(_ packages: [Package]) -> [Package] {
-        guard installedKindFilter != .all || installedTapsOnly else { return packages }
+        guard installedKindFilter != .all || installedTapsOnly || installedPinnedOnly else { return packages }
         return packages.filter { package in
             // The effective tap, not `package.tap`: an installed tap item whose name collides
             // with core joins the core catalog entry, but its receipt knows the truth.
             installedKindFilter.matches(package)
                 && !(installedTapsOnly && model.effectiveTap(for: package) == nil)
+                && !(installedPinnedOnly && !model.isPinned(package))
         }
     }
 
@@ -820,7 +823,8 @@ struct ContentView: View {
         case .discover:
             filtersActive ? ("No packages match the filters", true) : nil
         case .installed:
-            if installedKindFilter != .all || installedTapsOnly, !model.installed.isEmpty {
+            if installedKindFilter != .all || installedTapsOnly || installedPinnedOnly,
+               !model.installed.isEmpty {
                 ("No installed packages match the filters", true)
             } else if !showDependencies, !model.installed.isEmpty {
                 ("No packages installed on request", true)
@@ -841,7 +845,8 @@ struct ContentView: View {
         case .discover:
             (kindFilter, hideDeprecated, tapsOnly) = (.all, false, false)
         case .installed:
-            (installedKindFilter, installedTapsOnly, showDependencies) = (.all, false, true)
+            (installedKindFilter, installedTapsOnly, installedPinnedOnly, showDependencies)
+                = (.all, false, false, true)
         case .taps:
             tapKindFilter = .all
         default:
@@ -941,6 +946,7 @@ struct ContentView: View {
         let installedKindFilter: KindFilter
         let tapsOnly: Bool
         let installedTapsOnly: Bool
+        let installedPinnedOnly: Bool
         /// A sort change reorders which cards come first, so the window restarts like a filter's.
         let installedSort: InstalledSort
         let selectedTap: String?
@@ -955,6 +961,7 @@ struct ContentView: View {
                      installedKindFilter: installedKindFilter,
                      tapsOnly: tapsOnly,
                      installedTapsOnly: installedTapsOnly,
+                     installedPinnedOnly: installedPinnedOnly,
                      installedSort: installedSort,
                      selectedTap: model.selectedTap,
                      tapKindFilter: tapKindFilter)
@@ -1024,7 +1031,7 @@ struct ContentView: View {
     private var isNarrowed: Bool {
         switch section {
         case .discover: filtersActive
-        case .installed: installedKindFilter != .all || installedTapsOnly
+        case .installed: installedKindFilter != .all || installedTapsOnly || installedPinnedOnly
         case .outdated, .services, .orphans, .attention, .storage, .checkup: false
         case .taps: model.selectedTap != nil && tapKindFilter != .all
         }
@@ -1102,11 +1109,12 @@ struct ContentView: View {
                     // the filled funnel counts it because the listing differs from the default.
                     Toggle("Show Dependencies", isOn: $showDependencies)
                     Toggle("From Taps Only", isOn: $installedTapsOnly)
+                    Toggle("Pinned Only", isOn: $installedPinnedOnly)
                 } label: {
                     filterLabel(active: installedKindFilter != .all || installedTapsOnly
-                                || showDependencies)
+                                || installedPinnedOnly || showDependencies)
                 }
-                .help("Filter by kind or source, or show dependency-only packages")
+                .help("Filter by kind, source or pin state, or show dependency-only packages")
                 .accessibilityLabel("Filter")
                 // The sort, in the Filter menu's own grammar (HIG *Pop-up buttons*: a flat
                 // list of mutually exclusive options). Its menu-bar twin is View ▸ Sort By.

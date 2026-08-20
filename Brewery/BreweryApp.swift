@@ -22,6 +22,7 @@ struct BreweryApp: App {
     @AppStorage("installed.kindFilter") private var installedKindFilter: KindFilter = .all
     @AppStorage("installed.tapsOnly") private var installedTapsOnly = false
     @AppStorage("installed.showDependencies") private var showDependencies = false
+    @AppStorage("installed.pinnedOnly") private var installedPinnedOnly = false
 
     init() {
         // One-time coaching tips (Discover's kinds explainer); dismissal persists.
@@ -106,6 +107,8 @@ struct BreweryApp: App {
                     Toggle("Hide Deprecated", isOn: $hideDeprecated)
                         .disabled(model.selection != .discover)
                     Toggle("From Taps Only", isOn: currentTapsOnly)
+                    Toggle("Pinned Only", isOn: $installedPinnedOnly)
+                        .disabled(model.selection != .installed)
                     Toggle("Show Dependencies", isOn: $showDependencies)
                         .disabled(model.selection != .installed)
                 }
