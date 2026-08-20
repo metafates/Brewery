@@ -22,6 +22,7 @@ enum UITestSeed {
         "-installed.tapsOnly", "<false/>",
         "-installed.pinnedOnly", "<false/>",
         "-installed.sort", "name",
+        "-menubar.shown", "<true/>",
     ]
 }
 

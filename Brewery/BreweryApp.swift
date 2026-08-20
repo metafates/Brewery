@@ -26,10 +26,25 @@ struct BreweryApp: App {
     @AppStorage("installed.tapsOnly") private var installedTapsOnly = false
     @AppStorage("installed.showDependencies") private var showDependencies = false
     @AppStorage("installed.pinnedOnly") private var installedPinnedOnly = false
+    /// The extra's presence is the user's call (HIG: "Let people — not your app — decide"):
+    /// this key backs both `isInserted` and the View-menu twin.
+    @AppStorage("menubar.shown") private var menuBarShown = true
 
     init() {
         // One-time coaching tips (Discover's kinds explainer); dismissal persists.
         try? Tips.configure()
+    }
+
+    /// `isInserted` must NOT bind `$menuBarShown` directly: the scene writes the current
+    /// value back on every update, and a same-value `@AppStorage` write invalidates the
+    /// scene again — a permanent per-frame re-render loop pegging the main thread (found
+    /// via `sample`: `NSRunLoop.flushObservers` at 100%). The guard breaks the cycle;
+    /// real changes (the Hide items, dragging the icon off the bar) still propagate.
+    private var menuBarInserted: Binding<Bool> {
+        Binding(
+            get: { menuBarShown },
+            set: { if $0 != menuBarShown { menuBarShown = $0 } }
+        )
     }
 
     /// The section on screen decides which section's keys the Filter commands drive.
@@ -137,6 +152,12 @@ struct BreweryApp: App {
                 // ⌥⌘L, Safari's Downloads — the popover this app grew from.
                 .keyboardShortcut("l", modifiers: [.command, .option])
                 .disabled(model.operations.isEmpty)
+
+                // The extra's own Hide item's twin: re-enabling must never need the icon
+                // that's gone.
+                Button(menuBarShown ? "Hide Menu Bar Icon" : "Show Menu Bar Icon") {
+                    menuBarShown.toggle()
+                }
             }
             // The app's own commands earn their own menu: they act on Homebrew, not on the view.
             CommandMenu("Homebrew") {
@@ -250,6 +271,22 @@ struct BreweryApp: App {
         }
         .defaultSize(width: 580, height: 440)
         .restorationBehavior(.disabled)
+
+        menuBarExtra
+    }
+
+    // The stays-running decision's other half: with the window closed the app still
+    // answers for updates, and the menu bar is where that knowledge lives. Default
+    // `.menu` style — HIG: "Display a menu — not a popover". Its own property: the
+    // scene body sits at the type-checker's expression cliff.
+    private var menuBarExtra: some Scene {
+        MenuBarExtra(isInserted: menuBarInserted) {
+            MenuBarMenu()
+                .environment(model)
+        } label: {
+            MenuBarLabel()
+                .environment(model)
+        }
     }
 }
 
