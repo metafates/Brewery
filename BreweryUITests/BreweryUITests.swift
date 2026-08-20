@@ -290,6 +290,34 @@ extension BreweryUITests {
     }
 }
 
+/// Regression: the whole tap row is the click target. Activation once rode a tap gesture over a
+/// shape-less row, so a click in the blank middle only painted selection while the title drilled —
+/// two behaviors in one row. Built-ins always render, so the click point is machine-independent.
+extension BreweryUITests {
+    func testTapRowBlankAreaOpensTheTap() throws {
+        let app = launched()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
+        waitForCatalog(app)
+
+        let window = app.windows.firstMatch
+        app.typeKey("5", modifierFlags: .command)
+        sleep(1)
+        XCTAssertTrue(window.title.hasPrefix("Taps"), "⌘5 never reached Taps.")
+
+        let title = app.staticTexts["homebrew/core"]
+        XCTAssertTrue(title.waitForExistence(timeout: 30), "No homebrew/core row.")
+
+        // 150 pt past the title's trailing edge: blank row, not title, badge, or chevron —
+        // exactly the point that only selected before the row grew its content shape.
+        title.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5))
+            .withOffset(CGVector(dx: 150, dy: 0))
+            .click()
+        sleep(1)
+        XCTAssertTrue(window.title.hasPrefix("homebrew/core"),
+                      "Blank-area click did not open the tap; the window says “\(window.title)”.")
+    }
+}
+
 /// Regression: a TipView sharing the view tree with `ContentUnavailableView.search` blanks the
 /// split view's sidebar (framework interaction, macOS 26). The tip is gated to browsing; this
 /// pins that an empty search keeps the sidebar rendered.

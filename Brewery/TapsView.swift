@@ -57,7 +57,10 @@ struct TapsView: View {
                 ForEach(builtInRows, id: \.name) { row in
                     BuiltInTapRow(row: row)
                         .tag(row.name)
-                        .onTapGesture { onSelect(row.name) }
+                        .onTapGesture {
+                            focusedTap = row.name
+                            onSelect(row.name)
+                        }
                 }
             } header: {
                 // A header labels its group. The vocabulary that used to hang under it is the
@@ -80,7 +83,10 @@ struct TapsView: View {
                                onRemove: { model.pendingTapRemoval = info },
                                onUntrust: { model.untrustTap(info.name) })
                             .tag(info.name)
-                            .onTapGesture { onSelect(info.name) }
+                            .onTapGesture {
+                                focusedTap = info.name
+                                onSelect(info.name)
+                            }
                     }
                 }
             } header: {
@@ -126,6 +132,18 @@ struct TapsView: View {
     }
 }
 
+/// The drill-row tell (System Settings grammar, PaneRow's chevron): a single click anywhere
+/// on the row pushes the tap's page, and the row says so. Decorative — the rows' accessibility
+/// hint already carries the promise.
+private struct DrillChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
+    }
+}
+
 private struct BuiltInTapRow: View {
     let row: TapsView.BuiltIn
 
@@ -134,8 +152,11 @@ private struct BuiltInTapRow: View {
                  subtitle: "\(row.count.formatted(.number)) \(row.kindLabel)") {
             TapTile(name: row.name)
         } accessory: {
-            TagLabel("Built-in")
-                .font(.caption)
+            HStack(spacing: 8) {
+                TagLabel("Built-in")
+                    .font(.caption)
+                DrillChevron()
+            }
         }
         .accessibilityHint("Shows the tap's packages")
     }
@@ -152,7 +173,10 @@ private struct TapRow: View {
         StateRow(title: info.name, subtitle: contents) {
             TapTile(name: info.name, remote: info.remote)
         } accessory: {
-            trustBadge
+            HStack(spacing: 8) {
+                trustBadge
+                DrillChevron()
+            }
         }
         .accessibilityHint("Shows the tap's packages")
         .contextMenu {

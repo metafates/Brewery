@@ -268,6 +268,9 @@ struct StateRow<Tile: View, Accessory: View>: View {
         .padding(.vertical, 4)
         // Separators hang from the title, not the tile — the platform's list geometry.
         .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 44 }
+        // The Spacer's stretch is not hit-testable: without a shape, a caller's tap gesture or
+        // context menu only fires over drawn pixels, leaving the row's blank middle dead.
+        .contentShape(Rectangle())
     }
 }
 
