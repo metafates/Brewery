@@ -150,14 +150,7 @@ struct ServiceStatusLabel: View {
     }
 
     private func caption(_ text: String, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 6, height: 6)
-            Text(text)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
+        StatusDotLabel(text: text, color: color)
     }
 }
 

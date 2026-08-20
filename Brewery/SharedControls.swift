@@ -274,6 +274,25 @@ struct StateRow<Tile: View, Accessory: View>: View {
     }
 }
 
+/// The one dot-caption for a row's state word (Login Items grammar): a colored dot, a
+/// secondary word, spoken only when the state says something. Services rows and the tap
+/// list's trust exceptions name states through this one shape; font is the caller's.
+struct StatusDotLabel: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(text)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// The app's one "working" chip: the rotating-arrows label in a glass capsule that the
 /// refresh veil committed. One component, one spinner grammar — the Checkup page briefly grew
 /// a stock starburst spinner beside it, and two working styles read as two apps.

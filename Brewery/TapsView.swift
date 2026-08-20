@@ -32,9 +32,9 @@ struct TapsView: View {
     let onSelect: (String) -> Void
 
     @Environment(AppModel.self) private var model
-    /// Focus and activation, split (Finder's grammar): arrow keys move a real, persistent
-    /// selection; Return and a click open the tap. Drilling on selection *change* cannot
-    /// work — the page covers and disables the list mid-traversal.
+    /// Focus and activation, split: arrow keys move a real selection; Return and a click open
+    /// the tap; the push clears it (a navigation list keeps no highlight after back). Drilling
+    /// on selection *change* cannot work — the page covers and disables the list mid-traversal.
     @State private var focusedTap: String?
     @State private var tip = TapsTip()
     /// TipView hides itself once dismissed, but the row it sits in would keep its insets — the
@@ -57,10 +57,7 @@ struct TapsView: View {
                 ForEach(builtInRows, id: \.name) { row in
                     BuiltInTapRow(row: row)
                         .tag(row.name)
-                        .onTapGesture {
-                            focusedTap = row.name
-                            onSelect(row.name)
-                        }
+                        .onTapGesture { onSelect(row.name) }
                 }
             } header: {
                 // A header labels its group. The vocabulary that used to hang under it is the
@@ -83,10 +80,7 @@ struct TapsView: View {
                                onRemove: { model.pendingTapRemoval = info },
                                onUntrust: { model.untrustTap(info.name) })
                             .tag(info.name)
-                            .onTapGesture {
-                                focusedTap = info.name
-                                onSelect(info.name)
-                            }
+                            .onTapGesture { onSelect(info.name) }
                     }
                 }
             } header: {
@@ -94,6 +88,12 @@ struct TapsView: View {
             }
         }
         .listStyle(.inset)
+        // A navigation list's selection is transient: the push consumes it. A highlight
+        // surviving the back trip would claim a relationship the page's dismissal ended
+        // (System Settings keeps none). Cleared under the covering page, so back lands clean.
+        .onChange(of: model.selectedTap) {
+            if model.selectedTap != nil { focusedTap = nil }
+        }
         .onKeyPress(.return) {
             guard let focusedTap else { return .ignored }
             onSelect(focusedTap)
@@ -152,11 +152,8 @@ private struct BuiltInTapRow: View {
                  subtitle: "\(row.count.formatted(.number)) \(row.kindLabel)") {
             TapTile(name: row.name)
         } accessory: {
-            HStack(spacing: 8) {
-                TagLabel("Built-in")
-                    .font(.caption)
-                DrillChevron()
-            }
+            // No "Built-in" pill: the section header already says it once for the group.
+            DrillChevron()
         }
         .accessibilityHint("Shows the tap's packages")
     }
@@ -174,7 +171,7 @@ private struct TapRow: View {
             TapTile(name: info.name, remote: info.remote)
         } accessory: {
             HStack(spacing: 8) {
-                trustBadge
+                trustException
                 DrillChevron()
             }
         }
@@ -202,18 +199,15 @@ private struct TapRow: View {
         return parts.joined(separator: " · ")
     }
 
-    /// Quiet when all is well; orange when brew is hiding things from the user.
-    @ViewBuilder private var trustBadge: some View {
-        if trust.isTrusted(info.name) {
-            Label("Trusted", systemImage: "checkmark.shield")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else {
+    /// Quiet when all is well — a trusted tap says nothing (labeling the normal state on
+    /// every row is noise); only the exception speaks, in the Services rows' dot grammar.
+    @ViewBuilder private var trustException: some View {
+        if !trust.isTrusted(info.name) {
             let items = trust.trustedItemCount(in: info.name)
-            Label(items > 0 ? "\(items) item\(items == 1 ? "" : "s") trusted" : "Untrusted",
-                  systemImage: items > 0 ? "shield.lefthalf.filled" : "shield.slash")
+            StatusDotLabel(text: items > 0 ? "\(items) item\(items == 1 ? "" : "s") trusted"
+                                           : "Untrusted",
+                           color: .orange)
                 .font(.caption)
-                .foregroundStyle(.orange)
         }
     }
 }
