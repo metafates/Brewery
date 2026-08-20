@@ -22,12 +22,16 @@ struct MenuBarLabel: View {
                 // bar's own grammar for "working" (Time Machine, the Finder sync arrows —
                 // system extras never animate continuously, and a rasterized label
                 // animates unreliably anyway). Static, so no Reduce Motion branch owed.
-                Label {
-                    Text(Image(systemName: "arrow.triangle.2.circlepath"))
-                } icon: {
-                    Image(systemName: "mug")
-                }
-                .labelStyle(.titleAndIcon)
+                //
+                // "↻" and not `Image(systemName: "arrow.triangle.2.circlepath")`: a status
+                // item's label renders exactly ONE Image and ONE Text — a second Image, or an
+                // SF Symbol smuggled in as `Text(Image(systemName:))`, is dropped silently and
+                // leaves the bare mug (measured: 34 pt wide, icon only, against 51 pt with this
+                // text). U+21BB resolves inside .SFNS-Regular, so it is the system font's own
+                // glyph at the count's weight rather than a foreign icon font — unlike U+27F3,
+                // which falls back to AppleSymbols.
+                Label("↻", systemImage: "mug")
+                    .labelStyle(.titleAndIcon)
             } else if count > 0 {
                 Label(count.formatted(.number), systemImage: "mug")
                     .labelStyle(.titleAndIcon)

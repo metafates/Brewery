@@ -59,4 +59,23 @@ final class OperationsSurfaceTests: XCTestCase {
         XCTAssertTrue(logWindow.staticTexts["==> Upgrading ffmpeg"].waitForExistence(timeout: 5))
         XCTAssertTrue(logWindow.buttons["Cancel"].exists)
     }
+
+    /// The menu bar extra's queue tell, pinned by *width*: a status item's label renders exactly
+    /// one Image and one Text, and anything else — a second Image, an SF Symbol passed as
+    /// `Text(Image(systemName:))` — is dropped silently, leaving a bare mug that still carries
+    /// the right AX label. So the AX title alone cannot catch it; only the geometry can.
+    /// Measured on the seeded queue: 24 pt tall, 34 pt wide with the icon alone, 51 pt with the
+    /// adornment. The `+ 15` sits between those, well clear of both.
+    @MainActor
+    func testMenuBarExtraShowsQueueAdornment() throws {
+        let app = XCUIApplication()
+        app.launchArguments = UITestSeed.pinnedState + ["-demo-operation"]
+        app.launch()
+
+        let item = app.statusItems.firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 10))
+        XCTAssertEqual(item.title, "Brewery, 2 operations running")
+        XCTAssertGreaterThan(item.frame.width, item.frame.height + 15,
+                             "The queue adornment did not render: \(item.frame)")
+    }
 }
