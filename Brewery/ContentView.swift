@@ -1217,38 +1217,41 @@ struct ContentView: View {
                 Button {
                     model.showOperations.toggle()
                 } label: {
-                    if model.isQueueActive {
-                        HStack(spacing: 5) {
-                            ProgressView()
-                                .controlSize(.small)
-                            // Rolls between values, so a queue draining reads as a count going
-                            // down rather than as unrelated numbers replacing each other.
-                            Text(model.activeCount, format: .number)
-                                .monospacedDigit()
-                                .contentTransition(reduceMotion ? .identity
-                                                                 : .numericText(value: Double(model.activeCount)))
-                                .animation(.smooth(duration: 0.25), value: model.activeCount)
-                        }
-                        // Opaque to accessibility: a bare ProgressView in a button's label
-                        // hoists itself out as an ActivityIndicator and the *button* vanishes
-                        // from the tree — unreachable by VoiceOver exactly while work runs.
-                        .accessibilityElement(children: .ignore)
-                    } else if model.lastOperationFailed {
-                        // A different glyph, not just a red one: the failure has to survive
-                        // dismissing the popover, and it has to survive colour-blindness too.
-                        Label {
-                            Text("Operations")
-                        } icon: {
+                    Group {
+                        if model.isQueueActive {
+                            HStack(spacing: 5) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                // Rolls between values, so a queue draining reads as a count going
+                                // down rather than as unrelated numbers replacing each other.
+                                Text(model.activeCount, format: .number)
+                                    .monospacedDigit()
+                                    .contentTransition(reduceMotion ? .identity
+                                                                     : .numericText(value: Double(model.activeCount)))
+                                    .animation(.smooth(duration: 0.25), value: model.activeCount)
+                            }
+                        } else if model.lastOperationFailed {
+                            // A different glyph, not just a red one: the failure has to survive
+                            // dismissing the popover, and it has to survive colour-blindness too.
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.red)
+                        } else {
+                            Image(systemName: "list.bullet.rectangle")
                         }
-                    } else {
-                        Label("Operations", systemImage: "list.bullet.rectangle")
                     }
+                    // Bare images and stacks, never `Label`: the toolbar bridge adopts a
+                    // Label's *title* as the item's accessibility label, outranking every
+                    // accessibility modifier — the failed state read as a plain "Operations"
+                    // with the tell living only in the pointer-only tooltip (caught by
+                    // HarnessTests.testFailedInstallPresentsTheFailure). With label-less
+                    // content the bridge falls back to the modifiers below; `.ignore` also
+                    // keeps a bare ProgressView from hoisting itself out as an
+                    // ActivityIndicator and vanishing the button from the tree.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(operationsLabel)
                 }
                 .help(model.lastOperationFailed ? "Operations — the last one failed"
                                                 : "Show the queue of Homebrew operations")
-                .accessibilityLabel(operationsLabel)
                 .popover(isPresented: $model.showOperations, arrowEdge: .bottom) {
                     OperationsPopover()
                 }
