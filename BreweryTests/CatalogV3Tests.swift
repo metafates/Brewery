@@ -409,3 +409,42 @@ struct LicenseDecodingTests {
         #expect(package.licenseLabel == nil)
     }
 }
+
+@Suite("Catalog ETag revalidation")
+struct CatalogEtagTests {
+    @Test("etags ride inside the cache file and survive a round trip")
+    func etagsRoundTrip() throws {
+        let etags = [CatalogStore.formulaURL.absoluteString: "\"6a8accf0-1df3ea6\""]
+        let cache = CatalogCache(fetchedAt: .now, packages: [], etags: etags)
+        let decoded = try JSONDecoder().decode(CatalogCache.self,
+                                               from: JSONEncoder().encode(cache))
+        #expect(decoded.etags == etags)
+    }
+
+    @Test("a pre-etag cache decodes with nil etags — the additive rule, no version bump")
+    func oldCacheDecodesWithoutEtags() throws {
+        let json = Data(#"{"version":\#(CatalogStore.cacheVersion),"fetchedAt":0,"packages":[]}"#.utf8)
+        let cache = try JSONDecoder().decode(CatalogCache.self, from: json)
+        #expect(cache.version == CatalogStore.cacheVersion)
+        #expect(cache.etags == nil)
+    }
+
+    @Test("reuse requires every mandatory 304; a failed optional still reuses")
+    func reuseDecision() {
+        typealias Fetched = CatalogStore.Fetched
+        let fresh = Fetched.fresh(Data(), etag: nil)
+
+        // The fast path: nothing regenerated (a failed optional keeps its previously
+        // joined values by reuse — strictly better than re-decoding with the field empty).
+        #expect(CatalogStore.canReuse(mandatory: [.notModified, .notModified],
+                                      optional: [.notModified, nil, .notModified]))
+
+        // One fresh mandatory file means the generation moved.
+        #expect(!CatalogStore.canReuse(mandatory: [fresh, .notModified],
+                                       optional: [.notModified, .notModified, .notModified]))
+
+        // A fresh optional (changed analytics) must re-join, so no reuse either.
+        #expect(!CatalogStore.canReuse(mandatory: [.notModified, .notModified],
+                                       optional: [.notModified, fresh, nil]))
+    }
+}

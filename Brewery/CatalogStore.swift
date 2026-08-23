@@ -18,13 +18,20 @@ nonisolated struct CatalogCache: Codable {
     /// scan can join real install counts. Optional — an older cache decodes it as nil and tap
     /// packages go uncounted until the next daily fetch, which is why no version bump is needed.
     let tapInstalls90d: [String: Int]?
+    /// Each downloaded file's ETag (keyed by URL), sent back as `If-None-Match` on the next
+    /// fetch so an unchanged catalog costs a handful of 304s instead of ~48 MB and a decode.
+    /// Deliberately *inside* this file, never stored beside it: a validator that outlives its
+    /// payload would keep earning 304s against a cache that is gone. Optional — same additive
+    /// rule as `tapInstalls90d`, no version bump.
+    let etags: [String: String]?
 
     init(version: Int = CatalogStore.cacheVersion, fetchedAt: Date, packages: [Package],
-         tapInstalls90d: [String: Int]? = nil) {
+         tapInstalls90d: [String: Int]? = nil, etags: [String: String]? = nil) {
         self.version = version
         self.fetchedAt = fetchedAt
         self.packages = packages
         self.tapInstalls90d = tapInstalls90d
+        self.etags = etags
     }
 }
 
@@ -82,6 +89,13 @@ nonisolated struct CatalogStore {
         !(0...maxCacheAge).contains(Date.now.timeIntervalSince(fetchedAt))
     }
 
+    /// One conditional download's outcome: fresh bytes (with the response's validator for the
+    /// next round), or the server confirming our cached copy still stands.
+    enum Fetched {
+        case fresh(Data, etag: String?)
+        case notModified
+    }
+
     /// Downloads the five files concurrently, decodes them and refreshes the cache file.
     ///
     /// `@concurrent` is load-bearing: with Approachable Concurrency a plain `nonisolated async func`
@@ -89,44 +103,131 @@ nonisolated struct CatalogStore {
     ///
     /// Only the two catalogs are mandatory. Commands and analytics are best effort: a 500 there
     /// empties one field, it never costs the user their catalog.
+    ///
+    /// Every request carries the previous cache's ETag when there is one; when nothing
+    /// regenerated server-side (`canReuse`), the previous packages are reused wholesale and only
+    /// `fetchedAt` moves — no download, no decode. The previous cache is read *here*, not passed
+    /// in: the etags live inside the versioned cache file, so a version mismatch or decode
+    /// failure discards validators and payload together, and a 304 can never be honored against
+    /// a payload that is gone.
     @concurrent static func fetch() async throws -> CatalogCache {
-        async let formulaData = download(formulaURL)
-        async let caskData = download(caskURL)
-        async let executablesData = downloadOptional(executablesURL)
-        async let formulaAnalyticsData = downloadOptional(formulaAnalyticsURL)
-        async let caskAnalyticsData = downloadOptional(caskAnalyticsURL)
+        let previous = await loadCache()
+        let etags = previous?.etags ?? [:]
 
-        let commands = await executablesData.map(parseExecutables) ?? [:]
-        let formulaInstalls = await formulaAnalyticsData.map(parseFormulaAnalytics) ?? [:]
-        let caskInstalls = await caskAnalyticsData.map(parseCaskAnalytics) ?? [:]
+        async let formulaFetch = download(formulaURL, etag: etags[formulaURL.absoluteString])
+        async let caskFetch = download(caskURL, etag: etags[caskURL.absoluteString])
+        async let executablesFetch = downloadOptional(executablesURL,
+                                                      etag: etags[executablesURL.absoluteString])
+        async let formulaAnalyticsFetch = downloadOptional(formulaAnalyticsURL,
+                                                           etag: etags[formulaAnalyticsURL.absoluteString])
+        async let caskAnalyticsFetch = downloadOptional(caskAnalyticsURL,
+                                                        etag: etags[caskAnalyticsURL.absoluteString])
 
-        var packages = try await decodeFormulae(formulaData, commands: commands, installs: formulaInstalls)
-        packages += try await decodeCasks(caskData, installs: caskInstalls)
+        let formula = try await formulaFetch
+        let cask = try await caskFetch
+        let executables = await executablesFetch
+        let formulaAnalytics = await formulaAnalyticsFetch
+        let caskAnalytics = await caskAnalyticsFetch
+
+        if let previous, canReuse(mandatory: [formula, cask],
+                                  optional: [executables, formulaAnalytics, caskAnalytics]) {
+            // Restamping matters: `isStale` gates on `fetchedAt`, so without it every launch
+            // past 24 h would re-ask despite the server just saying "unchanged".
+            let refreshed = CatalogCache(fetchedAt: .now, packages: previous.packages,
+                                         tapInstalls90d: previous.tapInstalls90d,
+                                         etags: previous.etags)
+            writeCache(refreshed)
+            return refreshed
+        }
+
+        let formulaResult = try await materialize(formula, from: formulaURL)
+        let caskResult = try await materialize(cask, from: caskURL)
+        let executablesResult = await materializeOptional(executables, from: executablesURL)
+        let formulaAnalyticsResult = await materializeOptional(formulaAnalytics, from: formulaAnalyticsURL)
+        let caskAnalyticsResult = await materializeOptional(caskAnalytics, from: caskAnalyticsURL)
+
+        let commands = executablesResult.data.map(parseExecutables) ?? [:]
+        let formulaInstalls = formulaAnalyticsResult.data.map(parseFormulaAnalytics) ?? [:]
+        let caskInstalls = caskAnalyticsResult.data.map(parseCaskAnalytics) ?? [:]
+
+        var packages = try decodeFormulae(formulaResult.data, commands: commands, installs: formulaInstalls)
+        packages += try decodeCasks(caskResult.data, installs: caskInstalls)
         packages.sort(by: Package.displayOrder)
+
+        var freshEtags: [String: String] = [:]
+        freshEtags[formulaURL.absoluteString] = formulaResult.etag
+        freshEtags[caskURL.absoluteString] = caskResult.etag
+        freshEtags[executablesURL.absoluteString] = executablesResult.etag
+        freshEtags[formulaAnalyticsURL.absoluteString] = formulaAnalyticsResult.etag
+        freshEtags[caskAnalyticsURL.absoluteString] = caskAnalyticsResult.etag
 
         // The catalog join below is by short name, so qualified analytics keys would drop out;
         // kept aside instead, they give scanned tap packages their install counts.
         let cache = CatalogCache(fetchedAt: .now, packages: packages,
-                                 tapInstalls90d: formulaInstalls.filter { $0.key.contains("/") })
-        // A cache we cannot write is still a catalog we can show.
-        if let encoded = try? JSONEncoder().encode(cache) {
-            try? encoded.write(to: cacheURL, options: .atomic)
-        }
+                                 tapInstalls90d: formulaInstalls.filter { $0.key.contains("/") },
+                                 etags: freshEtags.isEmpty ? nil : freshEtags)
+        writeCache(cache)
         return cache
     }
 
-    private static func download(_ url: URL) async throws -> Data {
-        // We do our own 24 h staleness check; URLCache.shared is reserved for favicons.
-        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw CatalogError.badStatus(code: http.statusCode)
-        }
-        return data
+    /// The all-304 fast path's gate. Both mandatory files must answer `.notModified`. An
+    /// optional file passes on `.notModified` *or* on failure (nil): the previous cache already
+    /// holds its joined values, and keeping them beats re-decoding the world with that field
+    /// emptied. Any fresh answer means the site regenerated and the full pipeline re-runs.
+    static func canReuse(mandatory: [Fetched], optional: [Fetched?]) -> Bool {
+        mandatory.allSatisfy { if case .notModified = $0 { true } else { false } }
+            && optional.allSatisfy { if case .fresh? = $0 { false } else { true } }
     }
 
-    private static func downloadOptional(_ url: URL) async -> Data? {
-        try? await download(url)
+    /// Turns a conditional result into usable bytes. A `.notModified` outside the fast path is
+    /// the mixed generation — this file matched while a sibling changed. Rare (the site
+    /// regenerates all five together), so one unconditional re-request beats persisting
+    /// per-file payloads the cache would otherwise need for reuse.
+    private static func materialize(_ fetched: Fetched, from url: URL) async throws
+        -> (data: Data, etag: String?) {
+        switch fetched {
+        case .fresh(let data, let etag):
+            return (data, etag)
+        case .notModified:
+            guard case .fresh(let data, let etag) = try await download(url, etag: nil) else {
+                throw CatalogError.badStatus(code: 304)
+            }
+            return (data, etag)
+        }
+    }
+
+    private static func materializeOptional(_ fetched: Fetched?, from url: URL) async
+        -> (data: Data?, etag: String?) {
+        guard let fetched else { return (nil, nil) }
+        return (try? await materialize(fetched, from: url)) ?? (nil, nil)
+    }
+
+    private static func download(_ url: URL, etag: String?) async throws -> Fetched {
+        // We do our own 24 h staleness check; URLCache.shared is reserved for favicons. The
+        // validator is ours for the same reason: with URLCache bypassed, a matching
+        // If-None-Match comes back as a raw 304 rather than a transparent revalidation.
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        if let etag {
+            request.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { return .fresh(data, etag: nil) }
+        if http.statusCode == 304, etag != nil { return .notModified }
+        guard (200..<300).contains(http.statusCode) else {
+            throw CatalogError.badStatus(code: http.statusCode)
+        }
+        return .fresh(data, etag: http.value(forHTTPHeaderField: "ETag"))
+    }
+
+    private static func downloadOptional(_ url: URL, etag: String?) async -> Fetched? {
+        try? await download(url, etag: etag)
+    }
+
+    // A cache we cannot write is still a catalog we can show.
+    private static func writeCache(_ cache: CatalogCache) {
+        if let encoded = try? JSONEncoder().encode(cache) {
+            try? encoded.write(to: cacheURL, options: .atomic)
+        }
     }
 
     // MARK: - Commands and analytics
