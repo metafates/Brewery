@@ -3,6 +3,7 @@
 //  Brewery
 //
 
+import AppKit
 import SwiftUI
 import TipKit
 
@@ -32,9 +33,11 @@ struct TapsView: View {
     let onSelect: (String) -> Void
 
     @Environment(AppModel.self) private var model
-    /// Focus and activation, split: arrow keys move a real selection; Return and a click open
-    /// the tap; the push clears it (a navigation list keeps no highlight after back). Drilling
-    /// on selection *change* cannot work — the page covers and disables the list mid-traversal.
+    /// Focus and activation, split: arrow keys move a real selection; Return opens it. Clicks
+    /// never touch it — every row is a `DrillRow` button that consumes them — so the highlight
+    /// is keyboard-only and transient (the push clears it; a navigation list keeps no highlight
+    /// after back). Drilling on selection *change* cannot work — the page covers and disables
+    /// the list mid-traversal.
     @State private var focusedTap: String?
     @State private var tip = TapsTip()
     /// TipView hides itself once dismissed, but the row it sits in would keep its insets — the
@@ -55,9 +58,8 @@ struct TapsView: View {
 
             Section {
                 ForEach(builtInRows, id: \.name) { row in
-                    BuiltInTapRow(row: row)
+                    BuiltInTapRow(row: row, onOpen: { open(row.name) })
                         .tag(row.name)
-                        .onTapGesture { onSelect(row.name) }
                 }
             } header: {
                 // A header labels its group. The vocabulary that used to hang under it is the
@@ -77,10 +79,10 @@ struct TapsView: View {
                         TapRow(info: info,
                                installedCount: model.installedCount(fromTap: info.name),
                                trust: model.trustState,
+                               onOpen: { open(info.name) },
                                onRemove: { model.pendingTapRemoval = info },
                                onUntrust: { model.untrustTap(info.name) })
                             .tag(info.name)
-                            .onTapGesture { onSelect(info.name) }
                     }
                 }
             } header: {
@@ -94,9 +96,19 @@ struct TapsView: View {
         .onChange(of: model.selectedTap) {
             if model.selectedTap != nil { focusedTap = nil }
         }
+        // The .inset style's structural row margin (~10 pt outside the cell, measured) cannot
+        // belong to the row button — a click there still lands on List selection. A mouse-set
+        // selection IS that click, and it meant "open" (System Settings paints the same flash
+        // before its push); a key-set selection is the arrows' highlight and must stay.
+        .onChange(of: focusedTap) {
+            guard let focusedTap,
+                  let event = NSApp.currentEvent,
+                  event.type == .leftMouseDown || event.type == .leftMouseUp else { return }
+            open(focusedTap)
+        }
         .onKeyPress(.return) {
             guard let focusedTap else { return .ignored }
-            onSelect(focusedTap)
+            open(focusedTap)
             return .handled
         }
         .task {
@@ -104,6 +116,13 @@ struct TapsView: View {
                 showTip = status == .available
             }
         }
+    }
+
+    /// The one activation funnel: clears any highlight a mouse-down may have painted before
+    /// the row button fired (and the same-row case `onChange` cannot see), then pushes.
+    private func open(_ name: String) {
+        focusedTap = nil
+        onSelect(name)
     }
 
     private var query: String {
@@ -144,18 +163,45 @@ private struct DrillChevron: View {
     }
 }
 
-private struct BuiltInTapRow: View {
-    let row: TapsView.BuiltIn
+/// The drill row's whole-cell button: row insets zeroed, the list gutter moved inside the
+/// label, so every pixel of the row band belongs to the button — a click can open but never
+/// select (selection is the arrow keys'; System Settings keeps no highlight from clicks).
+/// The gap between the two shapes was the bug: the List's selectable band exceeded the
+/// row's hit shape, and a click in the difference painted a highlight that opened nothing.
+private struct DrillRow<Content: View>: View {
+    let action: () -> Void
+    @ViewBuilder let content: Content
 
     var body: some View {
-        StateRow(title: row.name,
-                 subtitle: "\(row.count.formatted(.number)) \(row.kindLabel)") {
-            TapTile(name: row.name)
-        } accessory: {
-            // No "Built-in" pill: the section header already says it once for the group.
-            DrillChevron()
+        Button(action: action) {
+            content
+                // The `.inset` style's default row gutter (16 h / 4 v, measured), relocated
+                // inside the button so the label — and its hit shape — owns the full cell.
+                .padding(.vertical, 4)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets())
         .accessibilityHint("Shows the tap's packages")
+    }
+}
+
+private struct BuiltInTapRow: View {
+    let row: TapsView.BuiltIn
+    let onOpen: () -> Void
+
+    var body: some View {
+        DrillRow(action: onOpen) {
+            StateRow(title: row.name,
+                     subtitle: "\(row.count.formatted(.number)) \(row.kindLabel)") {
+                TapTile(name: row.name)
+            } accessory: {
+                // No "Built-in" pill: the section header already says it once for the group.
+                DrillChevron()
+            }
+        }
     }
 }
 
@@ -163,19 +209,21 @@ private struct TapRow: View {
     let info: TapInfo
     let installedCount: Int
     let trust: TrustState
+    let onOpen: () -> Void
     let onRemove: () -> Void
     let onUntrust: () -> Void
 
     var body: some View {
-        StateRow(title: info.name, subtitle: contents) {
-            TapTile(name: info.name, remote: info.remote)
-        } accessory: {
-            HStack(spacing: 8) {
-                trustException
-                DrillChevron()
+        DrillRow(action: onOpen) {
+            StateRow(title: info.name, subtitle: contents) {
+                TapTile(name: info.name, remote: info.remote)
+            } accessory: {
+                HStack(spacing: 8) {
+                    trustException
+                    DrillChevron()
+                }
             }
         }
-        .accessibilityHint("Shows the tap's packages")
         .contextMenu {
             if trust.taps.contains(info.name.lowercased()) {
                 // Only for *explicit* trust: official taps cannot be untrusted, and partial

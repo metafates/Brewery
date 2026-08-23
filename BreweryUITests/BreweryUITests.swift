@@ -290,31 +290,81 @@ extension BreweryUITests {
     }
 }
 
-/// Regression: the whole tap row is the click target. Activation once rode a tap gesture over a
-/// shape-less row, so a click in the blank middle only painted selection while the title drilled —
-/// two behaviors in one row. Built-ins always render, so the click point is machine-independent.
+/// Regression pair: every pixel of a tap row's band opens the tap, and no click can leave a
+/// selection behind. Activation once rode a tap gesture over a shape-less row (a blank-middle
+/// click only painted selection while the title drilled), then over a padded shape smaller than
+/// the List's selectable band (a separator-strip click ghost-selected). Now the row is one
+/// whole-cell button — which is also why these tests query `buttons`, not `staticTexts`: the
+/// button fuses its texts into one AX element ('homebrew/core, 8 564 formulae'), one VoiceOver
+/// stop with a press action. Built-ins always render, so the click points are machine-independent.
 extension BreweryUITests {
-    func testTapRowBlankAreaOpensTheTap() throws {
-        let app = launched()
-        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
-        waitForCatalog(app)
+    private func coreTapRow(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'homebrew/core'")).firstMatch
+    }
 
+    private func openTapsSection(_ app: XCUIApplication) {
         let window = app.windows.firstMatch
         app.typeKey("5", modifierFlags: .command)
         sleep(1)
         XCTAssertTrue(window.title.hasPrefix("Taps"), "⌘5 never reached Taps.")
+        XCTAssertTrue(coreTapRow(app).waitForExistence(timeout: 30), "No homebrew/core row.")
+    }
 
-        let title = app.staticTexts["homebrew/core"]
-        XCTAssertTrue(title.waitForExistence(timeout: 30), "No homebrew/core row.")
+    func testTapRowBlankAreaOpensTheTap() throws {
+        let app = launched()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
+        waitForCatalog(app)
+        openTapsSection(app)
+        let window = app.windows.firstMatch
 
-        // 150 pt past the title's trailing edge: blank row, not title, badge, or chevron —
+        // The blank stretch between subtitle and chevron: not title, badge, or chevron —
         // exactly the point that only selected before the row grew its content shape.
-        title.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5))
-            .withOffset(CGVector(dx: 150, dy: 0))
-            .click()
+        coreTapRow(app).coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)).click()
         sleep(1)
         XCTAssertTrue(window.title.hasPrefix("homebrew/core"),
                       "Blank-area click did not open the tap; the window says “\(window.title)”.")
+    }
+
+    func testTapRowEdgeClicksOpenNotSelect() throws {
+        let app = launched()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 60))
+        waitForCatalog(app)
+        openTapsSection(app)
+        let window = app.windows.firstMatch
+
+        // The separator strip between the two built-in rows — the band the List could select
+        // but no shape answered for: it belongs to a row button now, so it must open one.
+        coreTapRow(app).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: 0, dy: 26))
+            .click()
+        sleep(1)
+        XCTAssertTrue(window.title.hasPrefix("homebrew/"),
+                      "Separator-strip click did not open a tap; the window says “\(window.title)”.")
+
+        // The .inset style's structural row margin (outside the List cell, unreachable by the
+        // button): a click there sets List selection, which the mouse-event fallback must
+        // convert into the same push.
+        app.typeKey("[", modifierFlags: .command)
+        sleep(1)
+        XCTAssertTrue(window.title.hasPrefix("Taps"), "⌘[ did not return to the tap list.")
+        coreTapRow(app).coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+            .withOffset(CGVector(dx: -8, dy: 0))
+            .click()
+        sleep(1)
+        XCTAssertTrue(window.title.hasPrefix("homebrew/"),
+                      "Row-margin click did not open a tap; the window says “\(window.title)”.")
+
+        // Back on the list, nothing may remain highlighted: clicks open, only arrows select.
+        // (Filter outlines by column position — the sidebar always holds its section row
+        // selected, and its AX identifier property is empty, so a name filter matches nothing.)
+        app.typeKey("[", modifierFlags: .command)
+        sleep(1)
+        let sidebarEnd = app.outlines["Sidebar"].frame.maxX
+        for outline in app.outlines.allElementsBoundByIndex where outline.frame.minX >= sidebarEnd {
+            for row in outline.outlineRows.allElementsBoundByIndex.prefix(10) {
+                XCTAssertFalse(row.isSelected, "A click left a ghost selection behind.")
+            }
+        }
     }
 }
 

@@ -237,7 +237,9 @@ struct CopyButton: View {
 /// The one list row: a 32 pt tile, a title over a caption subtitle, a trailing
 /// accessory. ServiceRow, TapRow, BuiltInTapRow and ReportRow were four hand-copies of this
 /// shape, drifting in vertical padding (3/3/4) and separator rules. Selection belongs to the
-/// List (`List(selection:)` + `.tag`), so the row is content only — no inner Button.
+/// List (`List(selection:)` + `.tag`), so the row is content only — no inner Button. (Taps
+/// wraps it in its own whole-cell `DrillRow` button — clicks open, never select, there — but
+/// the row itself stays content-only.)
 struct StateRow<Tile: View, Accessory: View>: View {
     let title: String
     var subtitle: String?
