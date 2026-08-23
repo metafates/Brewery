@@ -59,6 +59,11 @@ actor IconStore {
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 30
         configuration.httpMaximumConnectionsPerHost = 8
+        // Under the harness icon traffic hits the fixture stub too; an unfixtured host 404s
+        // into the negative marker and the deterministic glyph fallback.
+        if UITestMode.active {
+            configuration.protocolClasses = [UITestStubURLProtocol.self]
+        }
         return URLSession(configuration: configuration)
     }()
 

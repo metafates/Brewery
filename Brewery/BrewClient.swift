@@ -47,6 +47,10 @@ final class BrewClient {
     /// The login-shell overlay, captured once per launch. The task is created synchronously on
     /// first access, so concurrent callers (bootstrap's parallel probes) all await one capture.
     func shellEnvironment() async -> [String: String] {
+        // Under the harness the developer's dotfiles must not run — and the overlay would
+        // shadow the XCUITest launch environment in the merge, defeating the fixture root's
+        // XDG_CONFIG_HOME/HOMEBREW_CACHE/HOMEBREW_LOGS siblings.
+        guard !UITestMode.active else { return [:] }
         if let overlayTask { return await overlayTask.value }
         let task = Task {
             let overlay = await LoginEnvironment.capture()
@@ -65,6 +69,12 @@ final class BrewClient {
 
     /// Apple silicon prefix first, then Intel. Re-run on ⌘R so installing brew needs no relaunch.
     func discover() {
+        // A harness launch can never reach the real brew: the fake path is the only candidate,
+        // and its absence (a brew-missing scenario) reads as not installed.
+        if UITestMode.active {
+            path = UITestMode.brewPath
+            return
+        }
         let existing = Self.candidatePaths.first { FileManager.default.fileExists(atPath: $0) }
         path = existing.map { URL(filePath: $0) }
     }

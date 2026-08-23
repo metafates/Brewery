@@ -59,6 +59,9 @@ nonisolated struct CatalogStore {
     /// Application Support/Brewery, created once on first use — a computed property re-ran
     /// `createDirectory` on every cache path and icon-store access.
     static let supportDirectory: URL = {
+        // One seam redirects everything that lives here — catalog.json, state.json, Icons/,
+        // askpass.sh — into the harness's fixture root instead of the user's real directory.
+        if let directory = UITestMode.supportDirectory { return directory }
         let base = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                  in: .userDomainMask,
                                                  appropriateFor: nil,
@@ -202,6 +205,16 @@ nonisolated struct CatalogStore {
         return (try? await materialize(fetched, from: url)) ?? (nil, nil)
     }
 
+    /// `.shared` in production; under the harness an ephemeral session whose protocol classes
+    /// route every request to the fixture stub — session-scoped, never `registerClass`, which
+    /// would capture `.shared` for the whole process.
+    private static let session: URLSession = {
+        guard UITestMode.active else { return .shared }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UITestStubURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }()
+
     private static func download(_ url: URL, etag: String?) async throws -> Fetched {
         // We do our own 24 h staleness check; URLCache.shared is reserved for favicons. The
         // validator is ours for the same reason: with URLCache bypassed, a matching
@@ -210,7 +223,7 @@ nonisolated struct CatalogStore {
         if let etag {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { return .fresh(data, etag: nil) }
         if http.statusCode == 304, etag != nil { return .notModified }
         guard (200..<300).contains(http.statusCode) else {
