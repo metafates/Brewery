@@ -145,6 +145,12 @@ nonisolated enum UITestMode {
         exit 64
     fi
 
+    # A held answer: `<key>.delay` (seconds) sleeps before any output, so a test can pin what
+    # the UI does *while* a command runs. Deliberately after the missing-fixture check — a
+    # .delay alone is not an answer.
+    delay_file="$(pick .delay)"
+    [[ -f "${delay_file}" ]] && sleep "$(cat "${delay_file}")"
+
     [[ -f "${stdout_file}" ]] && cat "${stdout_file}"
     [[ -f "${stderr_file}" ]] && cat "${stderr_file}" >&2
     status=0

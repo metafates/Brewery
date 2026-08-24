@@ -30,7 +30,7 @@ final class AppModel {
     /// "Which packages provide this executable", from the catalog's command lists. Search consults
     /// it so `convert` finds imagemagick; the detail sheet just reads `package.commands`.
     private(set) var commandIndex: [String: [Package.ID]] = [:]
-    private var catalogLoading = false
+    private(set) var catalogLoading = false
     var catalogFailed = false
 
     /// Overlays are keyed by `Package.ID` (`kind:shortname`). Persisted as a last-known
@@ -70,6 +70,28 @@ final class AppModel {
     /// mid-check starts right after it (with fresh metadata) instead of colliding with brew's
     /// exclusive update flock.
     private(set) var isCheckingForUpdates = false
+
+    /// In-flight `refreshState()` passes — the probe work no other flag names: the
+    /// post-mutation reconcile and the background check's re-probe. A counter, not a Bool,
+    /// because passes overlap (a ⌘R can overtake a post-mutation pass); bumped inside
+    /// `refreshState()` itself so every caller counts.
+    private var activeStateRefreshes = 0
+
+    /// The app's one "state work is happening" signal: ⌘R, the inline metadata check, the
+    /// catalog download, and any in-flight probe pass. Drives the spinning toolbar glyph and
+    /// every empty slot's working capsule — and blocks nothing: content stays sharp and
+    /// interactive while it is true. Composed, never set, so it cannot drift from the flags
+    /// it reads. (`isCheckingForUpdates` stays the *narrow* flag: the inline `brew update`.)
+    var isChecking: Bool {
+        Self.checking(refreshing: isRefreshing, updatingMetadata: isCheckingForUpdates,
+                      loadingCatalog: catalogLoading, stateRefreshes: activeStateRefreshes)
+    }
+
+    /// Pure so the composition is testable without a client (`shouldBackgroundCheck`'s rule).
+    nonisolated static func checking(refreshing: Bool, updatingMetadata: Bool,
+                                     loadingCatalog: Bool, stateRefreshes: Int) -> Bool {
+        refreshing || updatingMetadata || loadingCatalog || stateRefreshes > 0
+    }
 
     /// The newest API payload mtime, brew's "metadata last known good" (terminal updates
     /// count too). Re-stat'd on every refresh; feeds the "Last checked" caption and the
@@ -361,8 +383,8 @@ final class AppModel {
 
         client.discover()
 
-        // Unlike bootstrap, the check runs *before* the probes: the veil is already up, and
-        // one landing beats showing stale answers mid-refresh only to swap them seconds later.
+        // Unlike bootstrap, the check runs *before* the probes: one landing beats showing
+        // stale answers mid-refresh only to swap them seconds later.
         // Forced: ⌘R is an explicit request, and explicit requests are never coalesced.
         _ = await checkForUpdatesIfStale(force: true)
 
@@ -413,8 +435,11 @@ final class AppModel {
 
     /// The menu bar presence's clock: with the window closed the app still answers for
     /// updates, so every 6 hours — and on wake — the gentle bootstrap-shaped pass runs:
-    /// the staleness-gated metadata check plus a re-probe. Never the forced `refresh()`,
-    /// whose veil would drop over an open window under the user's cursor.
+    /// the staleness-gated metadata check plus a re-probe. Never the forced `refresh()`:
+    /// force is the explicit-request semantic, and a cadence that forced `brew update` past
+    /// the staleness gate would spend network every 6 hours for no one. The pass is not
+    /// invisible — any state work in flight spins the toolbar glyph (`isChecking`), which is
+    /// the whole of the feedback a background pass earns.
     /// `BackgroundCheckTests` pins the interval — a dev-time short cadence must not ship.
     nonisolated static let backgroundCheckInterval: Duration = .seconds(6 * 60 * 60)
 
@@ -532,6 +557,11 @@ final class AppModel {
     /// on-request flags have not landed yet would briefly show dependency-only kegs as directly
     /// installed.
     private func refreshState() async {
+        // Counted here, not at call sites, so every pass raises `isChecking` — bootstrap,
+        // ⌘R, the background check, and the flagless post-mutation reconcile alike.
+        activeStateRefreshes += 1
+        defer { activeStateRefreshes -= 1 }
+
         refreshGeneration &+= 1
         let generation = refreshGeneration
 
@@ -1035,10 +1065,10 @@ final class AppModel {
     /// machine, and a stale verdict restored at launch would be a lie with a green checkmark.
     private(set) var checkupOutcome: CheckupOutcome?
 
-    /// Whether the Checkup page is showing content worth receding under the refresh veil —
-    /// findings or raw output. The claim states (intro, clean, failed) are not: the veil
-    /// recedes data that stays valid while re-checked, and a blurred claim under a working
-    /// capsule contradicts it — those are replaced by the capsule instead.
+    /// Whether the Checkup page is showing content worth keeping on screen while doctor
+    /// re-runs — findings or raw output. The claim states (intro, clean, failed) are not:
+    /// a wait may only occupy space that has nothing to show, so those are replaced by the
+    /// capsule while content pages keep their findings and narrate in the header caption.
     var checkupHasContent: Bool {
         switch checkupOutcome {
         case .report(let report): !report.findings.isEmpty

@@ -65,11 +65,15 @@ struct Scenario {
     /// copies them into its state overlay, and the app's own post-mutation reconcile sees the
     /// changed world. Consistency by construction, both before and after.
     mutating func brewCommand(_ argv: [String], stdout: String = "", stderr: String = "",
-                              exitCode: Int = 0, after: [FixturePackage]? = nil) {
+                              exitCode: Int = 0, delay: Int? = nil,
+                              after: [FixturePackage]? = nil) {
         let key = argv.joined(separator: "_")
         extraFiles["brew/\(key).stdout"] = Data(stdout.utf8)
         if !stderr.isEmpty { extraFiles["brew/\(key).stderr"] = Data(stderr.utf8) }
         if exitCode != 0 { extraFiles["brew/\(key).exitcode"] = Data("\(exitCode)".utf8) }
+        // Seconds the fake sleeps before answering — how a test holds the "command running"
+        // state long enough to assert what the UI does during it.
+        if let delay { extraFiles["brew/\(key).delay"] = Data("\(delay)".utf8) }
         if let after {
             for (name, contents) in Self.probeFiles(for: after) {
                 extraFiles["brew/\(key).apply/\(name)"] = contents

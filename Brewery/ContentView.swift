@@ -239,7 +239,18 @@ struct ContentView: View {
 
     var body: some View {
         if model.brewMissing {
-            brewNotFound
+            Group {
+                if model.isRefreshing {
+                    // Check Again re-probes the brew paths; the claim is being recomputed, so
+                    // the wait replaces it (the Checkup claim-replacement grammar). Keyed to
+                    // isRefreshing, not isChecking: only refresh() re-runs discovery, and a
+                    // background tick that cannot change the answer must not blink the claim.
+                    WorkingCapsule(text: "Checking…")
+                } else {
+                    brewNotFound
+                }
+            }
+            .animation(.smooth(duration: 0.3), value: model.isRefreshing)
         } else {
             splitView
         }
@@ -352,9 +363,6 @@ struct ContentView: View {
                 // window, and nothing has to be dismissed before the next card can be clicked.
                 .inspector(isPresented: $model.showInspector) {
                     inspector
-                        // The secondary column recedes with everything else during a refresh,
-                        // but only the content column's capsule narrates the wait.
-                        .refreshVeil(model.isRefreshing, showsCapsule: false)
                         .inspectorColumnWidth(min: 300, ideal: 340, max: 480)
                 }
         }
@@ -513,7 +521,6 @@ struct ContentView: View {
             catalogFailed
         } else if section == .discover, model.catalog.isEmpty {
             WorkingCapsule(text: "Loading catalog…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if section == .taps {
             // In-column drill-down, no transition: macOS NavigationStack does not animate
             // this push — a split view's detail column swaps instantly, as do Finder's and
@@ -523,7 +530,7 @@ struct ContentView: View {
             // frequent interactions). Still a ZStack rather than if/else: the list stays
             // mounted, keeping its scroll position for the way back.
             ZStack {
-                TapsView(searchText: model.query, onSelect: openTap)
+                TapsView(searchText: model.query, isChecking: model.isChecking, onSelect: openTap)
                     .opacity(model.selectedTap == nil ? 1 : 0)
                     // Disabled, not just covered: the hidden rows must leave the Tab order.
                     .disabled(model.selectedTap != nil)
@@ -534,28 +541,22 @@ struct ContentView: View {
                         .background(.background)
                 }
             }
-            // An empty tap page replaces its state with the capsule (the grid's
-            // isChecking); the veil recedes listings, it never blurs a claim.
-            .refreshVeil(model.isRefreshing && (model.selectedTap == nil || displayedCount > 0))
         } else if section == .services {
             // State rows, not catalog cards — a handful of items, no windowing needed.
             ServicesView(hits: displayedHits,
                          isSearching: isSearching,
-                         isChecking: model.isRefreshing,
+                         isChecking: model.isChecking,
                          selectedID: inspectedID,
                          onSelect: { select($0) },
                          onRefresh: { refresh() })
-                .refreshVeil(model.isRefreshing && !displayedHits.isEmpty)
         } else if section == .checkup {
-            // Findings, not packages — the view owns its four states. ⌘R recedes only
-            // recedable content; the claim states stay crisp (⌘R does not re-run doctor).
+            // Findings, not packages — the view owns its states, including its own wait.
             CheckupView(searchText: model.query)
-                .refreshVeil(model.isRefreshing && model.checkupHasContent)
         } else if section == .orphans || section == .attention || section == .storage {
             // Reports are state rows, not catalog cards (the Services rule generalized).
             ReportListView(hits: displayedHits,
                            isSearching: isSearching,
-                           isChecking: model.isRefreshing,
+                           isChecking: model.isChecking,
                            selectedID: inspectedID,
                            onSelect: { select($0) },
                            onRefresh: { refresh() },
@@ -570,10 +571,8 @@ struct ContentView: View {
                     StorageSummaryBar()
                 }
             }
-            .refreshVeil(model.isRefreshing && !displayedHits.isEmpty)
         } else {
             packageGrid()
-                .refreshVeil(model.isRefreshing && displayedCount > 0)
         }
     }
 
@@ -604,10 +603,9 @@ struct ContentView: View {
                         emptySymbol: section.symbol,
                         onNeedMore: { window += Self.windowStep },
                         onRefresh: emptyState?.isFiltered == true ? nil : emptyStateRefresh,
-                        // ⌘R counts too: an empty listing under the veil showed the capsule
-                        // floating over a blurred claim — replaced, never blurred.
-                        isChecking: (section == .outdated && model.isCheckingForUpdates)
-                            || (model.isRefreshing && displayedCount == 0),
+                        // One signal for every empty slot: while any state work runs, an
+                        // empty listing shows the wait instead of a claim mid-recompute.
+                        isChecking: model.isChecking,
                         onClearFilters: emptyState?.isFiltered == true ? { clearFilters() } : nil,
                         header: {
                             if let tap {
@@ -1160,8 +1158,10 @@ struct ContentView: View {
 
     // MARK: - Refresh
 
-    /// The same work ⌘R does, with somewhere to look while it happens: the glyph turns for as long
-    /// as the refresh runs.
+    /// The same work ⌘R does, with somewhere to look while it happens. The glyph is the app's
+    /// one chrome work tell: it turns for as long as *any* state work runs (`isChecking` — ⌘R,
+    /// the inline update, the catalog download, a post-mutation reconcile), while the button
+    /// disables only for the re-entrant case, a real ⌘R in flight.
     @ToolbarContentBuilder private var refreshToolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             // A Label, not a bare Image: the system overflow menu renders a toolbar item's
@@ -1172,7 +1172,7 @@ struct ContentView: View {
                 } icon: {
                     Image(systemName: "arrow.clockwise")
                         .symbolEffect(.rotate, options: .repeating,
-                                      isActive: model.isRefreshing && !reduceMotion)
+                                      isActive: model.isChecking && !reduceMotion)
                 }
             }
             .disabled(model.isRefreshing)

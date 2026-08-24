@@ -3,9 +3,10 @@
 //  BreweryUITests
 //
 //  Functional smoke, not perf pins. Two regressions only a launched app could catch:
-//  the refresh veil blurring an empty section's claim under the working capsule, and
-//  the font preview's `.task` never firing on empty conditional content (headless
-//  hosting *did* fire it — only the real hierarchy reproduced the silence).
+//  an empty section's claim staying on screen (instead of being replaced by the working
+//  capsule) while a check recomputes it, and the font preview's `.task` never firing on
+//  empty conditional content (headless hosting *did* fire it — only the real hierarchy
+//  reproduced the silence).
 //
 
 import XCTest
@@ -28,8 +29,8 @@ final class PaneRegressionUITests: XCTestCase {
         return app
     }
 
-    /// Empty Updates during ⌘R: the claim must be *replaced* by the capsule, never
-    /// blurred underneath it — a mid-refresh "Check Again" is the veiled-claim artifact.
+    /// Empty Updates during ⌘R: the claim must be *replaced* by the capsule, never left
+    /// on screen while the answer recomputes — a mid-refresh "Check Again" is the artifact.
     func testEmptyUpdatesReplacesClaimDuringRefresh() throws {
         let app = launched(section: "outdated")
 
@@ -45,7 +46,7 @@ final class PaneRegressionUITests: XCTestCase {
 
         app.typeKey("r", modifierFlags: .command)
         XCTAssertFalse(app.buttons["Check Again"].exists,
-                       "Check Again is on screen mid-refresh — the claim was veiled, not replaced.")
+                       "Check Again is on screen mid-refresh — the claim was not replaced.")
         XCTAssertTrue(claim.waitForExistence(timeout: 120), "The claim never returned after ⌘R.")
     }
 

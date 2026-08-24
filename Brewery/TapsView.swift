@@ -30,6 +30,9 @@ struct TapsTip: Tip {
 /// contents, install counts, freshness and brew 6 trust state. Rows open the tap's package page.
 struct TapsView: View {
     let searchText: String
+    /// Any state work in flight (`AppModel.isChecking`): the tap rescan rides every refresh,
+    /// so while one runs an empty "Your Taps" section must not claim "No taps yet".
+    var isChecking = false
     let onSelect: (String) -> Void
 
     @Environment(AppModel.self) private var model
@@ -70,10 +73,24 @@ struct TapsView: View {
 
             Section {
                 if filteredInfos.isEmpty {
-                    Text(searchText.isEmpty ? "No taps yet — use the Add Tap button in the toolbar."
-                                            : "No taps match the search.")
+                    if isChecking, searchText.isEmpty {
+                        // The claim is being recomputed — a wait may only occupy space that
+                        // has nothing to show, and a row slot wears the caption grammar (the
+                        // Outdated freshness caption's): the capsule fills pages, not rows.
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Checking for updates…")
+                        }
+                        .accessibilityElement(children: .combine)
                         .foregroundStyle(.secondary)
                         .selectionDisabled()
+                    } else {
+                        Text(searchText.isEmpty ? "No taps yet — use the Add Tap button in the toolbar."
+                                                : "No taps match the search.")
+                            .foregroundStyle(.secondary)
+                            .selectionDisabled()
+                    }
                 } else {
                     ForEach(filteredInfos) { info in
                         TapRow(info: info,

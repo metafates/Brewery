@@ -117,6 +117,36 @@ final class HarnessTests: XCTestCase {
         XCTAssertTrue(card(relaunched, containing: "etagpkg1").exists)
     }
 
+    /// The loading rule's pin: a refresh never takes the content. ⌘R with a deliberately slow
+    /// `brew update` — the toolbar button disables (the refresh is really running) while the
+    /// cards stay hittable and a click still opens the pane. The veil era failed both halves:
+    /// content was blurred and `.disabled` for the whole span.
+    func testListingStaysInteractiveDuringRefresh() {
+        var installed = wget2
+        installed.installedVersions = ["2.2.0"]
+        var scenario = Scenario(packages: [installed])
+        scenario.brewCommand(["update"], stdout: "Already up-to-date.\n", delay: 8)
+        let app = scenario.launch(in: self)
+
+        let card = card(app, containing: "wget2")
+        XCTAssertTrue(card.waitForExistence(timeout: 30))
+        app.typeKey("r", modifierFlags: .command)
+
+        // The launch-time check is skipped (the harness seeds fresh-mtime metadata), so the
+        // disable proves the *forced* ⌘R update is mid-sleep right now.
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == false"),
+                                             object: app.buttons["Refresh"])], timeout: 5)
+        XCTAssertTrue(card.isHittable, "Cards must stay interactive during a refresh.")
+        card.click()
+        // The pane's version row is pane-only text — the card never carries it — so its
+        // arrival proves the inspector answered a click made mid-refresh.
+        XCTAssertTrue(app.staticTexts["Version 2.2.0 installed"].waitForExistence(timeout: 5),
+                      "The pane did not answer a click made mid-refresh.")
+
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"),
+                                             object: app.buttons["Refresh"])], timeout: 30)
+    }
+
     /// The app-written cache with `fetchedAt` rewound past the 24 h window, so the relaunch
     /// revalidates. Only the date moves; the payload — packages, etags — stays byte-honest.
     private func agedCatalogCache(at root: URL) throws -> Data {

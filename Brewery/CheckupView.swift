@@ -21,9 +21,8 @@ struct CheckupView: View {
         Group {
             if model.isRunningCheckup, !model.checkupHasContent {
                 // A claim state has nothing that stays valid while doctor runs — the wait
-                // replaces the claim (Software Update's grammar) instead of blurring it.
+                // replaces the claim (Software Update's grammar).
                 WorkingCapsule(text: "Checking…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 switch model.checkupOutcome {
                 case nil:
@@ -39,9 +38,9 @@ struct CheckupView: View {
                 }
             }
         }
-        // The app's one waiting grammar: previous *findings* recede under the same
-        // veil ⌘R uses, instead of being swapped for a bespoke running screen.
-        .refreshVeil(model.isRunningCheckup && model.checkupHasContent, text: "Checking…")
+        // Previous findings stay on screen while doctor re-runs — still-valid data the work
+        // never takes; the header caption narrates the run instead.
+        .animation(.smooth(duration: 0.3), value: model.isRunningCheckup)
     }
 
     // MARK: - States
@@ -131,8 +130,20 @@ struct CheckupView: View {
 
     private func header(caption: String) -> some View {
         HStack(spacing: 12) {
-            Text(caption)
+            if model.isRunningCheckup {
+                // The freshness caption's grammar: the previous findings stay on screen —
+                // still-valid data — while the header names the work replacing them.
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Checking…")
+                }
+                .accessibilityElement(children: .combine)
                 .foregroundStyle(.secondary)
+            } else {
+                Text(caption)
+                    .foregroundStyle(.secondary)
+            }
             Spacer(minLength: 12)
             runButton("Run Again")
         }
@@ -144,11 +155,14 @@ struct CheckupView: View {
             Task { await model.runCheckup() }
         }
         // Doctor reads state a running mutation is mid-change; a checkup of a moving target
-        // would report transients as problems.
-        .disabled(model.isQueueActive)
-        .help(model.isQueueActive
-            ? "Waits until the current operation finishes"
-            : "Runs Homebrew's diagnostic checks")
+        // would report transients as problems. Disabled while one runs, too: the model
+        // guard already no-ops a re-click, and an enabled button that does nothing lies.
+        .disabled(model.isQueueActive || model.isRunningCheckup)
+        .help(model.isRunningCheckup
+            ? "A checkup is already running"
+            : model.isQueueActive
+                ? "Waits until the current operation finishes"
+                : "Runs Homebrew's diagnostic checks")
     }
 
     private var isSearching: Bool {

@@ -21,8 +21,8 @@ struct ReportListView<Header: View>: View {
     @Environment(AppModel.self) private var model
     let hits: [SearchHit]
     let isSearching: Bool
-    /// While a refresh re-derives the report, an empty listing shows the working capsule
-    /// instead of its claim — the veil recedes rows, it never blurs a claim.
+    /// While any state work runs, an empty listing shows the working capsule instead of its
+    /// claim — a claim is replaced, never contradicted, while it is recomputed.
     var isChecking = false
     var selectedID: Package.ID?
     let onSelect: (Package) -> Void
@@ -58,7 +58,10 @@ struct ReportListView<Header: View>: View {
         }
         .listStyle(.inset)
         .overlay {
-            if hits.isEmpty { emptyState }
+            if hits.isEmpty {
+                emptyState
+                    .animation(.smooth(duration: 0.3), value: isChecking)
+            }
         }
         .task(id: measureKey) { await measure() }
     }
@@ -127,7 +130,7 @@ struct ReportListView<Header: View>: View {
         if isSearching {
             ContentUnavailableView.search
         } else if isChecking {
-            // Centered by the overlay it rides in.
+            // The overlay centers it; the capsule's own fill makes it cover the listing slot.
             WorkingCapsule(text: "Checking for updates…")
         } else {
             ContentUnavailableView {

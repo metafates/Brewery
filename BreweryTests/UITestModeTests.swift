@@ -103,6 +103,18 @@ struct UITestModeTests {
         #expect(failed.stderr == "Error: refusing\n")
         let marker = root.appending(path: "brew-state/marker.stdout", directoryHint: .notDirectory)
         #expect(!FileManager.default.fileExists(atPath: marker.path))
+
+        // A .delay holds the answer (how UI tests pin mid-command states) — and a .delay
+        // alone is still a missing fixture, not an answer.
+        try fixture("update.stdout", "Already up-to-date.\n")
+        try fixture("update.delay", "1")
+        let held = ContinuousClock.now
+        let update = try runBrew(["update"], root: root)
+        #expect(ContinuousClock.now - held >= .seconds(1))
+        #expect(update.stdout == "Already up-to-date.\n")
+        try fixture("upgrade.delay", "1")
+        let delayOnly = try runBrew(["upgrade"], root: root)
+        #expect(delayOnly.status == 64)
     }
 
     private func makeRoot() throws -> URL {

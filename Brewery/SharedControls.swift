@@ -295,9 +295,9 @@ struct StatusDotLabel: View {
     }
 }
 
-/// The app's one "working" chip: the rotating-arrows label in a glass capsule that the
-/// refresh veil committed. One component, one spinner grammar — the Checkup page briefly grew
-/// a stock starburst spinner beside it, and two working styles read as two apps.
+/// The app's one "working" chip: the rotating-arrows label in a material capsule. One
+/// component, one spinner grammar — the Checkup page briefly grew a stock starburst spinner
+/// beside it, and two working styles read as two apps.
 struct WorkingCapsule: View {
     let text: String
 
@@ -310,9 +310,14 @@ struct WorkingCapsule: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
             // A standard material, not Liquid Glass: glass belongs to the chrome layer, and
-            // this chip renders in content — including over the veil's blurred cards.
+            // this chip renders in content.
             .background(.regularMaterial, in: .capsule)
             .accessibilityElement(children: .combine)
+            // Every capsule is an empty slot's wait — it fills the space a claim would occupy
+            // (claims are replaced, never overlaid), and arrives/leaves softly where the host
+            // animates the swap. Reduce Motion swaps by fade: blur-replace is a blur.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(reduceMotion ? AnyTransition.opacity : AnyTransition(.blurReplace))
     }
 }
 
@@ -405,17 +410,6 @@ struct TapTile: View {
 }
 
 extension View {
-    /// ⌘R feedback in the content itself, not just the toolbar glyph: the listing stays put but
-    /// recedes — blurred and dimmed, never hidden, because the data on screen is still valid while
-    /// it is re-checked — behind a glass capsule naming the work. On a warm cache the whole thing
-    /// is a soft half-second pulse, which is exactly the acknowledgment a fast refresh needs.
-    /// Worn by the grid and by an open detail pane's content alike.
-    func refreshVeil(_ active: Bool,
-                     text: String = "Checking for updates…",
-                     showsCapsule: Bool = true) -> some View {
-        modifier(RefreshVeil(active: active, text: text, showsCapsule: showsCapsule))
-    }
-
     /// The wash behind an inline warning — a deprecated package, an untrusted tap. Shared so the
     /// two banners cannot drift apart, and so the tint answers Increase Contrast in one place: a
     /// fixed 10% wash ignores the setting, and the system's own answer is a stronger fill plus the
@@ -442,35 +436,3 @@ struct WarningWash: ViewModifier {
     }
 }
 
-/// A modifier rather than a plain extension so it can read Reduce Motion: animating into and out
-/// of a blur, and sustaining a rotation, are two of the effects that setting exists to remove. The
-/// dimming survives — it is the part that carries the meaning.
-struct RefreshVeil: ViewModifier {
-    let active: Bool
-    var text = "Checking for updates…"
-    /// False on a secondary column (the inspector): it blurs and dims with everything
-    /// else, but only one capsule narrates a wait — two capsules read as two waits.
-    var showsCapsule = true
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func body(content: Content) -> some View {
-        content
-            .blur(radius: active && !reduceMotion ? 6 : 0)
-            .opacity(active ? 0.5 : 1)
-            // Receded means receded: content blurred past legibility must not stay clickable —
-            // what it looks like and what it does have to agree. `.disabled`, not a hit-test
-            // block, so the cards leave the Tab order too. Only the veiled pane locks; sidebar,
-            // toolbar, search and menu commands stay live (HIG Loading: let people do other
-            // things while they wait).
-            .disabled(active)
-            .overlay {
-                if active, showsCapsule {
-                    WorkingCapsule(text: text)
-                        .transition(reduceMotion ? AnyTransition.opacity
-                                                : AnyTransition(.blurReplace))
-                }
-            }
-            .animation(.smooth(duration: 0.3), value: active)
-    }
-}

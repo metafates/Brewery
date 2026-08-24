@@ -11,8 +11,8 @@ import SwiftUI
 struct ServicesView: View {
     let hits: [SearchHit]
     let isSearching: Bool
-    /// While a refresh re-probes services, an empty section shows the working capsule instead
-    /// of claiming "No Services" — the veil recedes rows, it never blurs a claim.
+    /// While any state work runs, an empty section shows the working capsule instead of
+    /// claiming "No Services" — a claim is replaced, never contradicted, while recomputed.
     var isChecking = false
     /// The row the inspector is describing — a list that leads to a detail pane has to keep saying
     /// which item the pane is about.
@@ -23,6 +23,7 @@ struct ServicesView: View {
     var body: some View {
         if hits.isEmpty {
             emptyState
+                .animation(.smooth(duration: 0.3), value: isChecking)
         } else {
             // No header: a section header holding only prose is a paragraph in a label's slot —
             // it truncates, and the window title already says "Services · N services". What the
@@ -56,7 +57,6 @@ struct ServicesView: View {
             ContentUnavailableView.search
         } else if isChecking {
             WorkingCapsule(text: "Checking for updates…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ContentUnavailableView {
                 Label("No Services", systemImage: "server.rack")

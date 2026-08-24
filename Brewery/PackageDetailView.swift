@@ -96,9 +96,6 @@ struct PackageDetailView: View {
                         .transition(pushTransition)
                 }
             }
-            // The veil moved up to ContentView's inspector container: applied once for
-            // both the selected and the No Selection branch, capsule-less (one wait, one
-            // narrator — the content column's capsule).
         }
         // Re-selecting this package's own card while drilled into a subpage pops the
         // stack home. The pane's `.id(package.id)` only resets when the selection *changes*;

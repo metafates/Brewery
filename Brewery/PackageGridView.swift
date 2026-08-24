@@ -33,9 +33,10 @@ struct PackageGridView<Header: View>: View {
     /// date" invites exactly that question. Omitted where it is not, such as a filter hiding
     /// everything on Discover.
     var onRefresh: (() -> Void)?
-    /// While the freshness check runs, an empty Outdated section must not claim "Everything
-    /// is up to date" — the answer is still being computed. Spinner instead (HIG Progress
-    /// indicators, macOS: a spinner for a background operation, description where helpful).
+    /// While any state work runs (`AppModel.isChecking`), an empty section must not claim
+    /// "Everything is up to date" — the answer is still being computed. Spinner instead (HIG
+    /// Progress indicators, macOS: a spinner for a background operation, description where
+    /// helpful); a claim is replaced, never contradicted, while it is recomputed.
     var isChecking = false
     /// Set when a filter emptied the listing: clearing the filters is the fix Check Again
     /// cannot be.
@@ -54,6 +55,7 @@ struct PackageGridView<Header: View>: View {
                 header
                 emptyState
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .animation(.smooth(duration: 0.3), value: isChecking)
             }
         } else {
             ScrollView {
