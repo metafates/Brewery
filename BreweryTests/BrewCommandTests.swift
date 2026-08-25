@@ -120,6 +120,7 @@ struct BrewCommandTests {
         .cleanup,
         .doctor,
         .bundleDump,
+        .adoptCask(name: "google-chrome"),
         .link(name: "deno"),
         .pin(name: "wget", cask: false),
         .pin(name: "iterm2", cask: true),
@@ -134,6 +135,7 @@ struct BrewCommandTests {
         case servicesList, serviceStart, serviceStop, tap, untap, trustTap, untrustTap
         case autoremove, uninstall, zap, cleanup, doctor, link, pin, unpin
         case bundleDump
+        case adoptCask
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -158,6 +160,7 @@ struct BrewCommandTests {
         case .cleanup: .cleanup
         case .doctor: .doctor
         case .bundleDump: .bundleDump
+        case .adoptCask: .adoptCask
         case .link: .link
         case .pin: .pin
         case .unpin: .unpin
@@ -338,6 +341,10 @@ struct BrewCommandTests {
                 #expect(arguments == ["cleanup"])
             case .doctor:
                 #expect(arguments == ["doctor", "--json"])
+            case .adoptCask:
+                // Four tokens, kind-pinned, and `--adopt` — which brew itself declares
+                // `conflicts "--adopt", "--force"`, so the banned flag can never join it.
+                #expect(arguments == ["install", "--cask", "--adopt", "google-chrome"])
             case .bundleDump:
                 // Exactly two tokens. No `--file`, no `-f`/`--force`, no `--global`, and
                 // nothing that could name a path: the destination is an environment variable

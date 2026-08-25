@@ -201,6 +201,13 @@ struct BreweryApp: App {
                 .keyboardShortcut(.delete)
                 .disabled(model.uninstallableSelection == nil)
 
+                // The card's twin, dynamic-titled like Uninstall above. Always present,
+                // disabled when the selection is not an app Homebrew could take over.
+                Button(model.adoptableSelection.map { "Adopt \($0.title)…" } ?? "Adopt…") {
+                    if let package = model.adoptableSelection { model.adopt(package) }
+                }
+                .disabled(model.adoptableSelection == nil)
+
                 // No ellipsis: no dialog follows — pin is non-destructive and mutually
                 // inverse (the service-toggle rule); the title names the verb that will run.
                 Button(model.pinTargetSelection.map {

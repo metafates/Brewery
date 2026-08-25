@@ -282,7 +282,9 @@ struct DetailHeader: View {
     private var showsVersionRow: Bool {
         switch model.status(for: package) {
         case .installed, .outdated: true
-        case .notInstalled, .busy: !package.version.isEmpty
+        // An unmanaged app has a version on disk that brew has never read, so the honest row
+        // is the catalog's — the same one a not-installed package shows.
+        case .notInstalled, .busy, .unmanaged: !package.version.isEmpty
         }
     }
 
@@ -309,6 +311,18 @@ struct DetailHeader: View {
                     Text("pinned")
                         .foregroundStyle(.secondary)
                 }
+            }
+            .accessibilityElement(children: .combine)
+        case .unmanaged:
+            // Says where it stands, not what version brew thinks it is: brew has never read
+            // this bundle, so the catalog version beside "not managed" would read as a claim
+            // about what is on disk.
+            HStack(spacing: 6) {
+                if !package.version.isEmpty {
+                    Text("Version \(package.version.shortVersion)")
+                        .foregroundStyle(.secondary)
+                }
+                StatusDotLabel(text: "Installed by hand", color: .orange)
             }
             .accessibilityElement(children: .combine)
         case .notInstalled, .busy:
@@ -341,6 +355,11 @@ struct DetailHeader: View {
                       ? AppModel.pinnedUpdateHelp(package.title)
                       : "Update \(package.title)")
                 .accessibilityLabel("Update \(package.title)")
+        case .unmanaged:
+            Button("Adopt…") { model.adopt(package) }
+                .buttonStyle(.borderedProminent)
+                .help("Let Homebrew manage the copy of \(package.title) already on this Mac")
+                .accessibilityLabel("Adopt \(package.title)")
         case .notInstalled:
             // No caption under Install: the trust disclosure moved into the consent
             // dialog, which appears only when installing would actually grant new trust.
@@ -375,7 +394,7 @@ struct DetailHeader: View {
                     Divider()
                     Button("Uninstall…", role: .destructive) { model.uninstall(package) }
                 }
-            case .busy, .notInstalled:
+            case .busy, .notInstalled, .unmanaged:
                 EmptyView()
             }
         } label: {

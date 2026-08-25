@@ -30,6 +30,10 @@ final class AppModel {
     /// "Which packages provide this executable", from the catalog's command lists. Search consults
     /// it so `convert` finds imagemagick; the detail sheet just reads `package.commands`.
     private(set) var commandIndex: [String: [Package.ID]] = [:]
+    /// "Which casks claim this `.app` bundle name", from the catalog's cask artifacts. Rebuilt
+    /// on every compose rather than only when the core catalog changes (`commandIndex`'s rule):
+    /// tap formulae carry no executables data, but tap *casks* do ship `app` stanzas.
+    private(set) var appArtifactIndex: [String: [Package.ID]] = [:]
     private(set) var catalogLoading = false
     var catalogFailed = false
 
@@ -547,6 +551,7 @@ final class AppModel {
         }
         catalog = composed
         catalogIndex = index
+        appArtifactIndex = Self.buildAppArtifactIndex(composed)
         catalogGeneration &+= 1
     }
 
@@ -563,6 +568,27 @@ final class AppModel {
         }
         return index
     }
+
+    /// Inverts each cask's `app` artifacts into "who claims this bundle name". ~7.7k casks and
+    /// about one artifact each — cheap enough for a compose, unlike the ~60k-key command index.
+    nonisolated static func buildAppArtifactIndex(_ packages: [Package]) -> [String: [Package.ID]] {
+        var index: [String: [Package.ID]] = [:]
+        for package in packages where package.kind == .cask {
+            for name in package.artifacts.first(where: { $0.kind == .app })?.names ?? [] {
+                index[name, default: []].append(package.id)
+            }
+        }
+        return index
+    }
+
+    /// Apps on disk a cask could manage but doesn't, keyed by the candidate cask's ID so
+    /// `status(for:)` stays a dictionary lookup on the hot path — 60 cards re-render per
+    /// keystroke, and a scan there would be unthinkable. The bundle's URL rides along because
+    /// the adoption dialog names the app, not just the token.
+    private(set) var unmanaged: [Package.ID: URL] = [:]
+    /// The same answer keyed by bundle name, for the Maintenance band: one row per *app*, with
+    /// every candidate cask, because 8 of 33 matches on a real machine are ambiguous.
+    private(set) var unmanagedBundles: [String: [Package.ID]] = [:]
 
     /// Both reads at once — brew serializes only mutations, so concurrent reads are safe. The
     /// receipt sweep runs on the result and everything is published in one step: an overlay whose
@@ -603,11 +629,15 @@ final class AppModel {
         async let outdatedFetch = client.outdated()
         async let servicesFetch = client.servicesList()
         async let pinnedScan = PinStore.scan(prefix: client.prefix)
+        // A fifth probe, and the only one that asks the *machine* rather than brew: one
+        // directory read of the two folders a cask can target.
+        async let bundleScan = Receipts.applicationBundles()
 
         let installedResult = await installedFetch
         let outdatedResult = try? await outdatedFetch
         let servicesResult = try? await servicesFetch
         let pinnedResult = await pinnedScan
+        let bundlesResult = await bundleScan
 
         let merged = Self.mergeInstalled(formulae: installedResult.formulae,
                                          casks: installedResult.casks,
@@ -643,6 +673,17 @@ final class AppModel {
         if let outdatedResult { outdated = outdatedResult }
         if let servicesResult { serviceStatuses = servicesResult }
         pinned = pinnedResult
+        // Joined after the installed overlay publishes, so "already managed" is answered by
+        // the receipts that just landed rather than the previous pass's.
+        let unmanagedBundles = Receipts.unmanagedApps(bundles: bundlesResult,
+                                                      appArtifacts: appArtifactIndex,
+                                                      installed: folded ?? installed)
+        self.unmanagedBundles = unmanagedBundles
+        unmanaged = Dictionary(
+            unmanagedBundles.flatMap { bundle, ids in
+                ids.compactMap { id in Receipts.appURL(named: bundle).map { (id, $0) } }
+            },
+            uniquingKeysWith: { first, _ in first })
         // Recompose only on a real change — scans are usually identical, and an unchanged catalog
         // must not invalidate the view layer's keys.
         if let scan, scan != tapScan {
@@ -813,6 +854,9 @@ final class AppModel {
         if let info = installed[package.id] {
             return .installed(version: info.versions.last ?? package.version)
         }
+        // After the installed checks, never before: a cask brew already owns is installed, and
+        // the join excludes it anyway. One dictionary read on the hot path.
+        if let app = unmanaged[package.id] { return .unmanaged(app: app) }
         return .notInstalled
     }
 
@@ -909,9 +953,13 @@ final class AppModel {
     var maintenancePackages: [Package] {
         var seen: Set<Package.ID> = []
         var result: [Package] = []
+        // The three installed subsets plus the one band that is *not* about installed
+        // packages: an unmanaged app is on disk without Homebrew owning it, so it appears in
+        // no `InstalledScope` and has to join the union explicitly.
         for package in installedPackages(scope: .storage)
             + installedPackages(scope: .orphans)
             + installedPackages(scope: .attention)
+            + unmanaged.keys.compactMap(package(for:))
         where seen.insert(package.id).inserted {
             result.append(package)
         }
@@ -968,7 +1016,7 @@ final class AppModel {
              let .serviceStart(name), let .serviceStop(name),
              let .tap(name), let .untap(name), let .trustTap(name), let .untrustTap(name),
              let .uninstall(name, _), let .zap(name), let .link(name),
-             let .pin(name, _), let .unpin(name, _):
+             let .pin(name, _), let .unpin(name, _), let .adoptCask(name):
             guard !name.isEmpty, !name.hasPrefix("-") else { return }
         // Listed, not `default:` — a new case carrying a name would otherwise be exempted
         // from the guard above in silence. `BrewCommand.arguments`, `.isMutating` and
@@ -1233,6 +1281,42 @@ final class AppModel {
     /// Same rule for Update All — it lived in the view, spelled longhand.
     var upgradeAllPending: Bool {
         operations.contains { $0.command == .upgradeAll && !$0.isFinished }
+    }
+
+    // MARK: - Adoption
+
+    /// The app awaiting the adoption dialog, with the token that would claim it; nil = no
+    /// dialog. The trust-write rule: setting this enqueues nothing.
+    var pendingAdoption: (package: Package, app: URL)?
+
+    var adoptionPresented: Bool {
+        get { pendingAdoption != nil }
+        set { if !newValue { pendingAdoption = nil } }
+    }
+
+    /// Every Adopt surface funnels here — card, context menu, pane, menu bar — so the
+    /// confirmation cannot be bypassed from a different corner of the app.
+    func adopt(_ package: Package) {
+        guard let app = unmanaged[package.id] else { return }
+        pendingAdoption = (package, app)
+    }
+
+    /// The dialog's affirmative paths, mirroring `confirmedInstall`: adoption *is* an install,
+    /// so a tap item still grants trust and still asks first. The FIFO queue guarantees the
+    /// grant lands before the adoption starts.
+    func confirmedAdopt(_ package: Package, trustingTap: Bool = false) {
+        if trustingTap, let tap = effectiveTap(for: package) {
+            trustTap(tap)
+        }
+        enqueue(.adoptCask(name: qualifiedName(for: package)),
+                title: "Adopting \(package.title)",
+                targetID: package.id)
+    }
+
+    /// The Homebrew menu's target: the selection, if adopting it would mean anything.
+    var adoptableSelection: Package? {
+        guard let package = selectedPackage, unmanaged[package.id] != nil else { return nil }
+        return package
     }
 
     // MARK: - Brewfile

@@ -195,6 +195,59 @@ nonisolated enum Receipts {
         return nil
     }
 
+    // MARK: - Unmanaged apps
+
+    /// Every `.app` bundle sitting in the two directories a cask can target, by basename.
+    /// `@concurrent` for `sweep`'s reason: with Approachable Concurrency a plain
+    /// `nonisolated async func` runs on its caller's actor, which would put a directory read
+    /// on the main thread. Not recursive and not widened past these two: `appURL(named:)` is
+    /// the app's one statement of where a cask app lives, and discovery and resolution
+    /// disagreeing is how you offer an adoption that then installs a second copy.
+    @concurrent static func applicationBundles() async -> [String] {
+        let directories = [
+            URL(filePath: "/Applications", directoryHint: .isDirectory),
+            URL.homeDirectory.appending(path: "Applications", directoryHint: .isDirectory),
+        ]
+        var names: Set<String> = []
+        for directory in directories {
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]) else { continue }
+            for entry in entries where entry.pathExtension == "app" {
+                names.insert(entry.lastPathComponent)
+            }
+        }
+        return names.sorted()
+    }
+
+    /// Apps Homebrew *could* manage but doesn't: bundles on disk that a cask claims as its
+    /// `app` artifact, minus the ones an installed cask's receipt says brew already put there.
+    ///
+    /// Both halves are basenames already — the catalog decoder keeps only the artifact's
+    /// basename, and a receipt's `uninstall_artifacts` records the same — so the join is exact
+    /// string equality and needs no normalization. **Exact, deliberately**: Cork matches its
+    /// installed set by bidirectional substring containment, which hides `docker-desktop`
+    /// behind an installed `docker`.
+    ///
+    /// One bundle can map to several casks (`charles` and `charles@4`, `transmission` and its
+    /// `@beta`/`@nightly`) — on this machine 8 of 33 matches are ambiguous, so the plural is
+    /// the normal case, not an edge one. Every candidate is returned; picking is the caller's.
+    /// Pure — no I/O, the `orphans` shape.
+    static func unmanagedApps(bundles: [String],
+                              appArtifacts: [String: [Package.ID]],
+                              installed: [Package.ID: InstalledInfo]) -> [String: [Package.ID]] {
+        let managed = Set(installed.filter { $0.key.hasPrefix("cask:") }.values.flatMap(\.apps))
+        var result: [String: [Package.ID]] = [:]
+        for bundle in bundles where !managed.contains(bundle) {
+            guard let candidates = appArtifacts[bundle] else { continue }
+            // A candidate already installed means the bundle is a *second* copy brew doesn't
+            // own; adopting would not be the honest offer, so the whole bundle drops out.
+            guard candidates.allSatisfy({ installed[$0] == nil }) else { continue }
+            result[bundle] = candidates.sorted()
+        }
+        return result
+    }
+
     // MARK: - Orphans
 
     /// What `brew autoremove` would remove (`utils/autoremove.rb`), to the same fixpoint —

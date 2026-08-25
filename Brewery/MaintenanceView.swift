@@ -15,7 +15,7 @@ import SwiftUI
 /// both statements stay true. Each section filters the page's listing independently rather
 /// than partitioning it.
 nonisolated enum MaintenanceSection: String, CaseIterable, Identifiable {
-    case oldVersions, orphans, attention
+    case oldVersions, orphans, unmanaged, attention
 
     var id: String { rawValue }
 
@@ -23,6 +23,7 @@ nonisolated enum MaintenanceSection: String, CaseIterable, Identifiable {
         switch self {
         case .oldVersions: "Old Versions"
         case .orphans: "Orphaned Dependencies"
+        case .unmanaged: "Unmanaged Apps"
         case .attention: "Needs Attention"
         }
     }
@@ -33,6 +34,7 @@ nonisolated enum MaintenanceSection: String, CaseIterable, Identifiable {
         switch self {
         case .oldVersions: "internaldrive"
         case .orphans: "arrow.3.trianglepath"
+        case .unmanaged: "macwindow"
         case .attention: "exclamationmark.triangle"
         }
     }
@@ -44,12 +46,20 @@ nonisolated enum MaintenanceSection: String, CaseIterable, Identifiable {
         switch self {
         case .oldVersions: "Formulae keeping superseded versions on disk appear here."
         case .orphans: "Dependencies installed for packages you've since removed appear here."
+        case .unmanaged: "Apps a Homebrew cask could manage, installed by hand, appear here."
         case .attention: "Packages Homebrew has deprecated or disabled appear here. Each package's page says why, and what to use instead."
         }
     }
 
     /// Sections with a byte axis measure; Attention has none — a deprecation costs no space.
-    var measuresBytes: Bool { self != .attention }
+    var measuresBytes: Bool {
+        switch self {
+        case .oldVersions, .orphans: true
+        // An unmanaged app's size is Finder's answer, not Homebrew's, and adopting reclaims
+        // nothing — a byte column here would imply a saving that does not exist.
+        case .unmanaged, .attention: false
+        }
+    }
 }
 
 /// The maintenance surface: one page, one list, one selection. The storage gauge rides the
@@ -84,6 +94,7 @@ struct MaintenanceView: View {
     /// collapsed page is the summary, so the default costs nothing to read.
     @AppStorage("maintenance.expand.oldVersions") private var expandOldVersions = false
     @AppStorage("maintenance.expand.orphans") private var expandOrphans = false
+    @AppStorage("maintenance.expand.unmanaged") private var expandUnmanaged = false
     @AppStorage("maintenance.expand.attention") private var expandAttention = false
 
     /// Per-row bytes, **per band**, published once per measure pass (the `measureSizes`
@@ -115,6 +126,7 @@ struct MaintenanceView: View {
 
             section(.oldVersions, hits: buckets[.oldVersions] ?? [], isExpanded: $expandOldVersions)
             section(.orphans, hits: buckets[.orphans] ?? [], isExpanded: $expandOrphans)
+            section(.unmanaged, hits: buckets[.unmanaged] ?? [], isExpanded: $expandUnmanaged)
             section(.attention, hits: buckets[.attention] ?? [], isExpanded: $expandAttention)
         }
         .listStyle(.inset)
@@ -139,8 +151,22 @@ struct MaintenanceView: View {
                 $0.package.kind == .formula && (model.installed[$0.package.id]?.versions.count ?? 0) > 1
             },
             .orphans: hits.filter { orphans.contains($0.package.id) },
+            // One row per *app*, not per candidate cask: 8 of 33 matches on a real machine
+            // are ambiguous (charles/charles@4, transmission/@beta/@nightly), so the bare
+            // token leads and the rest live in the row's pull-down.
+            .unmanaged: hits.filter { model.unmanaged[$0.package.id] != nil && leadsItsBundle($0.package) },
             .attention: hits.filter(\.package.needsAttention),
         ]
+    }
+
+    /// The bare token leads its bundle — `charles` over `charles@4`, `transmission` over its
+    /// `@beta` — so an ambiguous app shows one row with the likeliest cask, and the rest are
+    /// reachable from the row itself. Package IDs sort with `@`-suffixed siblings after the
+    /// base name, so "first" is already "bare".
+    private func leadsItsBundle(_ package: Package) -> Bool {
+        guard let bundle = model.unmanagedBundles.first(where: { $0.value.contains(package.id) })
+        else { return false }
+        return bundle.value.first == package.id
     }
 
     @ViewBuilder
@@ -211,9 +237,11 @@ struct MaintenanceView: View {
                 .controlSize(.small)
                 .disabled(model.autoremovePending)
                 .help("Removes dependencies nothing needs anymore")
-        case .attention:
-            // Deliberately none: nothing safe to enqueue exists — uninstalling is a non-goal —
-            // and a warning is not a task. The per-package specifics live in the pane.
+        case .unmanaged, .attention:
+            // Neither carries a bulk action. Attention has nothing safe to enqueue at all
+            // (uninstalling is a non-goal, and a warning is not a task), and adoption is a
+            // per-app claim about which cask owns which bundle — an "Adopt All" would make
+            // that claim for every ambiguous row at once, silently.
             EmptyView()
         }
     }
@@ -221,6 +249,7 @@ struct MaintenanceView: View {
     private func count(_ value: Int, in kind: MaintenanceSection) -> String {
         switch kind {
         case .oldVersions: value == 1 ? "1 formula" : "\(value) formulae"
+        case .unmanaged: value == 1 ? "1 app" : "\(value) apps"
         case .orphans, .attention: value == 1 ? "1 package" : "\(value) packages"
         }
     }
@@ -231,7 +260,7 @@ struct MaintenanceView: View {
         switch kind {
         case .oldVersions: oldKegBytes[id]
         case .orphans: rackBytes[id]
-        case .attention: nil
+        case .unmanaged, .attention: nil
         }
     }
 
@@ -345,7 +374,15 @@ private struct MaintenanceRow: View {
         StateRow(title: package.title, subtitle: subtitle) {
             PackageIconView(package: package, size: 32)
         } accessory: {
-            if kind.measuresBytes, let bytes {
+            // Adopt lives on the row, in the Services rows' trailing-control grammar: adoption
+            // is a per-app claim about which cask owns which bundle, so it is offered one app
+            // at a time and never in bulk.
+            if kind == .unmanaged {
+                Button("Adopt…") { model.adopt(package) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Let Homebrew manage the copy of \(package.title) already on this Mac")
+            } else if kind.measuresBytes, let bytes {
                 Text(bytes.formatted(.byteCount(style: .file)))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -360,6 +397,13 @@ private struct MaintenanceRow: View {
 
     private var subtitle: String? {
         switch kind {
+        case .unmanaged:
+            // The token that would claim it, plus the other candidates when there are any —
+            // the row is a claim about ownership, so it shows what it is claiming.
+            let candidates = model.unmanagedBundles.first { $0.value.contains(package.id) }?.value ?? []
+            return candidates.count > 1
+                ? "\(package.name) · \(candidates.count - 1) other match\(candidates.count == 2 ? "" : "es")"
+                : package.name
         case .oldVersions:
             let count = (model.installed[package.id]?.versions.count ?? 1) - 1
             return count == 1 ? "1 old version" : "\(count) old versions"

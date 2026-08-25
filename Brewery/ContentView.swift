@@ -261,6 +261,14 @@ struct ContentView: View {
         return Text("Install \(package.title) from \(tap)?")
     }
 
+    /// The adoption dialog's title: the situation, succinctly, and naming the token — which
+    /// cask claims this app is exactly what the user is being asked to confirm.
+    private var adoptionTitle: Text {
+        guard let pending = model.pendingAdoption else { return Text(verbatim: "") }
+        let app = pending.app.deletingPathExtension().lastPathComponent
+        return Text("Let Homebrew manage \(app) as \(pending.package.name)?")
+    }
+
     /// Remove Tap's title, the uninstall grammar: a question when removable, a statement when
     /// blocked.
     private var tapRemovalTitle: String {
@@ -409,6 +417,25 @@ struct ContentView: View {
             } else {
                 Text("This removes the tap's local copy — you can add it back anytime. If the tap is trusted, it stays trusted when you re-add it.")
             }
+        }
+        // Adoption's consent, at the moment of consequence. It names the token because that
+        // is the claim being made: for an `auto_updates` cask brew skips the Info.plist
+        // comparison entirely, so a wrong token succeeds silently and the next upgrade
+        // overwrites the app. `Trust Tap and Adopt` mirrors the install dialog exactly —
+        // adoption *is* an install, so a tap item grants trust the same way.
+        .confirmationDialog(adoptionTitle,
+                            isPresented: $model.adoptionPresented,
+                            titleVisibility: .visible,
+                            presenting: model.pendingAdoption) { pending in
+            Button("Adopt") { model.confirmedAdopt(pending.package) }
+            if model.installNeedsTrustConsent(pending.package) {
+                Button("Trust Tap and Adopt") {
+                    model.confirmedAdopt(pending.package, trustingTap: true)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { pending in
+            Text("Homebrew will download \(pending.package.name) and check it matches the app already at \(pending.app.path(percentEncoded: false)). If it matches, Homebrew takes over updating it; nothing is reinstalled. If it doesn't, Homebrew stops without touching your copy — except for apps that update themselves, which it cannot check.")
         }
         .confirmationDialog(CleanupDialog.title,
                             isPresented: $model.confirmingCleanup, titleVisibility: .visible) {

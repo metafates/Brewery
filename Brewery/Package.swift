@@ -572,6 +572,12 @@ nonisolated enum PackageStatus: Equatable, Hashable {
     case notInstalled
     case installed(version: String)
     case outdated(installed: String, current: String)
+    /// The app is on disk but Homebrew doesn't own it — installed by hand, or by the vendor's
+    /// own updater. Neither `notInstalled` nor `installed`, and the distinction is not
+    /// academic: offering **Install** here produces a `brew` failure every time ("It seems
+    /// there is already an App at …"), because brew refuses to overwrite a bundle it did not
+    /// place. `--adopt` is the operation that actually applies.
+    case unmanaged(app: URL)
     case busy
 }
 

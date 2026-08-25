@@ -40,7 +40,7 @@ struct PackageCardView: View {
                         Text("\(package.titleParts.base)\(Text(package.titleParts.suffix ?? "").foregroundStyle(.secondary))")
                             .font(.headline)
                             .lineLimit(1)
-                        statusLine(id: id)
+                        statusLine(id: id, status: status)
                     }
 
                     Spacer(minLength: 0)
@@ -99,6 +99,8 @@ struct PackageCardView: View {
             Button(model.installNeedsTrustConsent(package) ? "Install…" : "Install") {
                 model.install(package)
             }
+        case .unmanaged:
+            Button("Adopt…") { model.adopt(package) }
         case .outdated where !model.isPinned(package):
             Button("Update") { model.upgrade(package) }
         case .installed:
@@ -133,7 +135,7 @@ struct PackageCardView: View {
     /// Pills for identity, one ·-joined text run for everything else — the App Store metadata
     /// pattern. Mixing capsules and bare values in alternation read as clutter, and a value
     /// sandwiched between two pills read worst of all.
-    private func statusLine(id: Package.ID) -> some View {
+    private func statusLine(id: Package.ID, status: PackageStatus) -> some View {
         HStack(spacing: 6) {
             TagLabel(package.kindLabel, help: package.kindExplanation)
             // The owner half only ("charmbracelet") — the identity people recognize, and all
@@ -144,8 +146,8 @@ struct PackageCardView: View {
                     .truncationMode(.middle)
                     .layoutPriority(-1)
             }
-            if let status = statusText(id: id) {
-                status
+            if let run = statusText(id: id, status: status) {
+                run
             }
         }
         .font(.caption)
@@ -154,7 +156,10 @@ struct PackageCardView: View {
 
     /// Version and state words as one concatenated `Text`, so per-segment colors survive and
     /// `lineLimit(1)` truncates the run as a unit.
-    private func statusText(id: Package.ID) -> Text? {
+    /// Takes the status the body already resolved: `status(for:)` walks the operation queue,
+    /// and a keystroke re-renders 60 of these — resolving it twice per card is exactly the
+    /// per-render cost this file's header warns about.
+    private func statusText(id: Package.ID, status: PackageStatus) -> Text? {
         var segments: [Text] = []
 
         if let info = model.outdated[id] {
@@ -162,11 +167,19 @@ struct PackageCardView: View {
                 .foregroundStyle(.orange))
         } else if let version = model.installed[id]?.versions.last, !version.isEmpty {
             segments.append(Text(version.shortVersion).foregroundStyle(.secondary))
+        } else if case .unmanaged = status {
+            // No version: brew has never read this bundle, so the catalog's number would be a
+            // claim about what is on disk that nothing has checked. Dropping it also leaves
+            // "unmanaged" room to say itself rather than truncating to "unmana…".
         } else if !package.version.isEmpty {
             // Casks report versions like "2.1.50,56f0a83" — only the part a human reads is shown.
             segments.append(Text(package.version.shortVersion).foregroundStyle(.secondary))
         }
 
+        if case .unmanaged = status {
+            // Not a warning — a fact about provenance, in the run's own quiet voice.
+            segments.append(Text("unmanaged").foregroundStyle(.secondary))
+        }
         if package.disabled {
             segments.append(Text("disabled").foregroundStyle(.red))
         } else if package.deprecated {
@@ -210,6 +223,15 @@ struct PackageCardView: View {
     @ViewBuilder
     private func actionControl(id: Package.ID, status: PackageStatus, apps: [URL]) -> some View {
         switch status {
+        case .unmanaged:
+            // The app is already here; Install would fail. The ellipsis is unconditional —
+            // adoption always confirms, because the token it picks is a claim about which
+            // cask owns this bundle and brew cannot always check it.
+            Button("Adopt…") { model.adopt(package) }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .help("Let Homebrew manage the copy of \(package.title) already on this Mac")
+
         case .notInstalled:
             // "Install…" exactly when the trust-consent dialog will appear first — a button
             // that opens a dialog promises it (HIG *Buttons*), and this one is knowable.

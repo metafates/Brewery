@@ -78,6 +78,14 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     // `--file=` flag would put a filesystem path in brew's arguments and trip the tripwire's
     // ban on exactly that token, and the ban is worth more than the flag.
     case bundleDump
+    // Adoption: hand brew an app that is already in place. It reuses the whitelisted `install`
+    // token, and brew itself declares `conflicts "--adopt", "--force"` (cmd/install.rb), so the
+    // flag can never coexist with the banned one. Confirmed before enqueue like every other
+    // consequential act, and the dialog names the token — because for an `auto_updates` cask
+    // brew *skips* the Info.plist comparison entirely (`unless auto_updates`,
+    // cask/artifact/moved.rb), so adopting the wrong token succeeds silently and the next
+    // upgrade overwrites the app. For every other cask a mismatch raises having moved nothing.
+    case adoptCask(name: String)
     // Cleanup joins under autoremove's bar: argument-less by construction (no names, no
     // `--prune`, no `-s` representable), scoped to what brew itself computes as stale — old
     // kegs of installed formulae with linked/pinned/keepme versions kept (formula.rb:3654-3658),
@@ -141,6 +149,8 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["doctor", "--json"]
         case .bundleDump:
             ["bundle", "dump"]
+        case let .adoptCask(name):
+            ["install", "--cask", "--adopt", name]
         case .cleanup:
             ["cleanup"]
         case let .pin(name, cask):
@@ -158,7 +168,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
         switch self {
         case .listFormulae, .listCasks, .outdated, .servicesList, .doctor, .bundleDump:
             false
-        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap, .cleanup, .link, .pin, .unpin:
+        case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap, .cleanup, .link, .pin, .unpin, .adoptCask:
             true
         }
     }

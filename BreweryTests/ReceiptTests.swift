@@ -330,6 +330,53 @@ struct CaskAppTests {
         InstalledInfo(versions: ["1.0"], onRequest: false, dependencies: deps)
     }
 
+    /// The adoption join, on the shape it actually meets: bundle basenames on one side, cask
+    /// app-artifact basenames on the other, minus what receipts say brew already put there.
+    @Test("unmanaged apps are the exact-name join minus what brew already owns")
+    func unmanagedAppsJoin() {
+        let artifacts: [String: [Package.ID]] = [
+            "Google Chrome.app": ["cask:google-chrome"],
+            "iTerm.app": ["cask:iterm2"],
+            "Charles.app": ["cask:charles", "cask:charles@4"],
+            "Docker Desktop.app": ["cask:docker-desktop"],
+        ]
+        let installed: [Package.ID: InstalledInfo] = [
+            // brew put iTerm there; its receipt says so, so it is managed.
+            "cask:iterm2": InstalledInfo(versions: ["3.5.11"], apps: ["iTerm.app"]),
+            // A formula named `docker` must not hide the `docker-desktop` cask: Cork's join
+            // uses bidirectional substring containment and loses exactly this app.
+            "formula:docker": InstalledInfo(versions: ["27.0"]),
+        ]
+        let bundles = ["Google Chrome.app", "iTerm.app", "Charles.app", "Docker Desktop.app",
+                       "Xcode.app"]
+
+        let result = Receipts.unmanagedApps(bundles: bundles, appArtifacts: artifacts,
+                                            installed: installed)
+
+        #expect(result["Google Chrome.app"] == ["cask:google-chrome"])
+        #expect(result["Docker Desktop.app"] == ["cask:docker-desktop"])
+        // Ambiguity is the normal case (8 of 33 on a real machine): every candidate is
+        // returned, sorted, so the bare token leads its `@`-suffixed siblings.
+        #expect(result["Charles.app"] == ["cask:charles", "cask:charles@4"])
+        // Already managed, and no cask claims it at all.
+        #expect(result["iTerm.app"] == nil)
+        #expect(result["Xcode.app"] == nil)
+        #expect(result.count == 3)
+    }
+
+    /// A bundle whose cask is installed is a *second* copy brew does not own — adopting would
+    /// not be the honest offer, so the whole bundle drops out rather than half of it.
+    @Test("a bundle drops out when any candidate cask is already installed")
+    func unmanagedSkipsInstalledCandidates() {
+        let artifacts: [String: [Package.ID]] = ["Charles.app": ["cask:charles", "cask:charles@4"]]
+        let installed: [Package.ID: InstalledInfo] = [
+            "cask:charles@4": InstalledInfo(versions: ["4.6.7"], apps: ["Charles 4.app"]),
+        ]
+        let result = Receipts.unmanagedApps(bundles: ["Charles.app"], appArtifacts: artifacts,
+                                            installed: installed)
+        #expect(result.isEmpty)
+    }
+
     /// The fixpoint matches `brew autoremove` (`utils/autoremove.rb`): direct orphans go,
     /// and so does what only they were keeping alive — round after round until stable.
     /// On-request packages, from-source builds and anything a survivor needs all stay.
