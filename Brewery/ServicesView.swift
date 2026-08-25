@@ -169,8 +169,11 @@ struct ServiceToggle: View {
                 .accessibilityLabel("Working on \(package.title)")
         } else if package.service?.requireRoot == true {
             // Started as a user, a root service warns, proceeds and fails later — a disabled
-            // switch is honest; offering the start would not be.
-            Toggle("", isOn: .constant(false))
+            // switch is honest; offering the start would not be. Its *position* still has to
+            // tell the truth: one started with sudo in Terminal reports `started`, so the
+            // status label beside this read green "Running" next to a switch drawn off.
+            // Disabled means "not yours to flip here", never "off".
+            Toggle("", isOn: .constant(isLoaded.wrappedValue))
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .labelsHidden()

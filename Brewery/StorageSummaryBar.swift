@@ -143,9 +143,15 @@ struct StorageSummaryBar: View {
         return "\(signature)|\(model.finishedCleanupCount)"
     }
 
+    /// Publishes **once**, at the end: `totalBytes` sums whatever component has landed, so
+    /// assigning the three across three awaits un-redacted the headline as soon as the first
+    /// one arrived and stated a figure that was never true of anything. It also made a
+    /// re-measure after cleanup half-update the previous total instead of replacing it.
+    /// (The orphan bar already does it this way.)
     private func measure() async {
         // Old kegs ride the session cache under `oldkeg:`-namespaced keys — a keg's bytes
         // never change, and a removed keg's root measures nil, which is never cached.
+        var kegs: Int64?
         if let prefix = model.client.prefix {
             var total: Int64 = 0
             var found = false
@@ -160,15 +166,17 @@ struct StorageSummaryBar: View {
                     }
                 }
             }
-            oldKegBytes = found ? total : nil
+            kegs = found ? total : nil
         }
         // Cache and logs are mutable directories under stable names — the session cache would
         // serve stale bytes, so these bypass it.
         let environment = model.client.effectiveEnvironment
         let home = URL.homeDirectory
-        cacheBytes = await DiskUsage.bytes(
+        let cache = await DiskUsage.bytes(
             at: [BrewClient.cacheDirectory(environment: environment, home: home)])
-        logsBytes = await DiskUsage.bytes(
+        let logs = await DiskUsage.bytes(
             at: [BrewClient.logsDirectory(environment: environment, home: home)])
+
+        (oldKegBytes, cacheBytes, logsBytes) = (kegs, cache, logs)
     }
 }
