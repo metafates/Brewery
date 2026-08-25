@@ -1,5 +1,7 @@
 # Brewery
 
+[Landing page](https://metafates.one/Brewery/)
+
 A Mac app for Homebrew. Search for packages, install and update them, run
 services and manage taps, without opening a terminal.
 
