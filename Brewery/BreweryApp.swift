@@ -203,10 +203,17 @@ struct BreweryApp: App {
                     Task { await model.runCheckup() }
                 }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
-                .disabled(model.isQueueActive || model.isRunningCheckup)
+                .disabled(model.isQueueActive || model.isRunningCheckup || model.brewMissing)
 
+                // Disabled with brew missing, like Add Tap… below: `ContentView` renders
+                // `brewNotFound` then, so `splitView` — where every confirmation dialog and
+                // the add-tap popover live — is not in the tree. The click would set the
+                // pending flag with nothing to consume it, and the *next* successful Check
+                // Again would mount the split view with the flag already true, presenting a
+                // destructive dialog nobody asked for. Refresh stays enabled: it is the
+                // re-probe. HIG *Menus*: show people when a menu item is unavailable.
                 Button("Clean Up…") { model.confirmingCleanup = true }
-                    .disabled(model.cleanupPending)
+                    .disabled(model.cleanupPending || model.brewMissing)
 
                 Button("Remove All Orphans…") { model.confirmingAutoremove = true }
                     .disabled(model.autoremovePending || model.orphanIDs.isEmpty)
@@ -226,6 +233,7 @@ struct BreweryApp: App {
                 Divider()
 
                 Button("Add Tap…") { model.requestAddTap() }
+                    .disabled(model.brewMissing)
 
                 // The Uninstall command's dynamic-title grammar; built-in pages have no
                 // TapInfo and stay disabled.

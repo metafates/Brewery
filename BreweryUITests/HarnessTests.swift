@@ -76,6 +76,20 @@ final class HarnessTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Homebrew Not Found"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.links["Install Homebrew"].exists
                       || app.buttons["Install Homebrew"].exists)
+
+        // The dialogs and the add-tap popover live on `splitView`, which this state replaces —
+        // so a command that only sets a pending flag would latch it with nothing to consume
+        // it, and the next successful Check Again would present a destructive confirmation
+        // nobody asked for. Refresh must stay enabled: it is the re-probe. One bound walk,
+        // menu closed — the subscript binds a label these items do not carry.
+        let items = app.menuBars.menuBarItems["Homebrew"].menuItems.allElementsBoundByIndex
+        for title in ["Clean Up…", "Add Tap…", "Run Checkup"] {
+            let item = items.first { $0.title == title }
+            XCTAssertNotNil(item, "\(title) is missing from the Homebrew menu")
+            XCTAssertFalse(item?.isEnabled ?? true, "\(title) must be disabled with brew missing")
+        }
+        XCTAssertTrue(items.first { $0.title == "Refresh" }?.isEnabled ?? false,
+                      "Refresh is the re-probe and must stay enabled")
     }
 
     /// A 500 on the catalog with no cache lands on the designed failure state, through the real
