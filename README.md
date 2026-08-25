@@ -22,7 +22,7 @@ make test       # unit tests, headless
 make test-ui    # UI tests; needs automation permission
 ```
 
-`ARCHITECTURE.md` is the spec.
+`ARCHITECTURE.md` is the spec for AI to follow.
 
 ## License
 
