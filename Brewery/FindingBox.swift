@@ -92,7 +92,13 @@ struct FindingBox: View {
                         Button("Show in Taps") { model.requestShowTapList() }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
-                            .help("Taps are removed from the Taps list")
+                            // The consequence of the click, not where the eventual removal
+                            // lives (HIG *Offering help*: explain the action the control
+                            // initiates) — and the same sentence in the accessibility tree,
+                            // because a tooltip is pointer-only. The sibling tap row below
+                            // already reads this way.
+                            .help("Opens the Taps list, where taps are removed")
+                            .accessibilityHint("Opens the Taps list")
                     }
                 }
                 .padding(.top, 2)

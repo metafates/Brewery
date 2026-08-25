@@ -379,7 +379,9 @@ final class BrewClient {
     }
 
     /// stdout and stderr share one stream, so a stray `Warning:` line can bracket the JSON.
-    private static func jsonObject(in data: Data) -> Data {
+    /// Shared with `DoctorReport.parse`, which had a hand-copy of the same trim —
+    /// `nonisolated` because that decoder is.
+    nonisolated static func jsonObject(in data: Data) -> Data {
         guard let start = data.firstIndex(of: UInt8(ascii: "{")),
               let end = data.lastIndex(of: UInt8(ascii: "}")),
               start < end else { return data }

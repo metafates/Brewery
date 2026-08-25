@@ -15,11 +15,8 @@ import Foundation
 /// cache and the next appearance is a hit. `AsyncImage` cancelled the load itself, which is why
 /// icons used to appear only after opening the detail sheet.
 actor IconStore {
-    static let shared = IconStore(directoryName: "Icons")
+    static let shared = IconStore()
 
-    /// Repo social-preview cards for the detail pane's hero slot. A separate instance
-    /// with its own directory: a ~300 KB banner in the favicon LRU would evict icons by the
-    /// dozen, and the two caches age on entirely different rhythms.
     /// Icons rarely change. A file older than this is still served — it is just refreshed behind
     /// the view — and it is also how long a negative marker suppresses re-asking.
     static let ttl: TimeInterval = 7 * 24 * 60 * 60
@@ -85,9 +82,9 @@ actor IconStore {
     private var activeFetches = 0
     private var waiting: [CheckedContinuation<Void, Never>] = []
 
-    init(directoryName: String) {
+    init() {
         directory = CatalogStore.supportDirectory
-            .appending(path: directoryName, directoryHint: .isDirectory)
+            .appending(path: "Icons", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
@@ -227,8 +224,6 @@ actor IconStore {
         return (key: fileName(for: "avatar_\(owner)"), url: url)
     }
 
-
-
     // MARK: - Disk
 
     private struct Entry {
@@ -347,7 +342,7 @@ actor IconStore {
 
     /// Empty data means "the host answered, and the answer is no image" — a definitive HTTP
     /// error or a body we cannot decode. That earns a marker; a transport failure (nil) does
-    /// not — and neither do rate limiting or server trouble: a 429 from the banner CDN
+    /// not — and neither do rate limiting or server trouble: a 429 from the avatar CDN
     /// with a week-long marker would hide a real image over a burst of browsing.
     /// `nonisolated` like the seven sibling statics: an actor's statics carry no instance
     /// isolation and would otherwise pick up the module's MainActor default, scheduling two

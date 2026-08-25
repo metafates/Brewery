@@ -48,13 +48,11 @@ nonisolated struct DoctorReport: Decodable, Equatable {
     let findings: [Finding]
 
     /// nil on anything that doesn't decode — the caller's raw-text fallback trigger. The
-    /// bracket trim recovers JSON bracketed by stray prose lines (the outdated parser's rule).
+    /// brace trim that recovers JSON bracketed by stray prose lines is the outdated parser's,
+    /// reused rather than re-spelled: unbraced input falls through unchanged and simply fails
+    /// to decode, which is the same nil.
     static func parse(_ text: String) -> DoctorReport? {
-        let data = Data(text.utf8)
-        guard let start = data.firstIndex(of: UInt8(ascii: "{")),
-              let end = data.lastIndex(of: UInt8(ascii: "}")),
-              start < end else { return nil }
-        return try? JSONDecoder().decode(DoctorReport.self, from: data[start...end])
+        try? JSONDecoder().decode(DoctorReport.self, from: BrewClient.jsonObject(in: Data(text.utf8)))
     }
 }
 
