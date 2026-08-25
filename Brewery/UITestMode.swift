@@ -2,7 +2,7 @@
 //  UITestMode.swift
 //  Brewery
 //
-//  Created by vzbarashchenko on 23.08.2026.
+//  Created by metafates on 23.08.2026.
 //
 
 import Foundation

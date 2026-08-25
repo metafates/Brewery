@@ -2,7 +2,7 @@
 //  BreweryUITests.swift
 //  BreweryUITests
 //
-//  Created by vzbarashchenko on 09.08.2026.
+//  Created by metafates on 09.08.2026.
 //
 
 import XCTest

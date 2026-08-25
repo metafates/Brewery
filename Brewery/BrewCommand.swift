@@ -2,7 +2,7 @@
 //  BrewCommand.swift
 //  Brewery
 //
-//  Created by vzbarashchenko on 10.08.2026.
+//  Created by metafates on 10.08.2026.
 //
 
 import Foundation

@@ -2,7 +2,7 @@
 //  ContentView.swift
 //  Brewery
 //
-//  Created by vzbarashchenko on 09.08.2026.
+//  Created by metafates on 09.08.2026.
 //
 
 import AppKit

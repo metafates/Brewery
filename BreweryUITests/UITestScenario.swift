@@ -2,7 +2,7 @@
 //  UITestScenario.swift
 //  BreweryUITests
 //
-//  Created by vzbarashchenko on 23.08.2026.
+//  Created by metafates on 23.08.2026.
 //
 //  The deterministic harness's test side. A scenario describes a world — packages, brew
 //  command outcomes, HTTP deviations — and `launch(in:)` ships it to the app as one

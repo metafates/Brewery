@@ -30,5 +30,5 @@ MIT, see [LICENSE](LICENSE).
 
 ## Disclaimer
 
-This app was 100% vibe-coded.
-But I use it daily and it works well enough for me.
+This app was 100% vibe-coded mostly with Fable 5.
+I use it daily and it works well enough for me.

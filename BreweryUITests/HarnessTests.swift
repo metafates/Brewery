@@ -2,7 +2,7 @@
 //  HarnessTests.swift
 //  BreweryUITests
 //
-//  Created by vzbarashchenko on 23.08.2026.
+//  Created by metafates on 23.08.2026.
 //
 //  The deterministic harness's proving tests: mutations and error paths the real-machine suite
 //  can never touch (its standing rule is "never enqueue against the dev machine"). Everything

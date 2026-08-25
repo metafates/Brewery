@@ -1,6 +1,6 @@
 # Brewery — Architecture
 
-A native macOS GUI for Homebrew. SwiftUI, macOS 26, zero third-party dependencies. This document is the current-state spec: features are designed here before implementation, every behavioral claim about Homebrew is verified against the brew 6.x source (`Library/Homebrew/…` paths cited; local checkout at `~/Code/github/brew`), and the document is rewritten in place as the system changes rather than appended to as a changelog.
+A native macOS GUI for Homebrew. SwiftUI, macOS 26, zero third-party dependencies. This document is the current-state spec: features are designed here before implementation, every behavioral claim about Homebrew is verified against the brew 6.x source (`Library/Homebrew/…` paths cited, rooted at `$(brew --repository)` — Homebrew ships as a git checkout, so no separate clone is needed; the line numbers were read against brew 6.0.15 and drift with releases, so grep the symbol rather than trusting the number), and the document is rewritten in place as the system changes rather than appended to as a changelog.
 
 ## What Brewery is
 
