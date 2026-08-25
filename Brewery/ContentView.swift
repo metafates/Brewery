@@ -618,6 +618,17 @@ struct ContentView: View {
                                 discoverTip
                             }
                         })
+        // The grid's identity is the listing's identity. Discover, Installed, Outdated and
+        // every tap page render through this one call, so without it they share a ScrollView
+        // and its scroll offset survives the switch: leaving Discover at 7228 pt landed in
+        // Installed at 7228 (or clamped to its bottom), which also parks the window sentinel
+        // on screen and immediately grows the render window to 120. `ListingToken` is exactly
+        // the set of inputs that change *which* packages are listed, and it is already what
+        // resets the render window — so the scroller and the window restart together.
+        // The query stays out, deliberately: a per-keystroke teardown would attack the
+        // pinned 0.5 s keystroke budget, and `catalogGeneration` stays out for the reason
+        // already recorded — a recompose must never reset the scroll window.
+        .id(listingToken)
     }
 
     /// The Outdated page's status feedback, integrated into the page rather than raised at
