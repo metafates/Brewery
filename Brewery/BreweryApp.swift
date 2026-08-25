@@ -262,6 +262,18 @@ struct BreweryApp: App {
                 }
                 .disabled(!model.tapInfos.contains { $0.name == model.selectedTap })
             }
+            // File ▸ Export Brewfile…, where a save belongs. The File menu exists already
+            // (the log scene contributes it); this is the first item the app puts there.
+            // The ellipsis is honest: a save panel appears before anything is written.
+            CommandGroup(after: .newItem) {
+                Divider()
+                Button("Export Brewfile…") {
+                    Task { await model.exportBrewfile() }
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                // Checkup's rule: a dump mid-mutation describes a moving target.
+                .disabled(model.brewMissing || model.isQueueActive || model.isExportingBrewfile)
+            }
             CommandGroup(after: .pasteboard) {
                 Divider()
                 // The standard Edit ▸ Find ▸ Find… shape. Wired explicitly rather than left to

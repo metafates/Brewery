@@ -67,6 +67,17 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     // a raw-text fallback in case the flag ever changes shape. Exit 1 means findings exist,
     // not failure — the caller judges by parse, not exit code.
     case doctor
+    // A read, never queued, and **argument-less by construction** — autoremove's and cleanup's
+    // bar, the strongest form this whitelist has. `brew bundle dump` normally writes
+    // `./Brewfile`; the destination is chosen entirely by `HOMEBREW_BUNDLE_FILE=/dev/stdout`,
+    // set for this command alone in `BrewClient.environment(for:)`, because
+    // `Dumper.brewfile_path` passes `dash_writes_to_stdout: true` and `should_not_write_file?`
+    // exempts `/dev/stdout` from its overwrite check. So no `--force` is needed and nothing is
+    // written to disk — verified live, including that brew still refuses to clobber a real
+    // file if the variable ever named one. Keeping the path out of argv is the point: a
+    // `--file=` flag would put a filesystem path in brew's arguments and trip the tripwire's
+    // ban on exactly that token, and the ban is worth more than the flag.
+    case bundleDump
     // Cleanup joins under autoremove's bar: argument-less by construction (no names, no
     // `--prune`, no `-s` representable), scoped to what brew itself computes as stale — old
     // kegs of installed formulae with linked/pinned/keepme versions kept (formula.rb:3654-3658),
@@ -128,6 +139,8 @@ nonisolated enum BrewCommand: Equatable, Hashable {
             ["link", name]
         case .doctor:
             ["doctor", "--json"]
+        case .bundleDump:
+            ["bundle", "dump"]
         case .cleanup:
             ["cleanup"]
         case let .pin(name, cask):
@@ -143,7 +156,7 @@ nonisolated enum BrewCommand: Equatable, Hashable {
     /// guarantee survives it.
     var isMutating: Bool {
         switch self {
-        case .listFormulae, .listCasks, .outdated, .servicesList, .doctor:
+        case .listFormulae, .listCasks, .outdated, .servicesList, .doctor, .bundleDump:
             false
         case .update, .install, .upgrade, .upgradeAll, .serviceStart, .serviceStop, .tap, .untap, .trustTap, .untrustTap, .autoremove, .uninstall, .zap, .cleanup, .link, .pin, .unpin:
             true

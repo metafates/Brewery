@@ -119,6 +119,7 @@ struct BrewCommandTests {
         .zap(name: "iterm2"),
         .cleanup,
         .doctor,
+        .bundleDump,
         .link(name: "deno"),
         .pin(name: "wget", cask: false),
         .pin(name: "iterm2", cask: true),
@@ -132,6 +133,7 @@ struct BrewCommandTests {
         case listFormulae, listCasks, outdated, update, install, upgrade, upgradeAll
         case servicesList, serviceStart, serviceStop, tap, untap, trustTap, untrustTap
         case autoremove, uninstall, zap, cleanup, doctor, link, pin, unpin
+        case bundleDump
     }
 
     static func commandKind(_ command: BrewCommand) -> CommandKind {
@@ -155,10 +157,20 @@ struct BrewCommandTests {
         case .zap: .zap
         case .cleanup: .cleanup
         case .doctor: .doctor
+        case .bundleDump: .bundleDump
         case .link: .link
         case .pin: .pin
         case .unpin: .unpin
         }
+    }
+
+    /// The dump is a read and must never be queueable — `enqueue` refuses non-mutating
+    /// commands, which is what keeps it off the serialized queue and out of `SUDO_ASKPASS`.
+    @Test("bundle dump is a read with no arguments at all")
+    func bundleDumpIsAReadWithNoArguments() {
+        #expect(BrewCommand.bundleDump.arguments == ["bundle", "dump"])
+        #expect(BrewCommand.bundleDump.isMutating == false)
+        #expect(BrewCommand.bundleDump.touchesPackages == false)
     }
 
     @Test("the tripwire covers every case of the enum")
@@ -189,7 +201,13 @@ struct BrewCommandTests {
         // inverse — brew defines unpin as pin's exact undo (cmd/unpin.rb), so neither needs a
         // dialog (the service-toggle rule) — and kind-pinned like install, since the explicit
         // --formula/--cask switches shipped with cask pinning itself (brew 5.1.12).
-        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup", "doctor", "link", "pin", "unpin"]
+        // `bundle` clears doctor's bar and autoremove's at once: a read, and argument-less by
+        // construction. The dump's destination lives in `HOMEBREW_BUNDLE_FILE`, never argv —
+        // which is the whole reason `--file` stays on the forbidden list below rather than
+        // being retired the way `uninstall` and `cleanup` were. `bundle install` (which drives
+        // nine other package managers from a user-supplied file) stays unrepresentable: there
+        // is no case for it, and no argv path that could name a file.
+        let allowed: Set<String> = ["list", "outdated", "update", "install", "upgrade", "services", "tap", "untap", "trust", "untrust", "autoremove", "uninstall", "cleanup", "doctor", "link", "pin", "unpin", "bundle"]
         for command in Self.everyCommand {
             let first = command.arguments.first ?? ""
             #expect(allowed.contains(first), "unexpected subcommand \"\(first)\" in \(command.arguments)")
@@ -320,6 +338,11 @@ struct BrewCommandTests {
                 #expect(arguments == ["cleanup"])
             case .doctor:
                 #expect(arguments == ["doctor", "--json"])
+            case .bundleDump:
+                // Exactly two tokens. No `--file`, no `-f`/`--force`, no `--global`, and
+                // nothing that could name a path: the destination is an environment variable
+                // precisely so this stays true.
+                #expect(arguments == ["bundle", "dump"])
             case .link:
                 // Two tokens, no flags — `--overwrite` (deletes files) and `--force`
                 // (keg-only override) must stay unrepresentable.

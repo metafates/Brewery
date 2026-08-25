@@ -975,7 +975,7 @@ final class AppModel {
         // `BrewCommandTests.commandKind` are all exhaustive for the same reason; this was
         // the one switch in the argv chain protected by a comment instead of the compiler.
         case .listFormulae, .listCasks, .outdated, .update, .upgradeAll, .servicesList,
-             .autoremove, .cleanup, .doctor:
+             .autoremove, .cleanup, .doctor, .bundleDump:
             break
         }
 
@@ -1233,6 +1233,56 @@ final class AppModel {
     /// Same rule for Update All — it lived in the view, spelled longhand.
     var upgradeAllPending: Bool {
         operations.contains { $0.command == .upgradeAll && !$0.isFinished }
+    }
+
+    // MARK: - Brewfile
+
+    /// The dumped Brewfile, held until the save panel consumes it. Session state: it describes
+    /// this moment's installed set and would be a lie the next time anything is installed.
+    private(set) var brewfileExport: String?
+    private(set) var isExportingBrewfile = false
+    /// The one thing an export can say when it fails. Every other file write in the app is
+    /// best-effort and silent (a cache we cannot write costs the next launch its head start,
+    /// nothing more) — but this one the user asked for, so it needs a surface.
+    var brewfileError: String?
+
+    /// `runCheckup`'s shape: a read, run inline because `enqueue` refuses a non-mutating
+    /// command by construction, with the same disabled rule — dumping installed state while a
+    /// mutation is mid-flight would describe a moving target, exactly doctor's problem.
+    ///
+    /// **stderr is split off, and that is load-bearing.** `client.capture` merges the two
+    /// streams (which is why the JSON parsers carry brace-trimming damage control), and a
+    /// Brewfile has no delimiters to trim back to — a stray `==>` line would land in the
+    /// user's file as a fake entry and silently install something on restore.
+    func exportBrewfile() async {
+        guard !isExportingBrewfile, !brewMissing, !isQueueActive else { return }
+        isExportingBrewfile = true
+        defer { isExportingBrewfile = false }
+
+        let stdout = CheckupBuffer()
+        let stderr = CheckupBuffer()
+        do {
+            let code = try await client.run(.bundleDump) { stdout.lines.append($0) }
+                onErrorLine: { stderr.lines.append($0) }
+            let text = stdout.lines.joined(separator: "\n")
+            guard code == 0, !text.isEmpty else {
+                // brew prefixes its own diagnostics, and the operation log already owns the
+                // rule for reading one — reused rather than re-spelled. The prefix is dropped:
+                // an alert titled "Couldn't Export Brewfile" does not need to say "Error:".
+                brewfileError = stderr.lines.lazy.compactMap(BrewOperation.errorSentence).first
+                    ?? "Homebrew could not write the Brewfile."
+                return
+            }
+            brewfileExport = text + "\n"
+        } catch {
+            brewfileError = error.localizedDescription
+        }
+    }
+
+    /// The save panel consumed it (or was cancelled); a second export re-runs the dump rather
+    /// than handing back a stale snapshot.
+    func clearBrewfileExport() {
+        brewfileExport = nil
     }
 
     // MARK: - Uninstall

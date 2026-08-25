@@ -193,9 +193,17 @@ final class BrewClient {
 
     private static func environment(for command: BrewCommand,
                                     overlay: [String: String]) -> [String: String] {
-        merged(base: ProcessInfo.processInfo.environment,
-               overlay: overlay,
-               askpass: command.isMutating ? askpassPath() : nil)
+        var environment = merged(base: ProcessInfo.processInfo.environment,
+                                 overlay: overlay,
+                                 askpass: command.isMutating ? askpassPath() : nil)
+        // The dump's destination, kept out of argv on purpose (see `BrewCommand.bundleDump`).
+        // Scoped to the one command, like `SUDO_ASKPASS` above: `brew bundle` is the only
+        // reader, but a stray `HOMEBREW_BUNDLE_FILE` on every child is a claim about the
+        // user's Brewfile that this app has no business making.
+        if command == .bundleDump {
+            environment["HOMEBREW_BUNDLE_FILE"] = "/dev/stdout"
+        }
+        return environment
     }
 
     /// Merge order is the contract: the GUI base, then the login-shell overlay (terminal

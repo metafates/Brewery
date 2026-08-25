@@ -8,6 +8,7 @@
 import AppKit
 import SwiftUI
 import TipKit
+import UniformTypeIdentifiers
 
 /// What a first-time, non-technical user needs told once: the two words this whole store runs
 /// on. TipKit renders it as the native dismissible tip card, and remembers the dismissal.
@@ -433,6 +434,27 @@ struct ContentView: View {
             })
             ? "These are dependencies nothing needs anymore. You can install any of them again later. Pinned packages will be skipped."
             : "These are dependencies nothing needs anymore. You can install any of them again later.")
+        }
+        // A Brewfile is plain text called `Brewfile` — no `FileDocument`, no custom UTType,
+        // no `.brewbak`. `String` is already `Transferable`, and the app is unsandboxed, so
+        // the panel's URL is writable with no security-scoped bookmark. The panel itself is
+        // the rename affordance, which is why there is no date-stamp preference: that would
+        // need a Settings scene, a recorded non-goal.
+        .fileExporter(isPresented: Binding(get: { model.brewfileExport != nil },
+                                           set: { if !$0 { model.clearBrewfileExport() } }),
+                      item: model.brewfileExport,
+                      contentTypes: [.plainText],
+                      defaultFilename: "Brewfile") { _ in
+            model.clearBrewfileExport()
+        }
+        // The app's one user-facing write failure. Every other file write here is best-effort
+        // and silent, which is right for a cache and wrong for something the user asked for.
+        .alert("Couldn't Export Brewfile",
+               isPresented: Binding(get: { model.brewfileError != nil },
+                                    set: { if !$0 { model.brewfileError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.brewfileError ?? "")
         }
         .task(id: searchKey) {
             let ranked = section

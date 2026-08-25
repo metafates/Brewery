@@ -120,6 +120,58 @@ final class HarnessTests: XCTestCase {
                       "a deprecated installed package must land in Needs Attention")
     }
 
+    /// Export runs the real read path: File ▸ Export Brewfile… → `brew bundle dump` → the save
+    /// panel. The fixture deliberately writes brew chatter to **stderr** while the Brewfile
+    /// goes to stdout, which is the contamination `client.capture` would have merged into the
+    /// user's file — a Brewfile has no delimiters to trim back to, so a stray `==>` line would
+    /// restore as a fake entry.
+    func testBrewfileExportOpensTheSavePanel() {
+        var scenario = Scenario(packages: [wget2])
+        scenario.brewCommand(["bundle", "dump"],
+                             stdout: "tap \"homebrew/cask\"\nbrew \"wget2\"\n",
+                             stderr: "==> Downloading Homebrew API data\n")
+        let app = scenario.launch(in: self)
+        XCTAssertTrue(card(app, containing: "wget2").waitForExistence(timeout: 30))
+
+        exportBrewfile(in: app)
+
+        // `.fileExporter` only presents when the dump produced text, so the panel appearing is
+        // the assertion that the read path worked end to end.
+        let panel = app.sheets.firstMatch
+        XCTAssertTrue(panel.waitForExistence(timeout: 20), "the save panel never appeared")
+        XCTAssertTrue(app.sheets.textFields.firstMatch.value as? String == "Brewfile"
+                      || panel.staticTexts["Brewfile"].exists,
+                      "the panel should default to the name brew itself uses")
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
+    /// The one user-facing write failure in the app: every other file write is best-effort and
+    /// silent, which is right for a cache and wrong for something the user asked for.
+    func testBrewfileExportFailureIsExplained() {
+        var scenario = Scenario(packages: [wget2])
+        scenario.brewCommand(["bundle", "dump"],
+                             stderr: "Error: Cannot write to the Brewfile.\n",
+                             exitCode: 1)
+        let app = scenario.launch(in: self)
+        XCTAssertTrue(card(app, containing: "wget2").waitForExistence(timeout: 30))
+
+        exportBrewfile(in: app)
+
+        // brew's own sentence, not a generic apology.
+        XCTAssertTrue(app.staticTexts["Cannot write to the Brewfile."].waitForExistence(timeout: 20),
+                      "the alert should carry brew's own Error: line")
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
+    /// One bound walk over a closed menu — the recorded shape; clicking a menuBarItem and then
+    /// re-querying its children hangs the runner mid-menu-tracking.
+    private func exportBrewfile(in app: XCUIApplication) {
+        let item = app.menuBars.menuBarItems["File"].menuItems
+            .allElementsBoundByIndex.first { $0.title == "Export Brewfile…" }
+        XCTAssertNotNil(item, "File ▸ Export Brewfile… is missing")
+        item?.click()
+    }
+
     /// A 500 on the catalog with no cache lands on the designed failure state, through the real
     /// client: the fixture is a `.status` file, not a stubbed error value.
     func testCatalogFailureOffersTryAgain() {
