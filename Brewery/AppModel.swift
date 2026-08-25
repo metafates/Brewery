@@ -942,9 +942,12 @@ final class AppModel {
              let .uninstall(name, _), let .zap(name), let .link(name),
              let .pin(name, _), let .unpin(name, _):
             guard !name.isEmpty, !name.hasPrefix("-") else { return }
-        default:
-            // Argument-less commands only. A new case that carries a name MUST join the list
-            // above — this default would otherwise exempt it from the guard silently.
+        // Listed, not `default:` — a new case carrying a name would otherwise be exempted
+        // from the guard above in silence. `BrewCommand.arguments`, `.isMutating` and
+        // `BrewCommandTests.commandKind` are all exhaustive for the same reason; this was
+        // the one switch in the argv chain protected by a comment instead of the compiler.
+        case .listFormulae, .listCasks, .outdated, .update, .upgradeAll, .servicesList,
+             .autoremove, .cleanup, .doctor:
             break
         }
 
@@ -1020,7 +1023,7 @@ final class AppModel {
     /// (brew's API loader precedes its tap loaders), and the qualified form is also what
     /// satisfies brew 6.x's tap-trust gate. The scan-membership guard is load-bearing — a stale
     /// receipt naming a since-untapped tap would otherwise make brew clone the tap back.
-    private func qualifiedName(for package: Package) -> String {
+    func qualifiedName(for package: Package) -> String {
         guard let tap = effectiveTap(for: package), tapScan.taps.contains(tap) else {
             return package.name
         }
@@ -1468,11 +1471,16 @@ final class AppModel {
         // Set in the same synchronous block as `state`, so no frame sees the gap between them.
         operation.awaitingRefresh = true
         operation.awaitingRefreshSince = refreshGeneration
-        if state == .failed, failureToPresent == nil {
-            failureToPresent = operation
-            // An install runs for minutes and people go elsewhere while it does. A popover
-            // opening behind another app is not feedback; one Dock bounce is. Model-side,
-            // beside the flag it accompanies: the window may not exist at all.
+        if state == .failed {
+            // Latched: the popover auto-presents once, and a window reopened later consumes
+            // this on appearance (`initial: true`).
+            if failureToPresent == nil { failureToPresent = operation }
+            // Per failure, not per presentation. An install runs for minutes and people go
+            // elsewhere while it does. A popover opening behind another app is not feedback;
+            // one Dock bounce is. Nested inside the latch, a windowless session got exactly
+            // one knock ever — nothing was mounted to clear the flag — and the drain-time
+            // success knock stayed suppressed by `batchHadFailure`, so every later failure
+            // was completely silent: the case the model-side bounce exists for.
             if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
         }
 

@@ -30,13 +30,15 @@ struct DetailHeader: View {
         model.installed[package.id] != nil && model.client.prefix != nil && !sizeFailed
     }
 
+    /// Also the task's id: the measurement must re-run exactly when its cache key changes, or
+    /// it answers from a key it no longer owns. Keyed on install *state* instead, an in-place
+    /// upgrade left the boolean true, so the row kept the pre-upgrade figure — and under the
+    /// standing `HOMEBREW_NO_INSTALL_CLEANUP=1` a formula's size root is the whole rack, so
+    /// the understatement was a full keg. Uninstalling still re-runs it: an absent version
+    /// yields `"<id>|"`.
     private var sizeKey: String {
         DiskUsage.cacheKey(for: package.id, version: model.installed[package.id]?.versions.last)
     }
-
-    /// Re-measure when the page's package changes — and when it becomes installed, the moment
-    /// there are files to find.
-    private var installedTaskID: String { "\(package.id)|\(model.installed[package.id] != nil)" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -157,7 +159,7 @@ struct DetailHeader: View {
             }
             .font(.subheadline)
         }
-        .task(id: installedTaskID) {
+        .task(id: sizeKey) {
             sizeFailed = false
             diskBytes = nil
             guard model.installed[package.id] != nil else { return }

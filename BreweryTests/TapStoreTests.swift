@@ -313,4 +313,24 @@ struct TapStoreTests {
                            version: "", deprecated: false, disabled: false)
         #expect(core.tapLabel == "homebrew/cask")
     }
+
+    /// The scan-membership guard, which had no test: deleting `tapScan.taps.contains(tap)`
+    /// from `qualifiedName` left the whole suite green. It is load-bearing — a qualified name
+    /// whose tap is not installed makes brew *clone that tap on demand*
+    /// (`cmd/install.rb`), an implicit mutation the app must never cause, and a stale receipt
+    /// naming a since-untapped tap is exactly how you get one. A fresh model has an empty
+    /// scan, so an effective tap that is genuinely present in the receipt must still reach
+    /// brew as a bare short name. The consent gate mirrors the same guard, for free.
+    @MainActor
+    @Test("an effective tap outside the scan is never qualified into argv")
+    func unscannedTapIsNotQualified() {
+        let gum = Package(kind: .formula, name: "gum", displayName: nil, desc: nil, homepage: nil,
+                          version: "0.14", deprecated: false, disabled: false)
+        let model = AppModel()
+        model.installed[gum.id] = InstalledInfo(versions: ["0.14"], tap: "charmbracelet/tap")
+
+        #expect(model.effectiveTap(for: gum) == "charmbracelet/tap")
+        #expect(model.qualifiedName(for: gum) == "gum")
+        #expect(model.installNeedsTrustConsent(gum) == false)
+    }
 }
