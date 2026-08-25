@@ -1074,7 +1074,6 @@ struct ContentView: View {
                         filterLabel(active: model.tapKindFilter != .all)
                     }
                     .help("Filter by kind")
-                    .accessibilityLabel("Filter")
                 }
             } else {
                 ToolbarItem(placement: .primaryAction) {
@@ -1108,7 +1107,6 @@ struct ContentView: View {
                     filterLabel(active: filtersActive)
                 }
                 .help("Filter by kind, hide deprecated packages, or show only tap packages")
-                .accessibilityLabel("Filter")
             }
         }
         // Filter and Sort share one group: both shape how the listing reads, and one
@@ -1128,7 +1126,6 @@ struct ContentView: View {
                                 || installedPinnedOnly || showDependencies)
                 }
                 .help("Filter by kind, source or pin state, or show dependency-only packages")
-                .accessibilityLabel("Filter")
                 // The sort, in the Filter menu's own grammar (HIG *Pop-up buttons*: a flat
                 // list of mutually exclusive options). Its menu-bar twin is View ▸ Sort By.
                 Menu {
@@ -1142,7 +1139,6 @@ struct ContentView: View {
                     Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
                 .help("Sort by name, date installed, or size")
-                .accessibilityLabel("Sort")
             }
         }
     }
@@ -1157,6 +1153,15 @@ struct ContentView: View {
     }
 
     /// The filled variant is the tell that the grid is not showing everything.
+    /// Measured (throwaway shot test, macOS 26.5): the toolbar bridge exposes this item as
+    /// `label=<Filter> value=<>` in **both** states, and an `.accessibilityValue` added to the
+    /// Menu is dropped exactly like an `.accessibilityLabel` is — the bridge takes the `Label`'s
+    /// title and nothing else, which is the same rule the Operations button is built around.
+    /// So the filled funnel has no accessible twin, and the only channel that would carry one
+    /// is the title — which is also the text macOS shows in the toolbar overflow menu and in
+    /// Customize Toolbar, where "Filter (On)" would be wrong. Left as is deliberately: the
+    /// state is not color-only chrome, it is one keystroke away *inside this control*, where
+    /// VoiceOver reads the picker selection and the toggles' checkmarks directly.
     private func filterLabel(active: Bool) -> some View {
         Label("Filter", systemImage: active
               ? "line.3.horizontal.decrease.circle.fill"
