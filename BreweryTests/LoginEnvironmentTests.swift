@@ -47,11 +47,18 @@ struct LoginEnvironmentTests {
             "HOMEBREW_CACHE": "/cache", "HOMEBREW_NO_ANALYTICS": "1",
             "HOME": "/Users/u", "SSH_AUTH_SOCK": "/sock", "EDITOR": "nvim",
             "HOMEBREWX": "prefix trap",
+            // brew's own proxy names (`env_config.rb`, carried by `build_environment.rb`'s
+            // KEYS) — lowercase, and absent from `USED_BY_HOMEBREW_VARS`. Without them a
+            // proxied Mac downloads the catalog and fails every install.
+            "http_proxy": "http://p:8080", "no_proxy": "localhost",
+            // brew declares lowercase only; the uppercase spelling is shell-emulator drift.
+            "HTTP_PROXY": "http://nope:1",
         ])
         #expect(overlay == [
             "PATH": "/opt/homebrew/bin", "SHELL": "/opt/homebrew/bin/fish",
             "XDG_CONFIG_HOME": "/Users/u/.config", "XDG_CACHE_HOME": "/c", "XDG_DATA_HOME": "/d",
             "HOMEBREW_CACHE": "/cache", "HOMEBREW_NO_ANALYTICS": "1",
+            "http_proxy": "http://p:8080", "no_proxy": "localhost",
         ])
     }
 

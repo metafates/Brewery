@@ -17,8 +17,17 @@ nonisolated enum LoginEnvironment {
     /// The user-environment names brew itself consumes (bin/brew's `USED_BY_HOMEBREW_VARS`),
     /// minus the ones the app must own. Everything else the shell exports stays out: the
     /// overlay is terminal parity for brew, not a shell emulator.
+    /// The proxy names are brew's own, spelled brew's way: `env_config.rb` declares exactly
+    /// these five, lowercase, and `build_environment.rb`'s `KEYS` carries them through into
+    /// every build — they are how `brew(1)` documents using Homebrew behind a proxy. They are
+    /// *not* in `USED_BY_HOMEBREW_VARS`, so nothing else here would have caught them, and
+    /// without them a proxied Mac downloads the catalog fine (URLSession honors the system
+    /// proxy) while every install fails: the same class of divergence as the trust breakage —
+    /// the app's brew answering for a machine the user doesn't have. Uppercase spellings stay
+    /// out: brew declares lowercase only, and this is brew parity, not a shell emulator.
     static let whitelistedNames: Set<String> = [
         "PATH", "SHELL", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
+        "http_proxy", "https_proxy", "all_proxy", "ftp_proxy", "no_proxy",
     ]
 
     /// The account's login shell (`getpwuid`), falling back to `$SHELL`, then zsh — the same
