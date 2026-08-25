@@ -176,6 +176,11 @@ struct SectionTitle: View {
             .font(.subheadline)
             .fontWeight(.semibold)
             .padding(.bottom, 2)
+            // Semibold is the sighted tell; this is the other one. Every pane section titles
+            // itself through here, so one modifier makes VO-Command-H work across the whole
+            // inspector — before it, rotor heading navigation found nothing anywhere in the
+            // app (HIG *VoiceOver*: mark headings so people can navigate by structure).
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

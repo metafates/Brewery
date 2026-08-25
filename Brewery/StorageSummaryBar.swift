@@ -53,6 +53,10 @@ struct StorageSummaryBar: View {
                         .font(.title3)
                         .fontWeight(.semibold)
                         .redacted(reason: .placeholder)
+                        // Scaffolding, not content — the pane's Size row rule: a redaction
+                        // is invisible to VoiceOver, which otherwise read the reserved
+                        // digits out as the measurement.
+                        .accessibilityHidden(true)
                 }
 
                 Spacer(minLength: 12)

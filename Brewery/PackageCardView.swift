@@ -72,6 +72,10 @@ struct PackageCardView: View {
         }
         .buttonStyle(CardButtonStyle(isSelected: isSelected))
         .accessibilityHint("Shows package details")
+        // A grid has no system selection to lean on, so the accent border and tint wash are
+        // drawn by the ButtonStyle — which draws nothing into the accessibility tree. Every
+        // `List` row in the app gets this trait free; the cards had to be told.
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         // The UI tests' card query: frame-based filtering silently dropped short cards.
         .accessibilityIdentifier("PackageCard")
         .overlay(alignment: .bottomTrailing) {
