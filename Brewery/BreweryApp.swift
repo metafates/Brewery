@@ -171,7 +171,7 @@ struct BreweryApp: App {
                     model.upgradeAll()
                 }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
-                .disabled(model.outdated.isEmpty)
+                .disabled(model.outdated.isEmpty || model.upgradeAllPending)
 
                 // The context menu's twin (a context item must also exist in the main
                 // interface, and the shortcut shows here, not there). ⌘⌫ is the platform's
@@ -358,7 +358,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(item(title: "Refresh", action: #selector(refreshFromDock)))
         let outdated = model.outdated.count
-        if outdated > 0 {
+        // Absent while one is already running: a Dock menu is rebuilt on every open, so it
+        // has no disabled state to wear, and an item that silently no-ops is the lie the
+        // model guard exists to prevent.
+        if outdated > 0, !model.upgradeAllPending {
             menu.addItem(item(title: "Update All (\(outdated))", action: #selector(updateAllFromDock)))
         }
         return menu

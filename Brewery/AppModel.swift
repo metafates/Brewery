@@ -1019,7 +1019,13 @@ final class AppModel {
         return "\(tap)/\(package.name)"
     }
 
+    /// Guarded in the funnel, not per-caller: four surfaces reach this (toolbar, ⇧⌘U, the
+    /// menu bar extra, the Dock menu) and only the toolbar consulted `upgradeAllPending`. The
+    /// other three gate on `outdated.isEmpty`, which cannot change while the upgrade runs, so
+    /// a second press queued a whole redundant `brew upgrade`; the Dock item has no `.disabled`
+    /// hook to patch at all. `runCheckup` sets the precedent.
     func upgradeAll() {
+        guard !upgradeAllPending else { return }
         enqueue(.upgradeAll, title: "Updating all packages", targetID: nil)
     }
 

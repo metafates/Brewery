@@ -93,7 +93,7 @@ struct MenuBarMenu: View {
         // ⇧⌘U for recognition; the binding lives in the Homebrew menu's own item.
         Button("Update All") { model.upgradeAll() }
             .keyboardShortcut("u", modifiers: [.command, .shift])
-            .disabled(model.outdated.isEmpty)
+            .disabled(model.outdated.isEmpty || model.upgradeAllPending)
 
         Divider()
 
