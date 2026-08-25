@@ -67,8 +67,11 @@ nonisolated enum LoginEnvironment {
     /// capture failure merely loses the overlay. `@concurrent` so the spawn and
     /// the byte-by-byte pipe drain leave the caller's actor (the reader Task inherits this
     /// context) instead of running on the main thread.
-    @concurrent static func capture(timeout: Duration = .seconds(3)) async -> [String: String] {
-        guard let shell = loginShellPath() else { return [:] }
+    /// `shell` exists only so the deadline has a test: a real login shell exits in
+    /// milliseconds, and the wedge this timeout guards against needs one that doesn't.
+    @concurrent static func capture(timeout: Duration = .seconds(3),
+                                    shell: String? = nil) async -> [String: String] {
+        guard let shell = shell ?? loginShellPath() else { return [:] }
 
         let process = Process()
         process.executableURL = URL(filePath: shell)
@@ -108,6 +111,16 @@ nonisolated enum LoginEnvironment {
             }
             group.addTask {
                 try? await Task.sleep(for: timeout)
+                // The unblocking happens *here*, not after the group: the sibling child is
+                // parked in `await reader.value`, and `Task.value` on a non-throwing task
+                // ignores the awaiting task's cancellation — so `cancelAll()` can never unwind
+                // the group's implicit await-all, and code after the group is unreachable.
+                // Only EOF ends the read, so the deadline has to produce one. `terminate()`
+                // alone is not enough: a dotfile-spawned descendant keeps the write end open
+                // after the shell exits, so the handle is closed too (verified: both a hung
+                // shell and a backgrounded descendant wedged forever without this).
+                process.terminate()
+                try? handle.close()
                 return nil
             }
             let first = await group.next() ?? nil
@@ -115,11 +128,10 @@ nonisolated enum LoginEnvironment {
             return first
         }
 
+        // Only the deadline child yields nil, and it has already sent SIGTERM; this is the
+        // backstop for a shell that ignores it. Plain Task, not detached: a delayed side
+        // effect needs no fresh isolation domain, and this context is already nonisolated.
         guard let data else {
-            reader.cancel()
-            process.terminate()
-            // Plain Task, not detached: a delayed side effect needs no fresh isolation
-            // domain, and this context is already nonisolated.
             Task {
                 try? await Task.sleep(for: .seconds(1))
                 if process.isRunning { kill(process.processIdentifier, SIGKILL) }

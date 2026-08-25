@@ -74,4 +74,28 @@ struct LoginEnvironmentTests {
         let merged = BrewClient.merged(base: [:], overlay: [:], askpass: nil)
         #expect(merged["SUDO_ASKPASS"] == nil)
     }
+
+    /// The deadline has to actually fire. It used to be unreachable: the surviving task-group
+    /// child parks in `await reader.value`, which ignores the awaiting task's cancellation, so
+    /// `cancelAll()` could not unwind the group's implicit await-all and everything after it
+    /// was dead code. A shell that never exits then wedged `capture()` forever — and with it
+    /// `shellEnvironment()`, every brew invocation, and `bootstrap()`. Both shapes are covered:
+    /// a hanging shell, and a shell that exits leaving a descendant holding the pipe's write
+    /// end (a dotfile that backgrounds a daemon), which SIGTERM alone does not unblock.
+    @Test(arguments: ["sleep 60", "sleep 60 &"])
+    func captureGivesUpOnAShellThatNeverCloses(tail: String) async throws {
+        let script = URL.temporaryDirectory
+            .appending(path: "brewery-stuck-shell-\(UUID().uuidString).sh")
+        try Data("#!/bin/sh\nprintf '\\0'\n\(tail)\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                              ofItemAtPath: script.path)
+        defer { try? FileManager.default.removeItem(at: script) }
+
+        let started = ContinuousClock.now
+        let overlay = await LoginEnvironment.capture(timeout: .milliseconds(200),
+                                                     shell: script.path)
+        // No PATH in the capture, so the overlay degrades to empty — the documented failure mode.
+        #expect(overlay.isEmpty)
+        #expect(started.duration(to: .now) < .seconds(5))
+    }
 }
