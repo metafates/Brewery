@@ -208,9 +208,6 @@ struct ContentView: View {
     /// filters: it is a view preference, and the View ▸ Sort By commands share it by key.
     @AppStorage("installed.sort") private var installedSort: InstalledSort = .name
 
-    /// The tap page's kind filter. Deliberately transient (@State, reset per page): a persisted
-    /// filter that silently empties the next tap's page would read as data loss.
-    @State private var tapKindFilter: KindFilter = .all
     /// Ranked results per section, so leaving a tab and coming back shows that tab's results at
     /// once. A single array meant visiting a tab with an empty query cleared it, and the return
     /// trip flashed the unfiltered listing until the re-rank landed.
@@ -502,7 +499,6 @@ struct ContentView: View {
                 showKindsTip = status == .available
             }
         }
-        .onChange(of: model.selectedTap) { tapKindFilter = .all }
         .onChange(of: model.findRequests) { searchFocused = true }
         // `initial: true`, and the Dock bounce lives in the model beside the flag: a failure
         // can land while no window exists, and a plain onChange would never see the value it
@@ -799,8 +795,8 @@ struct ContentView: View {
     private func tapPagePackages(for tap: String?) -> [Package] {
         guard let tap else { return [] }
         let packages = model.packages(inTap: tap)
-        guard tapKindFilter != .all else { return packages }
-        return packages.filter(tapKindFilter.matches)
+        guard model.tapKindFilter != .all else { return packages }
+        return packages.filter(model.tapKindFilter.matches)
     }
 
     /// Installed's kind pre-filter — same position in the pipeline as Discover's: before ranking,
@@ -851,7 +847,7 @@ struct ContentView: View {
         case .outdated, .services, .orphans, .attention, .storage, .checkup:
             section.emptyMessage.map { ($0, false) }
         case .taps:
-            tapKindFilter != .all ? ("No packages match the filter", true)
+            model.tapKindFilter != .all ? ("No packages match the filter", true)
                                   : section.emptyMessage.map { ($0, false) }
         }
     }
@@ -865,7 +861,7 @@ struct ContentView: View {
             (installedKindFilter, installedTapsOnly, installedPinnedOnly, showDependencies)
                 = (.all, false, false, true)
         case .taps:
-            tapKindFilter = .all
+            model.tapKindFilter = .all
         default:
             break
         }
@@ -981,7 +977,7 @@ struct ContentView: View {
                      installedPinnedOnly: installedPinnedOnly,
                      installedSort: installedSort,
                      selectedTap: model.selectedTap,
-                     tapKindFilter: tapKindFilter)
+                     tapKindFilter: model.tapKindFilter)
     }
 
     // MARK: - Counts
@@ -1050,7 +1046,7 @@ struct ContentView: View {
         case .discover: filtersActive
         case .installed: installedKindFilter != .all || installedTapsOnly || installedPinnedOnly
         case .outdated, .services, .orphans, .attention, .storage, .checkup: false
-        case .taps: model.selectedTap != nil && tapKindFilter != .all
+        case .taps: model.selectedTap != nil && model.tapKindFilter != .all
         }
     }
 
@@ -1073,9 +1069,9 @@ struct ContentView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        kindPicker($tapKindFilter)
+                        kindPicker(Bindable(model).tapKindFilter)
                     } label: {
-                        filterLabel(active: tapKindFilter != .all)
+                        filterLabel(active: model.tapKindFilter != .all)
                     }
                     .help("Filter by kind")
                     .accessibilityLabel("Filter")

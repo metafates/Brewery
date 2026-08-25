@@ -47,13 +47,27 @@ struct BreweryApp: App {
         )
     }
 
-    /// The section on screen decides which section's keys the Filter commands drive.
+    /// The section on screen decides which section's keys the Filter commands drive. A drilled
+    /// tap page has one too — transient and model-side, which is what lets a `Commands` builder
+    /// reach it at all; before that, its toolbar Filter was the one action in the app with no
+    /// menu bar twin.
     private var currentKindFilter: Binding<KindFilter> {
-        model.selection == .installed ? $installedKindFilter : $kindFilter
+        switch model.selection {
+        case .installed: $installedKindFilter
+        case .taps where model.selectedTap != nil: Bindable(model).tapKindFilter
+        default: $kindFilter
+        }
     }
 
     private var currentTapsOnly: Binding<Bool> {
         model.selection == .installed ? $installedTapsOnly : $tapsOnly
+    }
+
+    /// Where the Filter menu has something to drive: Discover, Installed, and a drilled-in tap
+    /// page (the tap *list* filters nothing — it lists taps).
+    private var filterApplies: Bool {
+        model.selection == .discover || model.selection == .installed
+            || (model.selection == .taps && model.selectedTap != nil)
     }
 
     var body: some Scene {
@@ -117,13 +131,16 @@ struct BreweryApp: App {
                     Divider()
                     Toggle("Hide Deprecated", isOn: $hideDeprecated)
                         .disabled(model.selection != .discover)
+                    // Explicitly gated now that a tap page can open this menu: unguarded, it
+                    // would write Discover's key from a page that never reads it.
                     Toggle("From Taps Only", isOn: currentTapsOnly)
+                        .disabled(model.selection != .discover && model.selection != .installed)
                     Toggle("Pinned Only", isOn: $installedPinnedOnly)
                         .disabled(model.selection != .installed)
                     Toggle("Show Dependencies", isOn: $showDependencies)
                         .disabled(model.selection != .installed)
                 }
-                .disabled(model.selection != .discover && model.selection != .installed)
+                .disabled(!filterApplies)
                 // The sort menu's menu-bar twin. Always present, disabled outside
                 // Installed ("always show the same set of menu items" — the menu bar's rule),
                 // Toggles for the you-are-here checkmark (the destinations' pattern), ⌃⌘1…3 —

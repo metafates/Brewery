@@ -139,7 +139,19 @@ final class AppModel {
     /// package grid. "homebrew/core"/"homebrew/cask" select the API-backed catalogs. Model
     /// state for `selection`'s own reason: menu commands need to read and steer it — the
     /// request-counter channel this replaces existed only because they couldn't.
-    var selectedTap: String?
+    var selectedTap: String? {
+        // A persisted filter that silently emptied the next tap's page would read as data
+        // loss, so it resets per page — here rather than in an `onChange`, because the model
+        // is now the only writer.
+        didSet { if selectedTap != oldValue { tapKindFilter = .all } }
+    }
+
+    /// The tap page's kind filter. Model state, not view `@State`, for `selection`'s own
+    /// reason: View ▸ Filter must be able to drive whichever section is on screen, and a
+    /// `Commands` builder can only reach app-level state — without which the tap page's
+    /// Filter was the one toolbar action in the app with no menu bar twin. Deliberately
+    /// **not** `@AppStorage`: transient by design, reset by the `didSet` above.
+    var tapKindFilter: KindFilter = .all
     /// The Add Tap popover, anchored to the tap list's + toolbar button.
     var showAddTap = false
     var showOperations = false
