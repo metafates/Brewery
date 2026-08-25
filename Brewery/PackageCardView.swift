@@ -268,9 +268,14 @@ struct PackageCardView: View {
             // Progress indicators' "let people halt processing" satisfied app-wide while the
             // card stays macOS-quiet ("prefer an activity indicator to communicate the status
             // of a background operation").
+            // Status only, and no cancel affordance at card size — but the spinner is the
+            // one thing here VoiceOver cannot read, so it says what brew is doing rather than
+            // only that something is. Resolved in this branch alone: busy is the rare case.
             ProgressView()
                 .controlSize(.small)
-                .accessibilityLabel("Working on \(package.title)")
+                .accessibilityLabel(model.latestOperation(for: package).map {
+                    "\($0.statusLine), \(package.title)"
+                } ?? "Working on \(package.title)")
         }
     }
 }

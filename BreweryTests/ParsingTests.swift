@@ -373,4 +373,64 @@ struct OperationLogIngestTests {
         operation.append("plain line")
         #expect(operation.lines == ["==> Upgrading ffmpeg", "plain line"])
     }
+
+    /// brew narrates itself; the headline is its `ohai` prefix and nothing else is parsed.
+    @Test("only ==> headlines narrate, and never a bare URL")
+    func headlineExtraction() {
+        #expect(BrewOperation.headline(in: "==> Pouring ffmpeg--9.0.1.arm64_tahoe.bottle.tar.gz")
+                == "Pouring ffmpeg--9.0.1.arm64_tahoe.bottle.tar.gz")
+        #expect(BrewOperation.headline(in: "  ==> Fetching ffmpeg  ") == "Fetching ffmpeg")
+        #expect(BrewOperation.headline(in: "Warning: Skipping cleanup") == nil)
+        #expect(BrewOperation.headline(in: "==>") == nil)
+        #expect(BrewOperation.headline(in: "==> ") == nil)
+        // The rule Cork gets wrong: its unanchored matchers let a download URL claim the
+        // stage, and its `allCases.first(where:)` then makes the informative case unreachable.
+        #expect(BrewOperation.headline(in: "==> Downloading https://ghcr.io/v2/homebrew/core") == nil)
+    }
+
+    /// A download URL must not displace the line that says what is actually happening — the
+    /// two alternate several times a second while a bottle pours.
+    @Test("a URL headline leaves the previous stage standing")
+    @MainActor
+    func urlHeadlineKeepsPreviousStage() {
+        let operation = BrewOperation(command: .upgradeAll, title: "x", targetID: nil)
+        operation.state = .running
+        #expect(operation.statusLine == "Running…")   // nothing said yet
+
+        operation.append("==> Fetching ffmpeg")
+        #expect(operation.stage == "Fetching ffmpeg")
+        operation.append("==> Downloading https://ghcr.io/v2/homebrew/core/ffmpeg/blobs/sha256:2f4d")
+        #expect(operation.stage == "Fetching ffmpeg")
+        operation.append("  9.0 -> 9.0.1 ")
+        #expect(operation.stage == "Fetching ffmpeg", "unrecognised output must not blank the stage")
+        #expect(operation.statusLine == "Fetching ffmpeg")
+
+        operation.append("==> Pouring ffmpeg--9.0.1.arm64_tahoe.bottle.tar.gz")
+        #expect(operation.statusLine == "Pouring ffmpeg--9.0.1.arm64_tahoe.bottle.tar.gz")
+    }
+
+    /// brew prefixes its own diagnostics, so a failure reads as brew's sentence — and a
+    /// reworded brew degrades to the state word rather than to a wrong caption.
+    @Test("a failure speaks brew's own last Error: sentence")
+    @MainActor
+    func failureSummary() {
+        #expect(BrewOperation.errorSentence(in: "Error: Another active Homebrew process is running.")
+                == "Another active Homebrew process is running.")
+        #expect(BrewOperation.errorSentence(in: "  Error:   ") == nil)
+        #expect(BrewOperation.errorSentence(in: "==> Pouring x") == nil)
+
+        let operation = BrewOperation(command: .install(name: "wget2", cask: false),
+                                      title: "Installing wget2", targetID: nil)
+        operation.append("==> Fetching wget2")
+        operation.state = .failed
+        #expect(operation.statusLine == "Failed", "no Error: line means no invented sentence")
+
+        operation.append("Error: an unsatisfied requirement failed this build.")
+        #expect(operation.statusLine == "an unsatisfied requirement failed this build.")
+
+        // Cancellation is caught without writing a log line, so the last thing brew said
+        // before the interrupt must not be presented as the outcome.
+        operation.state = .cancelled
+        #expect(operation.statusLine == "Cancelled")
+    }
 }

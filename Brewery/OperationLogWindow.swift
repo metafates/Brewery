@@ -24,7 +24,7 @@ struct OperationLogWindow: View {
                 .padding(12)
                 .frame(minWidth: 480, minHeight: 320)
                 .navigationTitle(operation.title)
-                .navigationSubtitle(operation.state.label)
+                .navigationSubtitle(operation.statusLine)
                 .toolbar {
                     if !operation.isFinished {
                         Button("Cancel") { model.cancel(operation) }

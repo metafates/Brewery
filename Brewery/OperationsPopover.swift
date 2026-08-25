@@ -58,9 +58,13 @@ struct OperationsPopover: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(operation.title)
                     .lineLimit(1)
-                Text(operation.state.label)
+                // brew's own words while it is working or after it failed; the state word
+                // otherwise. A three-minute install used to read "Running…" for its whole life.
+                Text(operation.statusLine)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
 
             Spacer(minLength: 4)

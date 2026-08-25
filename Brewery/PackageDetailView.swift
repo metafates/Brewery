@@ -612,8 +612,10 @@ private struct DetailPage: View {
                 Text(operation.title)
                     .fontWeight(.medium)
                 Spacer()
-                Text(operation.state.label)
+                Text(operation.statusLine)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             .font(.subheadline)
             .accessibilityElement(children: .combine)

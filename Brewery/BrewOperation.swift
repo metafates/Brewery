@@ -37,16 +37,74 @@ final class BrewOperation: Identifiable {
     var awaitingRefreshSince = 0
     private(set) var lines: [String] = []
 
+    /// What brew last said it was doing — its own `==> ` headline, prefix stripped. brew
+    /// narrates itself through `ohai`, and `ohai_title` truncates *only* when stdout is a TTY
+    /// (`utils/output.rb`); this app pipes, so headlines arrive whole and there is nothing to
+    /// classify. Unrecognised output leaves it alone, so a reworded brew degrades to the state
+    /// word rather than to a wrong caption.
+    private(set) var stage: String?
+
+    /// brew's own last `Error:` sentence, prefix stripped — the same prefix the log view
+    /// already trusts for its red tint, and the one `AppModel.execute` synthesizes for a
+    /// missing brew or a thrown error, so those get a readable failure for free.
+    private(set) var errorSummary: String?
+
     init(command: BrewCommand, title: String, targetID: Package.ID?) {
         self.command = command
         self.title = title
         self.targetID = targetID
     }
 
+    /// Narration is computed **here**, at the one ingest chokepoint, and stored — never
+    /// derived in a view body. `lines` is observed, so every appended line already invalidates
+    /// every reader; a stored property rides that for free, while a computed property scanning
+    /// `lines` would reinstate exactly the quadratic cost the ANSI strip was moved here to fix.
     func append(_ line: String) {
-        lines.append(Self.stripANSI(line))
+        let clean = Self.stripANSI(line)
+        lines.append(clean)
         if lines.count > Self.lineLimit {
             lines.removeFirst(lines.count - Self.lineLimit)
+        }
+        if let headline = Self.headline(in: clean) { stage = headline }
+        if let sentence = Self.errorSentence(in: clean) { errorSummary = sentence }
+    }
+
+    /// brew's `ohai` headline, or nil for anything else — including, deliberately, a headline
+    /// whose subject is a bare URL. `==> Downloading https://ghcr.io/v2/…` alternates with
+    /// `==> Fetching ffmpeg` several times a second during a pour; the fetch line is the one
+    /// that names what is happening, and the URL would flicker over it while saying less.
+    nonisolated static func headline(in line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("==> ") else { return nil }
+        let subject = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+        // The scheme sits after the verb — the line is `==> Downloading <url>` — so the test is
+        // "does this headline name a URL at all", not "does it start with one".
+        guard !subject.isEmpty, !subject.contains("://") else { return nil }
+        return subject
+    }
+
+    /// brew prefixes its own diagnostics, so the sentence needs no parsing — only the prefix
+    /// dropped. Zero classification is the point: Cork's equivalent guesses with unanchored
+    /// regexes and mis-attributes lines to the wrong stage.
+    nonisolated static func errorSentence(in line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("Error:") else { return nil }
+        let sentence = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+        return sentence.isEmpty ? nil : sentence
+    }
+
+    /// What a surface says about this operation right now: brew's own words when it has said
+    /// something, the state word otherwise. `State.label`'s one-vocabulary contract, extended
+    /// rather than patched into one caller — the popover row, the log window's subtitle and
+    /// the pane's log header all read this, and drifting apart is what the contract forbids.
+    ///
+    /// `.cancelled` deliberately keeps its state word: `BrewError.cancelled` is caught without
+    /// writing a log line, so the last thing brew said before the interrupt is not the outcome.
+    var statusLine: String {
+        switch state {
+        case .running: stage ?? state.label
+        case .failed: errorSummary ?? state.label
+        default: state.label
         }
     }
 

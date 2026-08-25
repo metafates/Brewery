@@ -124,7 +124,15 @@ struct MenuBarMenu: View {
     @ViewBuilder private var statusRows: some View {
         if model.isQueueActive {
             let count = model.activeCount
-            Text(count == 1 ? "1 operation running" : "\(count) operations running")
+            // With one operation running, the count says less than brew does. The extra is the
+            // surface with the least information — no window, no log, no popover — so it names
+            // the operation and what brew last said about it. A batch keeps the count: five
+            // titles in a menu row is a paragraph, and the window is one click below.
+            if count == 1, let running = model.operations.first(where: { $0.state == .running }) {
+                Text("\(running.title) · \(running.statusLine)")
+            } else {
+                Text(count == 1 ? "1 operation running" : "\(count) operations running")
+            }
         } else {
             let outdated = model.outdated.count
             if outdated > 0 {
