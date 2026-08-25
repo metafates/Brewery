@@ -698,7 +698,16 @@ final class AppModel {
     private(set) var sizesGeneration = 0
     /// True while a sweep runs, so the listing can say "Measuring sizes…" instead of silently
     /// showing an order that is about to change.
-    private(set) var isMeasuringSizes = false
+    ///
+    /// A count, not a Bool, for `isChecking`'s reason: `.task(id:)` cancels the old body
+    /// *without awaiting it*, and a keg walk only notices cancellation every 512 entries — so
+    /// a re-keyed sweep used to meet a zombie still holding a Bool guard, bail, and never
+    /// retry (nothing re-fires until the key changes again), leaving the Size sort silently
+    /// alphabetical with no caption to say so. Overlap is free: `DiskUsage.measuredBytes`
+    /// answers from the session cache or joins the in-flight registry, and a cancelled sweep
+    /// still refuses to publish its partial map.
+    var isMeasuringSizes: Bool { sweepsInFlight > 0 }
+    private var sweepsInFlight = 0
 
     /// Where an installed package's bytes live — the one home for the answer, shared by the
     /// pane's Size row and the size sort's sweep. A formula is its whole `Cellar/<name>` (every
@@ -738,9 +747,8 @@ final class AppModel {
     /// the end: 350 per-keg assignments would rebuild the sorted listing 350 times. A warm pass
     /// (session cache) finishes in milliseconds and publishes nothing new.
     func measureSizes() async {
-        guard !isMeasuringSizes else { return }
-        isMeasuringSizes = true
-        defer { isMeasuringSizes = false }
+        sweepsInFlight += 1
+        defer { sweepsInFlight -= 1 }
 
         let targets: [(Package.ID, String, [URL])] = installed.compactMap { id, info in
             guard let package = package(for: id) else { return nil }
