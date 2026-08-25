@@ -257,10 +257,17 @@ nonisolated enum TapStore {
     /// scripts, generators) must not become a card.
     static func parseFormula(_ text: String) -> ParsedDefinition? {
         var sawClass = false
-        let parsed = parse(text, isDefinition: { line in
+        var parsed = parse(text, isDefinition: { line in
             if line.hasPrefix("class "), line.contains("< Formula") { return true }
             return false
         }, sawDefinition: &sawClass)
+        // `name` is a cask stanza — but brew's *service* DSL owns `name macos:` too
+        // (`service.rb:96`), and the scanner is indentation-blind, so a formula shipping a
+        // `service do` block wore its plist name as its title everywhere: the card, the pane
+        // header, its Services row, the uninstall dialog ("Removes #{plist_name} from your
+        // Mac"), while the argv correctly kept the short name. A formula has no display name
+        // at all — brew derives it from the class — which is what `Package` already documents.
+        parsed.displayName = nil
         return sawClass ? parsed : nil
     }
 

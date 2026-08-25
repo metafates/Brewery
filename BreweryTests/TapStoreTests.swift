@@ -77,6 +77,29 @@ struct TapStoreTests {
         #expect(parsed.desc == "A \"quoted\" tool")
     }
 
+    /// `name` is a cask stanza, but brew's service DSL owns `name macos:` too
+    /// (`service.rb:96`) and the scanner is indentation-blind — so mongodb/brew's
+    /// `name macos: "#{plist_name}"` became the formula's title on the card, in the pane
+    /// header, on its Services row and in the uninstall dialog. A formula has no display name.
+    @Test("a formula's service block never becomes its display name")
+    func serviceNameIsNotADisplayName() throws {
+        let text = """
+        class MongodbCommunity < Formula
+          desc "High-performance, schema-free, document-oriented database"
+          homepage "https://www.mongodb.com/"
+          service do
+            run [opt_bin/"mongod", "--config", etc/"mongod.conf"]
+            keep_alive true
+            name macos: "#{plist_name}"
+            log_path var/"log/mongodb/output.log"
+          end
+        end
+        """
+        let parsed = try #require(TapStore.parseFormula(text))
+        #expect(parsed.displayName == nil)
+        #expect(parsed.desc == "High-performance, schema-free, document-oriented database")
+    }
+
     @Test("stray root-level Ruby is not a formula")
     func classGuard() {
         #expect(TapStore.parseFormula("puts \"release script\"\ndesc \"not a formula\"") == nil)
