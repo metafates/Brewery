@@ -43,6 +43,26 @@ struct ListVersionsParsingTests {
         #expect(installed["formula:wget"] == InstalledInfo(versions: ["1.25.0"]))
     }
 
+    /// brew prints kegs in readdir order (`cmd/list.rb` → `Pathname#subdirs`), so the newest
+    /// is not reliably last — measured live: `pkgconf 3.0.6 3.0.5`, `tealdeer 1.9.0 1.8.1`,
+    /// `ffmpeg 9.0.1_1 9.0.1`, all with the *first* token linked at `opt/<name>`. Every
+    /// consumer reads `versions.last` as the live keg, so the order is fixed at the parse site.
+    @Test("kegs are ordered newest-last whatever order brew printed them in")
+    func versionsAreSorted() {
+        let installed = BrewClient.parseListVersions("""
+            pkgconf 3.0.6 3.0.5
+            ffmpeg 9.0.1_1 9.0.1
+            libheif 1.23.1_1 1.23.1 1.23.2
+            pnpm 11.24.0 11.23.0
+            """, kind: .formula)
+        #expect(installed["formula:pkgconf"]?.versions == ["3.0.5", "3.0.6"])
+        // Revisions sort after the version they revise, and numerically — not lexically,
+        // where "11.23.0" would beat "11.24.0" on the second character.
+        #expect(installed["formula:ffmpeg"]?.versions == ["9.0.1", "9.0.1_1"])
+        #expect(installed["formula:libheif"]?.versions == ["1.23.1", "1.23.1_1", "1.23.2"])
+        #expect(installed["formula:pnpm"]?.versions == ["11.23.0", "11.24.0"])
+    }
+
     @Test("empty output")
     func emptyOutput() {
         #expect(BrewClient.parseListVersions("", kind: .formula).isEmpty)

@@ -162,7 +162,8 @@ nonisolated enum Receipts {
 
         for (id, info) in installed {
             guard let (kind, name) = Package.components(of: id) else { continue }
-            // The keg we read is the one brew listed last — the version the overlay shows.
+            // The newest keg — the version the overlay shows. `parseListVersions` sorts;
+            // brew's own `list` prints readdir order, so `last` only means "newest" here.
             let url = receiptURL(prefix: prefix, kind: kind, name: name, version: info.versions.last ?? "")
             guard let data = try? Data(contentsOf: url) else {
                 result[id] = missing

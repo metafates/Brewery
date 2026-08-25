@@ -306,14 +306,29 @@ final class BrewClient {
 
     // MARK: - Parsers
 
-    /// `brew list --versions` prints `name v1 [v2 ...]` per line.
+    /// `brew list --versions` prints `name v1 [v2 ...]` per line — in **readdir order**, not
+    /// sorted: `cmd/list.rb` prints `d.subdirs` and `Pathname#subdirs` is a bare
+    /// `children.select(&:directory?)` (`extend/pathname.rb`), while brew sorts where it cares
+    /// (`Utils::Path.formula_installed_prefixes` ends `.sort_by(&:basename)`). Every consumer
+    /// here reads `versions.last` as the live keg and `dropLast()` as the old ones, so the
+    /// order is established once, at the only parse site. Measured on a 10-rack machine before
+    /// this sort: 4 racks inverted, so the pane showed the superseded version, the receipt
+    /// sweep read the wrong `INSTALL_RECEIPT.json`, and the uninstall dialog named the kegs
+    /// backwards.
+    ///
+    /// ponytail: `.numeric` is a string sort, not brew's `PkgVersion` — it matches the opt keg
+    /// on every real rack here, but a `HEAD-<sha>` keg sorts last whatever is linked. The exact
+    /// answer is a `readlink` of `opt/<name>` per package, which is a filesystem walk to fix a
+    /// comparator.
     static func parseListVersions(_ output: String, kind: PackageKind) -> [Package.ID: InstalledInfo] {
         var result: [Package.ID: InstalledInfo] = [:]
         for line in output.split(whereSeparator: \.isNewline) {
             let fields = line.split(whereSeparator: \.isWhitespace)
             guard let name = fields.first, fields.count > 1 else { continue }
             let id = Package.packageID(kind: kind, name: shortName(String(name)))
-            result[id] = InstalledInfo(versions: fields.dropFirst().map(String.init))
+            let versions = fields.dropFirst().map(String.init)
+                .sorted { $0.compare($1, options: .numeric) == .orderedAscending }
+            result[id] = InstalledInfo(versions: versions)
         }
         return result
     }
