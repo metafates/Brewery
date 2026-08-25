@@ -92,6 +92,34 @@ final class HarnessTests: XCTestCase {
                       "Refresh is the re-probe and must stay enabled")
     }
 
+    /// Maintenance's bands render from real probe output. This machine has no orphaned or
+    /// deprecated packages, so the merged page's other bands are only reachable through the
+    /// harness — and the band that *is* reachable there (Old Versions) is the one whose total
+    /// must equal the gauge's "Old versions" segment, since a mismatch between them is what a
+    /// single page makes visible and four separate destinations hid.
+    func testMaintenanceBandsRender() {
+        var multiKeg = FixturePackage(name: "wget2", desc: "Successor of the wget download tool",
+                                      version: "2.2.0")
+        multiKeg.installedVersions = ["2.1.0", "2.2.0"]
+        var retired = FixturePackage(name: "oldpkg", desc: "A retired fixture package",
+                                     version: "1.0", deprecated: true)
+        retired.installedVersions = ["1.0"]
+        let app = Scenario(packages: [multiKeg, retired]).launch(in: self)
+
+        app.outlines["Sidebar"].staticTexts["Maintenance"].click()
+
+        // The band headers fuse into their DisclosureGroup's AX element, so match on the
+        // group rather than a staticText — the List-row button lesson, one level up.
+        let oldVersions = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'Old Versions'")).firstMatch
+        XCTAssertTrue(oldVersions.waitForExistence(timeout: 60),
+                      "Maintenance never showed its Old Versions band")
+        let attention = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'Needs Attention'")).firstMatch
+        XCTAssertTrue(attention.waitForExistence(timeout: 20),
+                      "a deprecated installed package must land in Needs Attention")
+    }
+
     /// A 500 on the catalog with no cache lands on the designed failure state, through the real
     /// client: the fixture is a `.status` file, not a stubbed error value.
     func testCatalogFailureOffersTryAgain() {

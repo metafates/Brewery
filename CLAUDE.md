@@ -41,7 +41,7 @@ open "$(xcodebuild -project Brewery.xcodeproj -scheme Brewery -configuration Deb
 Top-class UI/UX is a hard requirement, not a nice-to-have. Follow Apple HIG and native macOS patterns (System Settings grammar for controls — a switch always terminates a labeled row; App Store composition for catalog metadata — pills for identity, `·`-joined text for state; Login Items for service rows); prefer stock components with Liquid Glass chrome over custom drawing. A source is not a kind: keep filter dimensions orthogonal. Verify every visible change with the screenshot loop before committing. Three rules the HIG pass made non-negotiable:
 
 - **Nothing modal for reading.** Detail is a non-modal `.inspector` pane; the listing stays live beside it. A surface that grows its own footer, back button and navigation is an app inside the app.
-- **Every toolbar action has a menu bar command and a key equivalent.** Destinations are ⌘1…⌘5; show/hide items name the state they will produce.
+- **Every toolbar action has a menu bar command and a key equivalent.** Destinations are ⌘1…⌘7 (five library rows, then Maintenance and Checkup); show/hide items name the state they will produce.
 - **Every animation has a Reduce Motion branch.** x-axis slides become crossfades, blurs are dropped, repeating symbol effects hold still.
 
 Two review lessons that keep recurring:

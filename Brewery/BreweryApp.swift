@@ -87,7 +87,7 @@ struct BreweryApp: App {
         .commands {
             // The sidebar's destinations, at the top of View and above the framework's own Show
             // Sidebar item: the menu bar is where macOS expects every navigation target to be
-            // reachable, and ⌘1…⌘5 is the only keyboard path to them.
+            // reachable, and ⌘1…⌘7 is the only keyboard path to them.
             CommandGroup(before: .sidebar) {
                 // The menu mirrors the sidebar's two groups, divider where the groups break.
                 ForEach(SidebarSection.library) { item in

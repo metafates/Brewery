@@ -902,6 +902,22 @@ final class AppModel {
         }
     }
 
+    /// Everything the Maintenance page can list, deduped and in one array — the sections filter
+    /// it rather than each fetching their own, so the page ranks and searches one listing like
+    /// every other section does. Union, not concatenation: a formula can keep old versions
+    /// *and* be an orphan, and it must still be one entry in the listing the ranker sees.
+    var maintenancePackages: [Package] {
+        var seen: Set<Package.ID> = []
+        var result: [Package] = []
+        for package in installedPackages(scope: .storage)
+            + installedPackages(scope: .orphans)
+            + installedPackages(scope: .attention)
+        where seen.insert(package.id).inserted {
+            result.append(package)
+        }
+        return result.sorted(by: Package.displayOrder)
+    }
+
     /// Turns an overlay key back into a package for the dependency and required-by rows: the
     /// catalog when it covers it, otherwise the same synthesized entry the Installed section uses —
     /// a dependency pulled in from a tap exists only on disk.

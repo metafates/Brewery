@@ -27,15 +27,19 @@ struct FixturePackage {
     var version: String
     var installedVersions: [String] = []
     var outdated: Bool = false
+    /// Renders the catalog's `deprecated` flag, which is what puts an installed package in
+    /// Maintenance's Needs Attention band.
+    var deprecated: Bool = false
 
     fileprivate var catalogEntry: [String: Any] {
         switch kind {
         case .formula:
             ["name": name, "desc": desc, "homepage": "https://example.org/\(name)",
-             "versions": ["stable": version]]
+             "versions": ["stable": version], "deprecated": deprecated]
         case .cask:
             ["token": name, "name": [name], "desc": desc,
-             "homepage": "https://example.org/\(name)", "version": version]
+             "homepage": "https://example.org/\(name)", "version": version,
+             "deprecated": deprecated]
         }
     }
 

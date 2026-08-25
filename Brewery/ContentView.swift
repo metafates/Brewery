@@ -30,11 +30,11 @@ struct PackageKindsTip: Tip {
 /// empty states, and a titled sidebar group is the platform's container for exactly that (HIG
 /// *Sidebars*: succinct, descriptive labels title each group).
 nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
-    case discover, installed, outdated, services, taps, orphans, attention, storage, checkup
+    case discover, installed, outdated, services, taps, maintenance, checkup
 
     /// The sidebar's two groups, in row order.
     static let library: [SidebarSection] = [.discover, .installed, .outdated, .services, .taps]
-    static let reports: [SidebarSection] = [.orphans, .attention, .storage, .checkup]
+    static let reports: [SidebarSection] = [.maintenance, .checkup]
 
     var id: Self { self }
 
@@ -45,9 +45,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .outdated: "Outdated"
         case .services: "Services"
         case .taps: "Taps"
-        case .orphans: "Orphans"
-        case .attention: "Attention"
-        case .storage: "Storage"
+        case .maintenance: "Maintenance"
         case .checkup: "Checkup"
         }
     }
@@ -61,11 +59,8 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .services: "server.rack"
         // The same glyph the detail sheet's tap row wears.
         case .taps: "spigot"
-        // Each report wears its own summary bar's glyph — the row and the page say the same thing.
-        case .orphans: "arrow.3.trianglepath"
-        case .attention: "exclamationmark.triangle"
-        // The detail pane's own "on disk" glyph — the row and the stat say the same thing.
-        case .storage: "internaldrive"
+        // The wrench is the chore, not any one of its bands: the page holds three.
+        case .maintenance: "wrench.and.screwdriver"
         case .checkup: "stethoscope"
         }
     }
@@ -78,10 +73,8 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .outdated: "3"
         case .services: "4"
         case .taps: "5"
-        case .orphans: "6"
-        case .attention: "7"
-        case .storage: "8"
-        case .checkup: "9"
+        case .maintenance: "6"
+        case .checkup: "7"
         }
     }
 
@@ -92,9 +85,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .outdated: "Search Outdated"
         case .services: "Search Services"
         case .taps: "Search Taps"
-        case .orphans: "Search Orphans"
-        case .attention: "Search Attention"
-        case .storage: "Search Storage"
+        case .maintenance: "Search Maintenance"
         case .checkup: "Search Findings"
         }
     }
@@ -108,10 +99,9 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         // ServicesView owns its own empty state; the grid never renders this section.
         case .services: nil
         case .taps: "No Packages"
-        case .orphans: "No Orphaned Dependencies"
-        // Software Update's positive-empty grammar: the good outcome, stated plainly.
-        case .attention: "Nothing needs attention"
-        case .storage: "No Old Versions on Disk"
+        // The view owns its own empty state: "Nothing needs maintenance" is one claim about
+        // three bands, which only the page that holds them can make (Discover's rule).
+        case .maintenance: nil
         // The view owns its own states — intro, running, clean, findings (Discover's rule).
         case .checkup: nil
         }
@@ -213,7 +203,7 @@ struct ContentView: View {
     /// trip flashed the unfiltered listing until the re-rank landed.
     @State private var results: [SidebarSection: [SearchHit]] = [:]
     /// Browse listings per section — the same grammar as `results`, for the same reason. A single
-    /// array meant every ⌘1…⌘5 rebuilt the listing from scratch on the main actor (for Discover, a
+    /// array meant every ⌘1…⌘7 rebuilt the listing from scratch on the main actor (for Discover, a
     /// filter + popularity sort + map over the 16k catalog — the tab-switch lag) and rendered the
     /// *previous* section's cards for a frame until the rebuild landed. Built in a task, never
     /// inline: rebuilding per body pass handed SwiftUI a fresh array each time, so its cheap CoW
@@ -548,25 +538,15 @@ struct ContentView: View {
         } else if section == .checkup {
             // Findings, not packages — the view owns its states, including its own wait.
             CheckupView(searchText: model.query)
-        } else if section == .orphans || section == .attention || section == .storage {
-            // Reports are state rows, not catalog cards (the Services rule generalized).
-            ReportListView(hits: displayedHits,
-                           isSearching: isSearching,
-                           isChecking: model.isChecking,
-                           selectedID: inspectedID,
-                           onSelect: { select($0) },
-                           onRefresh: { refresh() },
-                           emptyMessage: emptyState?.message,
-                           kind: section == .orphans ? .orphans
-                               : section == .attention ? .attention : .storage) {
-                if section == .orphans {
-                    OrphanSummaryBar()
-                } else if section == .attention {
-                    AttentionSummaryBar()
-                } else {
-                    StorageSummaryBar()
-                }
-            }
+        } else if section == .maintenance {
+            // State rows, not catalog cards (the Services rule generalized) — and one page for
+            // three bands, so the gauge, the sections and the empty claim share one container.
+            MaintenanceView(hits: displayedHits,
+                            isSearching: isSearching,
+                            isChecking: model.isChecking,
+                            selectedID: inspectedID,
+                            onSelect: { select($0) },
+                            onRefresh: { refresh() })
         } else {
             packageGrid()
         }
@@ -783,9 +763,7 @@ struct ContentView: View {
         case .outdated: model.outdatedPackages
         case .services: model.servicePackages
         case .taps: tapPagePackages(for: model.selectedTap)
-        case .orphans: model.installedPackages(scope: .orphans)
-        case .attention: model.installedPackages(scope: .attention)
-        case .storage: model.installedPackages(scope: .storage)
+        case .maintenance: model.maintenancePackages
         case .checkup: []
         }
     }
@@ -844,7 +822,7 @@ struct ContentView: View {
             } else {
                 section.emptyMessage.map { ($0, false) }
             }
-        case .outdated, .services, .orphans, .attention, .storage, .checkup:
+        case .outdated, .services, .maintenance, .checkup:
             section.emptyMessage.map { ($0, false) }
         case .taps:
             model.tapKindFilter != .all ? ("No packages match the filter", true)
@@ -1031,9 +1009,8 @@ struct ContentView: View {
         case .taps:
             // The list is handled above; reaching here means a tap page's grid.
             return count == 1 ? "1 package" : "\(formatted) packages"
-        case .orphans: return count == 1 ? "1 orphan" : "\(formatted) orphans"
-        case .attention: return count == 1 ? "1 needs attention" : "\(formatted) need attention"
-        case .storage: return count == 1 ? "1 with old versions" : "\(formatted) with old versions"
+        // One count for three bands: what the page lists, not what any one section holds.
+        case .maintenance: return count == 1 ? "1 item" : "\(formatted) items"
         case .checkup: return ""   // handled above; unreachable
         }
     }
@@ -1045,7 +1022,7 @@ struct ContentView: View {
         switch section {
         case .discover: filtersActive
         case .installed: installedKindFilter != .all || installedTapsOnly || installedPinnedOnly
-        case .outdated, .services, .orphans, .attention, .storage, .checkup: false
+        case .outdated, .services, .maintenance, .checkup: false
         case .taps: model.selectedTap != nil && model.tapKindFilter != .all
         }
     }
