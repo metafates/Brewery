@@ -197,7 +197,7 @@ struct CleanupButton: View {
             .buttonStyle(.bordered)
             .controlSize(isSmall ? .small : .regular)
             .disabled(model.cleanupPending)
-            .help("Removes files Homebrew no longer needs")
+            .help("Frees up space without removing anything you use")
     }
 }
 

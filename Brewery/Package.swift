@@ -479,17 +479,14 @@ nonisolated struct Package: Codable, Identifiable, Hashable {
         return opening + " It still installs today, but it may be disabled in a future release."
     }
 
-    /// The report row's one-line form of the banner's story: "Deprecated — is not
-    /// maintained upstream", bare "Disabled" when brew gave no reason. Free-prose reasons pass
-    /// through (the row clamps to one line); the full sentence stays the pane's job.
+    /// The report row's one-liner — what the state *means to you*, not what brew calls it.
+    /// "Deprecated — is not maintained upstream" fused two facts into one clamped line and led
+    /// with a word most people have to look up; the consequence is the part that decides
+    /// whether you act. The *reason* is not lost: `deprecationExplanation` says it in full,
+    /// with dates, one click away in the pane.
     var attentionPhrase: String? {
         guard needsAttention else { return nil }
-        let phrases = kind == .formula ? Self.formulaReasonPhrases : Self.caskReasonPhrases
-        let reason = (disabled ? disableReason ?? deprecationReason : deprecationReason)
-            .map { phrases[$0] ?? $0 }
-        let verb = disabled ? "Disabled" : "Deprecated"
-        guard let reason else { return verb }
-        return "\(verb) — \(reason)"
+        return disabled ? "Can't be installed anymore" : "Still works, but no longer updated"
     }
 
     /// The row the banner offers when brew names a successor. Formula wins over cask — brew's

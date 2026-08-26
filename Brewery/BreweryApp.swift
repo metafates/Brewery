@@ -239,7 +239,7 @@ struct BreweryApp: App {
                 Button("Clean Up…") { model.confirmingCleanup = true }
                     .disabled(model.cleanupPending || model.brewMissing)
 
-                Button("Remove All Orphans…") { model.confirmingAutoremove = true }
+                Button("Remove Leftover Packages…") { model.confirmingAutoremove = true }
                     .disabled(model.autoremovePending || model.orphanIDs.isEmpty)
 
                 Divider()

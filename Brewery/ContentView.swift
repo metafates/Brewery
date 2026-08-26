@@ -448,19 +448,14 @@ struct ContentView: View {
         // arrives raw in a dialog title, wrapped in Text or not.
         .confirmationDialog(
             model.orphanIDs.count == 1
-                ? "Remove 1 orphaned dependency?"
-                : "Remove \(model.orphanIDs.count) orphaned dependencies?",
+                ? "Remove 1 leftover package?"
+                : "Remove \(model.orphanIDs.count) leftover packages?",
             isPresented: $model.confirmingAutoremove, titleVisibility: .visible) {
-            Button("Remove All", role: .destructive) { model.autoremove() }
+            // "Remove All" when the title already carries the count read as a second scope.
+            Button("Remove", role: .destructive) { model.autoremove() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            // brew's autoremove selection is pin-blind: a pinned orphan is listed, then the
-            // uninstall refusal skips it — exit 0. Disclose rather than desync the count.
-            Text(model.orphanIDs.contains(where: { id in
-                model.package(for: id).map(model.isPinned) == true
-            })
-            ? "These are dependencies nothing needs anymore. You can install any of them again later. Pinned packages will be skipped."
-            : "These are dependencies nothing needs anymore. You can install any of them again later.")
+            Text(leftoverRemovalMessage)
         }
         // A Brewfile is plain text called `Brewfile` — no `FileDocument`, no custom UTType,
         // no `.brewbak`. `String` is already `Transferable`, and the app is unsandboxed, so
@@ -752,6 +747,23 @@ struct ContentView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
         }
+    }
+
+    /// The leftover-removal dialog's body. Maintenance states leftovers as a count on a card,
+    /// not as a list of rows, so this is the only place they get named — reusing the block
+    /// list's sampling rule (`dependentsSummary`) so a bulk removal never asks anyone to trust
+    /// an unnamed set. brew's autoremove selection is pin-blind besides: a pinned orphan is
+    /// listed, then the uninstall refusal skips it — exit 0. Disclose rather than desync.
+    private var leftoverRemovalMessage: String {
+        let ids = model.orphanIDs
+        let names = ids.compactMap { Package.components(of: $0)?.name }.sorted()
+        var text = "These were installed automatically for packages you've since removed: "
+            + "\(AppModel.dependentsSummary(names)). Nothing uses them now, and you can "
+            + "install any of them again later."
+        if ids.contains(where: { model.package(for: $0).map(model.isPinned) == true }) {
+            text += " Pinned packages will be skipped."
+        }
+        return text
     }
 
     // MARK: - Search

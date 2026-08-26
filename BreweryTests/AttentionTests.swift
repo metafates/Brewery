@@ -142,23 +142,20 @@ struct AttentionTests {
 
     // MARK: - Row phrase
 
-    @Test("the report row's one-liner: verb, slug phrase, disabled wins, prose passes through")
+    @Test("the report row's one-liner states the consequence, and disabled outranks deprecated")
     func attentionPhrase() {
         #expect(package().attentionPhrase == nil)
+        #expect(package(deprecated: true).attentionPhrase == "Still works, but no longer updated")
+        #expect(package(disabled: true).attentionPhrase == "Can't be installed anymore")
+        // Disabled outranks deprecated: it is the further stage of the same lifecycle.
+        #expect(package(deprecated: true, disabled: true).attentionPhrase
+            == "Can't be installed anymore")
+        // The reason no longer rides the row — it belongs to the pane's full sentence, which
+        // still resolves brew's slug tables. This is the guard against reintroducing it.
         #expect(package(deprecated: true, deprecationReason: "unmaintained").attentionPhrase
-            == "Deprecated — is not maintained upstream")
-        #expect(package(deprecated: true).attentionPhrase == "Deprecated")
-        #expect(package(disabled: true).attentionPhrase == "Disabled")
-        // Disabled outranks deprecated, and its own reason wins over the deprecation one.
-        #expect(package(deprecated: true, disabled: true,
-                        deprecationReason: "unmaintained", disableReason: "does_not_build").attentionPhrase
-            == "Disabled — does not build")
-        // Free maintainer prose passes through the same frame.
-        #expect(package(deprecated: true, deprecationReason: "uses a bespoke build").attentionPhrase
-            == "Deprecated — uses a bespoke build")
-        // Casks use their own table.
-        #expect(package(kind: .cask, deprecated: true, deprecationReason: "discontinued").attentionPhrase
-            == "Deprecated — is discontinued upstream")
+            == package(deprecated: true).attentionPhrase)
+        #expect(package(kind: .cask, deprecated: true, deprecationReason: "discontinued")
+            .deprecationExplanation?.contains("is discontinued upstream") == true)
     }
 }
 
