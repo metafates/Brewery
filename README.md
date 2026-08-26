@@ -20,9 +20,14 @@ There is no signed download yet, so you build it yourself. You need Xcode.
 ```sh
 make install    # Release build into /Applications
 make run        # Debug build, then launch
+make dmg        # universal disk image in dist/
 make test       # unit tests, headless
 make test-ui    # UI tests; needs automation permission
 ```
+
+`make dmg` signs ad-hoc, because there is no Apple Developer ID certificate to
+notarize with. The image installs fine, but macOS blocks the first launch:
+open System Settings > Privacy & Security and click **Open Anyway**.
 
 `ARCHITECTURE.md` is the spec for AI to follow.
 

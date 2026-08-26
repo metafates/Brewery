@@ -3,5 +3,9 @@ xcuserdata/
 DerivedData/
 buildServer.json
 
+# make app / make dmg
+build/
+dist/
+
 # Xcode coverage artifact
 default.profraw
