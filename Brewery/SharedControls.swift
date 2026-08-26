@@ -331,7 +331,10 @@ struct WorkingCapsule: View {
 nonisolated enum CleanupDialog {
     static let title = "Clean up Homebrew files?"
     static let confirm = "Clean Up"
-    static let message = "Removes old versions of installed packages, stale downloads, and logs older than 30 days. Pinned and currently linked versions are kept."
+    // "Stale downloads" and "currently linked versions" are brew's words for it. What the
+    // person hesitating over this button wants to know is whether anything they use goes —
+    // and brew's own answer is no: it skips linked, pinned and `keepme`-referenced kegs.
+    static let message = "Removes old copies of packages, finished downloads, and logs older than 30 days. Everything you're using stays."
 }
 
 /// One command run — meant to be executed, so it comes with a copy button. Copyable, never
