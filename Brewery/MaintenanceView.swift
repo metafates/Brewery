@@ -5,79 +5,60 @@
 
 import SwiftUI
 
-/// One band of the Maintenance page. Each answers a different question — reclaim space, these
-/// will stop working, these aren't managed — but they share one question above them: *what
-/// should I do about my Homebrew?* Four sidebar destinations made that question un-askable,
-/// because none of them carried a badge (a passive report is not pending work) and the only
-/// way to learn whether anything needed doing was to visit all four.
-///
-/// Membership deliberately overlaps: a formula can keep old versions *and* be an orphan, and
-/// both statements stay true. Each section filters the page's listing independently rather
-/// than partitioning it.
-nonisolated enum MaintenanceSection: String, CaseIterable, Identifiable {
-    case oldVersions, orphans, unmanaged, attention
-
-    var id: String { rawValue }
+/// The two maintenance concerns whose **rows carry a decision**. Adopting is a per-app claim
+/// about which cask owns which bundle; a retired package's *why* differs per package. The
+/// other two — old versions, leftovers — are bulk: one command, one button, no per-row choice,
+/// so they are cards above and have no rows at all.
+private enum MaintenanceList: String {
+    case unmanagedApps, retired
 
     var title: String {
         switch self {
-        case .oldVersions: "Old Versions"
-        case .orphans: "Orphaned Dependencies"
-        case .unmanaged: "Unmanaged Apps"
-        case .attention: "Needs Attention"
+        case .unmanagedApps: "Apps Homebrew could manage"
+        case .retired: "No longer maintained"
         }
     }
 
-    /// The glyph each of these wore as its own destination, kept so the empty states and the
-    /// section headers stay recognisable to anyone who knew the old pages.
-    var symbol: String {
-        switch self {
-        case .oldVersions: "internaldrive"
-        case .orphans: "arrow.3.trianglepath"
-        case .unmanaged: "macwindow"
-        case .attention: "exclamationmark.triangle"
-        }
-    }
-
-    /// The prose the deleted summary bars carried. It has no room in a section header, so it
-    /// appears where it is actually useful: in the section's own empty state, explaining what
-    /// *would* be listed here.
+    /// The sentence the deleted summary bars carried. It used to live in an empty state nobody
+    /// ever saw; it belongs under the heading, where it explains the rows you are looking at.
     var explainer: String {
         switch self {
-        case .oldVersions: "Formulae keeping superseded versions on disk appear here."
-        case .orphans: "Dependencies installed for packages you've since removed appear here."
-        case .unmanaged: "Apps a Homebrew cask could manage, installed by hand, appear here."
-        case .attention: "Packages Homebrew has deprecated or disabled appear here. Each package's page says why, and what to use instead."
+        case .unmanagedApps: "You installed these yourself. Let Homebrew keep them up to date."
+        case .retired: "Homebrew has stopped updating these. Open one to see what to use instead."
         }
     }
 
-    /// Sections with a byte axis measure; Attention has none — a deprecation costs no space.
-    var measuresBytes: Bool {
+    func count(_ value: Int) -> String {
         switch self {
-        case .oldVersions, .orphans: true
-        // An unmanaged app's size is Finder's answer, not Homebrew's, and adopting reclaims
-        // nothing — a byte column here would imply a saving that does not exist.
-        case .unmanaged, .attention: false
+        case .unmanagedApps: value == 1 ? "1 app" : "\(value) apps"
+        case .retired: value == 1 ? "1 package" : "\(value) packages"
         }
     }
 }
 
-/// The maintenance surface: one page, one list, one selection. The storage gauge rides the
-/// header slot as the aggregate answer, then each section discloses in place.
+/// The maintenance surface: one page answering *what should I do about my Homebrew?*
 ///
-/// **Disclosure, not drill-down.** HIG *macOS* asks for "fewer nested levels and less need for
-/// modality", and this app's stat grammar already assigns `chevron.down` to "discloses below"
-/// against `chevron.right`'s "navigates deeper". A landing page of summary rows that pushed
-/// detail pages would read well and put every row one navigation level further away than it
-/// was as four destinations — a regression wearing a tidier surface. Collapsed, these headers
-/// *are* that landing page; expanding costs no navigation.
+/// **Cards for chores, rows for decisions.** This replaced four `DisclosureGroup` bands, which
+/// were wrong twice over. Mechanically: on macOS a `DisclosureGroup`'s label does not toggle,
+/// so the only hit target was the triangle — HIG *Outline views*, "make it easy for people to
+/// expand or collapse nested containers". Structurally: membership across the bands *overlaps*
+/// (a formula can keep old versions and be an orphan), and overlapping sets are not a tree —
+/// HIG *Outline views*, "use a table instead of an outline view to present data that's not
+/// hierarchical". No disclosure control survives here, so the hit target cannot regress again.
 ///
-/// Checkup stays its own destination on a real axis, not a squeamish one: every section here
-/// is computed from data the app already holds and is always current, while a checkup needs a
-/// subprocess and is run on demand — which is also why it owns four states this page has no
-/// use for.
+/// The two bulk bands also listed rows nobody could act on: `brew cleanup` and `brew autoremove`
+/// are single commands, so ten rows each saying "1 old version" were ten rows of scrolling
+/// between the reader and the one button. They are cards now, in the shape of System Settings ›
+/// Storage (a gauge, then a recommendation with one sentence and one button) — the same
+/// grammar `StorageSummaryBar` already cited. HIG *Designing for macOS* asks for "fewer nested
+/// levels… while maintaining a comfortable information density that doesn't make people strain
+/// to view the content they want"; the second half is the half this page was failing.
+///
+/// Checkup stays its own destination on a real axis: everything here is computed from data the
+/// app already holds and is always current, while a checkup needs a subprocess and is run on
+/// demand — which is also why it owns four states this page has no use for.
 struct MaintenanceView: View {
-    /// The union of every section's packages, ranked when a search is active. One array across
+    /// The union of the two listed concerns, ranked when a search is active. One array across
     /// the boundary, deduped upstream — the sections filter it rather than each taking their own.
     let hits: [SearchHit]
     let isSearching: Bool
@@ -90,48 +71,45 @@ struct MaintenanceView: View {
 
     @Environment(AppModel.self) private var model
 
-    /// Expansion persists per section: which bands you care about is personalization, and the
-    /// collapsed page is the summary, so the default costs nothing to read.
-    @AppStorage("maintenance.expand.oldVersions") private var expandOldVersions = false
-    @AppStorage("maintenance.expand.orphans") private var expandOrphans = false
-    @AppStorage("maintenance.expand.unmanaged") private var expandUnmanaged = false
-    @AppStorage("maintenance.expand.attention") private var expandAttention = false
+    /// Rows shown before a section offers Show All. Five keeps both headings and both cards
+    /// reachable without scrolling on the 780 pt default window, which is the whole point of
+    /// the cap: the page has to answer "does anything need doing?" before anyone scrolls.
+    private static let rowCap = 5
 
-    /// Per-row bytes, **per band**, published once per measure pass (the `measureSizes`
-    /// lesson: row-by-row assignment would re-sort every section N times).
-    ///
-    /// Two dictionaries, not one: the same package can be listed in both bands and the bands
-    /// ask different questions — Old Versions costs the superseded kegs, an orphan costs its
-    /// whole rack, because that is what each band's action reclaims. One dictionary forced a
-    /// branch on live `orphanIDs`, which the fixpoint can flip while the installed overlay is
-    /// still settling; the wrong branch then cached a whole-rack figure under a key that did
-    /// not record the choice, so `neovim` was measured at 59,3 MB in a band that should have
-    /// said 29,6 MB and the header over-reported the total by exactly one keg.
-    @State private var oldKegBytes: [Package.ID: Int64] = [:]
-    @State private var rackBytes: [Package.ID: Int64] = [:]
+    /// Per-launch, not `@AppStorage`: this is App Store's Show More, not an outline's expansion
+    /// state — HIG asks you to retain the latter, and the collapsed default here is the summary.
+    @State private var showAllApps = false
+    @State private var showAllRetired = false
+
+    /// What `brew autoremove` would free — the whole rack per orphan, because that is what the
+    /// command reclaims. Summed for the card; there are no rows to attribute it to.
+    @State private var leftoverBytes: Int64?
+    /// The cleanup total, published up from the card that already measures it. The page needs
+    /// it for one boolean — "is the good news honest?" — and a second walk would re-measure
+    /// every keg to learn something the first walk knew.
+    @State private var cleanupBytes: Int64?
 
     var body: some View {
-        // Resolved once per pass: `orphanIDs` runs a fixpoint, and each section's filter walks
-        // the listing. Three passes, not three per section per row.
-        let buckets = self.buckets
+        let apps = listed(.unmanagedApps)
+        let retired = listed(.retired)
 
         return List(selection: selection) {
-            // An ordinary row slot, so the list's own insets are the shared gutter and the
-            // gauge's edges agree with the rows' content by construction.
-            StorageSummaryBar()
-                .padding(.bottom, 14)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .selectionDisabled()
+            // Page state, not results: while searching, the page is its matches.
+            if !isSearching {
+                // Ordinary row slots, so the list's own insets are the shared gutter and the
+                // cards' edges agree with the rows' content by construction.
+                card { StorageSummaryBar(onMeasure: { cleanupBytes = $0 }) }
+                if !model.orphanIDs.isEmpty {
+                    card { LeftoversCard(bytes: leftoverBytes) }
+                }
+            }
 
-            section(.oldVersions, hits: buckets[.oldVersions] ?? [], isExpanded: $expandOldVersions)
-            section(.orphans, hits: buckets[.orphans] ?? [], isExpanded: $expandOrphans)
-            section(.unmanaged, hits: buckets[.unmanaged] ?? [], isExpanded: $expandUnmanaged)
-            section(.attention, hits: buckets[.attention] ?? [], isExpanded: $expandAttention)
+            section(.unmanagedApps, hits: apps, showAll: $showAllApps)
+            section(.retired, hits: retired, showAll: $showAllRetired)
         }
         .listStyle(.inset)
         .overlay {
-            if buckets.values.allSatisfy(\.isEmpty) {
+            if apps.isEmpty, retired.isEmpty, isSearching || nothingToDo {
                 emptyState
                     .animation(.smooth(duration: 0.3), value: isChecking)
             }
@@ -139,152 +117,116 @@ struct MaintenanceView: View {
         .task(id: measureKey) { await measure() }
     }
 
+    /// Everything the page can act on is either measured at zero or absent. The cleanup total
+    /// is part of it deliberately: a stale download cache is still something Clean Up… frees,
+    /// and covering that card with "Everything looks good" would be a claim the card contradicts.
+    private var nothingToDo: Bool {
+        model.orphanIDs.isEmpty && (cleanupBytes ?? 0) == 0
+    }
+
+    // MARK: - Cards
+
+    /// The card row slot: no separator, no selection, no list background — the box is the chrome.
+    private func card(@ViewBuilder _ content: () -> some View) -> some View {
+        content()
+            .padding(.bottom, 14)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .selectionDisabled()
+    }
+
     // MARK: - Sections
 
-    /// Membership overlaps by design, so each section filters the listing rather than claiming
-    /// a slice of it: `ffmpeg` can be listed under Old Versions *and* Orphaned Dependencies,
-    /// and removing it and cleaning it up are different acts with different consequences.
-    private var buckets: [MaintenanceSection: [SearchHit]] {
-        let orphans = model.orphanIDs
-        return [
-            .oldVersions: hits.filter {
-                $0.package.kind == .formula && (model.installed[$0.package.id]?.versions.count ?? 0) > 1
-            },
-            .orphans: hits.filter { orphans.contains($0.package.id) },
-            // One row per *app*, not per candidate cask: 8 of 33 matches on a real machine
-            // are ambiguous (charles/charles@4, transmission/@beta/@nightly), so the bare
-            // token leads and the rest live in the row's pull-down.
-            .unmanaged: hits.filter { model.unmanaged[$0.package.id] != nil && leadsItsBundle($0.package) },
-            .attention: hits.filter(\.package.needsAttention),
-        ]
-    }
-
-    /// The bare token leads its bundle — `charles` over `charles@4`, `transmission` over its
-    /// `@beta` — so an ambiguous app shows one row with the likeliest cask, and the rest are
-    /// reachable from the row itself. Package IDs sort with `@`-suffixed siblings after the
-    /// base name, so "first" is already "bare".
-    private func leadsItsBundle(_ package: Package) -> Bool {
-        guard let bundle = model.unmanagedBundles.first(where: { $0.value.contains(package.id) })
-        else { return false }
-        return bundle.value.first == package.id
+    /// The two sections are **disjoint**, and that is a rule, not an accident. Alacritty is
+    /// both an unmanaged app and a deprecated cask, and listing it twice put one row under
+    /// "let Homebrew keep them up to date" and another under "Homebrew has stopped updating
+    /// these" — the same app, opposite advice. Retirement only describes a copy Homebrew is
+    /// actually on the release train for, so an app installed by hand stays in the section
+    /// that owns the decision, with the caveat on its own row.
+    private func listed(_ kind: MaintenanceList) -> [SearchHit] {
+        switch kind {
+        case .unmanagedApps:
+            // One row per *app*, not per candidate cask — 8 of 33 matches on a real machine
+            // are ambiguous (charles/charles@4, transmission/@beta/@nightly). The narrowing to
+            // the bundle's lead token belongs to `maintenancePackages`, which is also what the
+            // toolbar counts and what search ranks: filtering it a second time here is how the
+            // page listed twelve rows under a subtitle that said thirteen items.
+            hits.filter { model.unmanaged[$0.package.id] != nil }
+        case .retired:
+            hits.filter { $0.package.needsAttention && model.unmanaged[$0.package.id] == nil }
+        }
     }
 
     @ViewBuilder
-    private func section(_ kind: MaintenanceSection,
+    private func section(_ kind: MaintenanceList,
                          hits sectionHits: [SearchHit],
-                         isExpanded: Binding<Bool>) -> some View {
-        // An empty section during a search would be four headers over nothing; while browsing
-        // it is the honest "this one is fine", which the page's own empty state already says
-        // once every section is empty.
+                         showAll: Binding<Bool>) -> some View {
         if !sectionHits.isEmpty {
-            // `DisclosureGroup`, not `Section(isExpanded:)`: measured on macOS 26.5, an
-            // expandable Section under `.listStyle(.inset)` renders its header and **no
-            // triangle**, leaving the band with no way to open. The group draws its own, and
-            // draws it as `chevron.right` → `chevron.down` — the app's committed stat grammar
-            // for "discloses below" — rather than borrowing the sidebar style's.
-            DisclosureGroup(isExpanded: isExpanded) {
-                ForEach(sorted(sectionHits, in: kind)) { hit in
-                    MaintenanceRow(package: hit.package, kind: kind,
-                                   bytes: measured(hit.package.id, in: kind))
-                        .tag(hit.package.id)
+            // A search already narrows the set; capping on top of it would hide matches the
+            // result count claims to have found.
+            let capped = isSearching || showAll.wrappedValue
+                ? sectionHits : Array(sectionHits.prefix(Self.rowCap))
+            Section {
+                ForEach(capped.map { RowItem(kind: kind, package: $0.package) }) { item in
+                    // The tag stays the bare `Package.ID`: a selection names *the package the
+                    // pane is describing*, which the qualified row identity must not change.
+                    MaintenanceRow(package: item.package, kind: kind)
+                        .tag(item.package.id)
                 }
-            } label: {
-                header(kind, hits: sectionHits)
+                if capped.count < sectionHits.count {
+                    showAllRow(sectionHits.count) { showAll.wrappedValue = true }
+                }
+            } header: {
+                header(kind, count: sectionHits.count)
             }
-            .listRowSeparator(.hidden)
-            .selectionDisabled()
         }
     }
 
-    private func header(_ kind: MaintenanceSection, hits sectionHits: [SearchHit]) -> some View {
-        HStack(spacing: 8) {
-            Text(kind.title)
-            Text(count(sectionHits.count, in: kind))
-                .foregroundStyle(.secondary)
-
-            Spacer(minLength: 8)
-
-            if kind.measuresBytes, let total = totalBytes(of: sectionHits, in: kind) {
-                Text(total.formatted(.byteCount(style: .file)))
+    /// Name, count, and the sentence that says what these are. Not a shouted label: the
+    /// heading is prose, which uppercasing destroys — and it carries the header trait, so
+    /// VO-Command-H reaches it (`SectionTitle`'s rule, applied to a `Section` header).
+    private func header(_ kind: MaintenanceList, count: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text(kind.title)
+                Text(kind.count(count))
                     .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                Spacer(minLength: 8)
             }
-            action(for: kind)
+            .font(.subheadline)
+
+            Text(kind.explainer)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        // A section header is the band's name and its one action, not a shouted label: the
-        // count and value read as data, which uppercasing destroys.
         .textCase(nil)
-        .font(.subheadline)
+        .padding(.bottom, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
-    /// A band's action, in the grammar the deleted summary bars used: bordered and never
-    /// prominent (a destructive action doesn't get the filled costume), and the ellipsis
-    /// promising the dialog that follows. The dialog lives on ContentView's root, so the
-    /// Homebrew menu opens the very same one.
-    ///
-    /// Old Versions deliberately carries **none**: `brew cleanup` is a single command that
-    /// also sweeps the download cache and the logs, so a button in that band would name a
-    /// scope it cannot keep. The gauge above owns Clean Up… because the gauge's scope *is*
-    /// cleanup's scope — and two buttons for one command read as two different acts.
-    @ViewBuilder
-    private func action(for kind: MaintenanceSection) -> some View {
-        switch kind {
-        case .oldVersions:
-            EmptyView()
-        case .orphans:
-            Button("Remove All…") { model.confirmingAutoremove = true }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(model.autoremovePending)
-                .help("Removes dependencies nothing needs anymore")
-        case .unmanaged, .attention:
-            // Neither carries a bulk action. Attention has nothing safe to enqueue at all
-            // (uninstalling is a non-goal, and a warning is not a task), and adoption is a
-            // per-app claim about which cask owns which bundle — an "Adopt All" would make
-            // that claim for every ambiguous row at once, silently.
-            EmptyView()
+    /// App Store's Show More, and the direct answer to what the disclosure triangle got wrong:
+    /// the hit target is the label's full width, shaped inside the button where it counts
+    /// (a `.contentShape` outside a `Button` does not extend it) — `PaneRow`'s rule.
+    private func showAllRow(_ count: Int, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text("Show All \(count)")
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
         }
-    }
-
-    private func count(_ value: Int, in kind: MaintenanceSection) -> String {
-        switch kind {
-        case .oldVersions: value == 1 ? "1 formula" : "\(value) formulae"
-        case .unmanaged: value == 1 ? "1 app" : "\(value) apps"
-        case .orphans, .attention: value == 1 ? "1 package" : "\(value) packages"
-        }
-    }
-
-    /// What a row costs *in this band*: superseded kegs under Old Versions, the whole rack
-    /// under Orphaned Dependencies. Attention has no byte axis at all.
-    private func measured(_ id: Package.ID, in kind: MaintenanceSection) -> Int64? {
-        switch kind {
-        case .oldVersions: oldKegBytes[id]
-        case .orphans: rackBytes[id]
-        case .unmanaged, .attention: nil
-        }
-    }
-
-    /// Largest-first where there is a byte axis — the band's own question is "where are the
-    /// bytes" — except while searching, where relevance order is the committed rule.
-    private func sorted(_ sectionHits: [SearchHit], in kind: MaintenanceSection) -> [SearchHit] {
-        guard kind.measuresBytes, !isSearching else { return sectionHits }
-        let sizes = kind == .orphans ? rackBytes : oldKegBytes
-        return sectionHits.sorted { Package.sizeOrder($0.package, $1.package, sizes: sizes) }
-    }
-
-    private func totalBytes(of sectionHits: [SearchHit], in kind: MaintenanceSection) -> Int64? {
-        let measured = sectionHits.compactMap { self.measured($0.package.id, in: kind) }
-        return measured.isEmpty ? nil : measured.reduce(0, +)
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.accentColor)
+        .listRowSeparator(.hidden)
+        .selectionDisabled()
     }
 
     // MARK: - Selection
 
     /// The system draws the highlight; selecting routes through the app's one selection funnel.
     /// Deselection (⎋) is ignored — the inspector, not the list, owns "nothing is selected".
-    ///
-    /// The tag stays the bare `Package.ID` even though a package can be listed in two bands: a
-    /// selection names *the package the pane is describing*, which is true of both of its rows,
-    /// so highlighting both is the honest answer rather than a duplicate-tag accident.
     private var selection: Binding<Package.ID?> {
         Binding(get: { selectedID },
                 set: { id in
@@ -295,48 +237,26 @@ struct MaintenanceView: View {
 
     // MARK: - Measurement
 
-    /// Re-measure when the listed set changes or a cleanup finishes — the byte totals under
-    /// unchanged names are exactly what cleanup moves.
+    /// Re-measure when the orphan set changes or a cleanup finishes — the byte total under an
+    /// unchanged set is exactly what those two events move.
     private var measureKey: String {
-        let ids = hits.map(\.package.id).sorted().joined(separator: ";")
-        return "\(ids)|\(model.finishedCleanupCount)"
+        model.orphanIDs.sorted().joined(separator: ";") + "|\(model.finishedCleanupCount)"
     }
 
     private func measure() async {
-        guard let prefix = model.client.prefix else { return }
-        let buckets = self.buckets
-        var kegs: [Package.ID: Int64] = [:]
-        var racks: [Package.ID: Int64] = [:]
-
-        // Old Versions: only what `brew cleanup` would trim — every keg but the newest. The
-        // same keys the gauge above measures, so the session cache shares every walk and the
-        // band's total and the gauge's "Old versions" segment agree by construction.
-        for hit in buckets[.oldVersions] ?? [] {
-            guard let versions = model.installed[hit.package.id]?.versions else { continue }
-            var total: Int64 = 0
-            var found = false
-            for (key, root) in AppModel.oldKegRoots(
-                prefix: prefix, name: hit.package.name, versions: versions) {
-                if let measured = await DiskUsage.measuredBytes(key: key, roots: [root]) {
-                    total += measured
-                    found = true
-                }
-            }
-            if found { kegs[hit.package.id] = total }
-        }
-
-        // Orphans: the whole rack — that is what autoremove frees.
-        for hit in buckets[.orphans] ?? [] {
-            let key = DiskUsage.cacheKey(for: hit.package.id,
-                                         version: model.installed[hit.package.id]?.versions.last)
+        var total: Int64 = 0
+        var found = false
+        for id in model.orphanIDs.sorted() {
+            guard let package = model.package(for: id) else { continue }
+            let key = DiskUsage.cacheKey(for: id, version: model.installed[id]?.versions.last)
             if let measured = await DiskUsage.measuredBytes(
-                key: key, roots: model.sizeRoots(for: hit.package)) {
-                racks[hit.package.id] = measured
+                key: key, roots: model.sizeRoots(for: package)) {
+                total += measured
+                found = true
             }
         }
-
-        if kegs != oldKegBytes { oldKegBytes = kegs }
-        if racks != rackBytes { rackBytes = racks }
+        let result = found ? total : nil
+        if result != leftoverBytes { leftoverBytes = result }
     }
 
     // MARK: - Empty state
@@ -349,9 +269,9 @@ struct MaintenanceView: View {
         } else {
             ContentUnavailableView {
                 // Software Update's grammar: the good outcome, stated plainly as a sentence.
-                Label("Nothing needs maintenance", systemImage: "checkmark.circle")
+                Label("Everything looks good", systemImage: "checkmark.circle")
             } description: {
-                Text("Homebrew is tidy: no old versions on disk, nothing orphaned, nothing deprecated.")
+                Text("There's nothing to clean up or fix right now.")
             } actions: {
                 Button("Check Again", action: onRefresh)
                     .buttonStyle(.borderedProminent)
@@ -360,13 +280,67 @@ struct MaintenanceView: View {
     }
 }
 
+/// Section-qualified row identity. The sections are disjoint by predicate, but they were not
+/// always: both `ForEach`es identified rows by the bare `Package.ID`, and the one package that
+/// landed in both made SwiftUI render the *first* section's view in both places — Alacritty
+/// wore an Adopt button under "No longer maintained", and lost it under the section that owns
+/// it. A row that silently offers the wrong action is worth these two lines to make
+/// unrepresentable, whatever a third section might one day overlap with.
+private struct RowItem: Identifiable {
+    let kind: MaintenanceList
+    let package: Package
+
+    var id: String { "\(kind.rawValue)|\(package.id)" }
+}
+
+/// What `brew autoremove` would remove, in the storage card's shape: a count-led headline, the
+/// space it frees, one button, one sentence. No rows — the command is bulk, so a row would be a
+/// listing you cannot act on, and the confirmation dialog names the packages instead (the block
+/// list's ≤4-in-full sampling rule).
+private struct LeftoversCard: View {
+    let bytes: Int64?
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let count = model.orphanIDs.count
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(count == 1 ? "1 leftover package" : "\(count) leftover packages")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+
+                Spacer(minLength: 12)
+
+                if let bytes {
+                    Text(bytes.formatted(.byteCount(style: .file)))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                // The dialog lives on ContentView's root, so the Homebrew menu opens the very
+                // same one. Bordered, never prominent — a destructive action doesn't get the
+                // filled costume — and the ellipsis promises the dialog that follows.
+                Button("Remove…") { model.confirmingAutoremove = true }
+                    .buttonStyle(.bordered)
+                    .disabled(model.autoremovePending)
+                    .help("Removes packages nothing on this Mac uses")
+            }
+
+            Text("Installed automatically for something you've since removed. Nothing uses them now.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .contentBox()
+    }
+}
+
 /// One maintenance row: the shared 32 pt tile, a title over a one-line state, a trailing
-/// value. Selection and highlight are the List's; the row carries the cards' context-menu
+/// accessory. Selection and highlight are the List's; the row carries the cards' context-menu
 /// subset (the shared rule: support context menus consistently).
 private struct MaintenanceRow: View {
     let package: Package
-    let kind: MaintenanceSection
-    let bytes: Int64?
+    let kind: MaintenanceList
 
     @Environment(AppModel.self) private var model
 
@@ -374,21 +348,20 @@ private struct MaintenanceRow: View {
         StateRow(title: package.title, subtitle: subtitle) {
             PackageIconView(package: package, size: 32)
         } accessory: {
-            // Adopt lives on the row, in the Services rows' trailing-control grammar: adoption
-            // is a per-app claim about which cask owns which bundle, so it is offered one app
-            // at a time and never in bulk.
-            if kind == .unmanaged {
+            switch kind {
+            case .unmanagedApps:
+                // Adoption is offered one app at a time and never in bulk: an "Adopt All"
+                // would make a per-app ownership claim for every ambiguous row at once,
+                // silently. Services rows' trailing-control grammar.
                 Button("Adopt…") { model.adopt(package) }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .help("Let Homebrew manage the copy of \(package.title) already on this Mac")
-            } else if kind.measuresBytes, let bytes {
-                Text(bytes.formatted(.byteCount(style: .file)))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            } else if kind == .attention, let version = model.installed[package.id]?.versions.last {
-                Text(version.shortVersion)
-                    .foregroundStyle(.secondary)
+                    .help("Let Homebrew keep \(package.title) up to date")
+            case .retired:
+                if let version = model.installed[package.id]?.versions.last {
+                    Text(version.shortVersion)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .accessibilityElement(children: .combine)
@@ -397,20 +370,19 @@ private struct MaintenanceRow: View {
 
     private var subtitle: String? {
         switch kind {
-        case .unmanaged:
-            // The token that would claim it, plus the other candidates when there are any —
-            // the row is a claim about ownership, so it shows what it is claiming.
+        case .unmanagedApps:
+            // The caveat outranks the count: it is the fact that changes the answer. Adopting
+            // a retired cask is allowed (deprecated is not disabled) but buys no updates, and
+            // this row is the only place that can say so — the section above it promises the
+            // opposite, and this app is deliberately not repeated under No longer maintained.
+            if package.needsAttention { return "Homebrew no longer updates this one" }
+            // Otherwise nothing when the app maps to one cask — the row used to repeat the
+            // brew token under the app's own name ("alacritty" under "Alacritty"), which is
+            // the app's name in lower case and told nobody anything. Ambiguity is worth a
+            // line, because then the dialog will ask you to confirm *which* one.
             let candidates = model.unmanagedBundles.first { $0.value.contains(package.id) }?.value ?? []
-            return candidates.count > 1
-                ? "\(package.name) · \(candidates.count - 1) other match\(candidates.count == 2 ? "" : "es")"
-                : package.name
-        case .oldVersions:
-            let count = (model.installed[package.id]?.versions.count ?? 1) - 1
-            return count == 1 ? "1 old version" : "\(count) old versions"
-        case .orphans:
-            // Orphans are the catalog's obscure corners — the desc answers "what even is this".
-            return package.desc
-        case .attention:
+            return candidates.count > 1 ? "\(candidates.count) possible matches" : nil
+        case .retired:
             return package.attentionPhrase
         }
     }

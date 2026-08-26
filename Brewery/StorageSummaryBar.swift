@@ -20,6 +20,11 @@ import SwiftUI
 /// pinned and linked versions. Unlike the orphan bar this one renders even at zero: the
 /// inventory and the last-cleaned date are answers either way.
 struct StorageSummaryBar: View {
+    /// The measured total, published upward once per pass. The Maintenance page needs it for
+    /// one boolean — whether "Everything looks good" is honest — and a second walk there would
+    /// re-measure every keg to learn what this one already knows.
+    var onMeasure: ((Int64?) -> Void)? = nil
+
     @Environment(AppModel.self) private var model
     @State private var oldKegBytes: Int64?
     @State private var cacheBytes: Int64?
@@ -74,8 +79,13 @@ struct StorageSummaryBar: View {
                 CleanupButton()
             }
 
-            gauge
-            legend
+            // At a measured zero there is nothing to draw: an empty track and a legend reading
+            // "Downloads Zero kB · Logs Zero kB" is chart furniture around no data, and the
+            // headline has already said it in three words.
+            if totalBytes != 0 {
+                gauge
+                legend
+            }
 
             if let caption = Self.caption(total: totalBytes, largest: largestOldKeg) {
                 Text(caption)
@@ -96,8 +106,10 @@ struct StorageSummaryBar: View {
     /// slivers); unmeasured, the whole track is a quiet placeholder.
     private var gauge: some View {
         GeometryReader { proxy in
+            // Measured *and* nonzero: the 3 pt minimum sliver below exists so a small
+            // component stays visible, and applied to a zero it paints space that isn't there.
             let measured = components.compactMap { part in
-                part.bytes.map { (color: part.color, bytes: $0) }
+                part.bytes.flatMap { $0 > 0 ? (color: part.color, bytes: $0) : nil }
             }
             let total = max(measured.reduce(Int64(0)) { $0 + $1.bytes }, 1)
             // Proportions against the width actually available for fill: the 2 pt gaps come
@@ -124,7 +136,7 @@ struct StorageSummaryBar: View {
     private var legend: some View {
         HStack(spacing: 16) {
             ForEach(components, id: \.name) { part in
-                if let bytes = part.bytes {
+                if let bytes = part.bytes, bytes > 0 {
                     HStack(spacing: 5) {
                         Circle()
                             .fill(part.color)
@@ -213,5 +225,10 @@ struct StorageSummaryBar: View {
             at: [BrewClient.logsDirectory(environment: environment, home: home)])
 
         (oldKegBytes, cacheBytes, logsBytes, largestOldKeg) = (kegs, cache, logs, largest)
+        // Off the freshly measured locals, not the state that was just assigned: `totalBytes`
+        // reads three published properties, and publishing then re-reading is how the half-
+        // updated total this method exists to prevent crept back in the first place.
+        let measured = [kegs, cache, logs].compactMap(\.self)
+        onMeasure?(measured.isEmpty ? nil : measured.reduce(0, +))
     }
 }

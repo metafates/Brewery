@@ -60,7 +60,7 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .services: "server.rack"
         // The same glyph the detail sheet's tap row wears.
         case .taps: "spigot"
-        // The wrench is the chore, not any one of its bands: the page holds three.
+        // The wrench is the chore, not any one of its concerns: the page holds four.
         case .maintenance: "wrench.and.screwdriver"
         case .checkup: "stethoscope"
         }
@@ -100,8 +100,9 @@ nonisolated enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         // ServicesView owns its own empty state; the grid never renders this section.
         case .services: nil
         case .taps: "No Packages"
-        // The view owns its own empty state: "Nothing needs maintenance" is one claim about
-        // three bands, which only the page that holds them can make (Discover's rule).
+        // The view owns its own empty state: "Everything looks good" is one claim about two
+        // cards and two sections, which only the page that holds them can make (Discover's
+        // rule) — and only it knows the measured cleanup total the claim depends on.
         case .maintenance: nil
         // The view owns its own states — intro, running, clean, findings (Discover's rule).
         case .checkup: nil
@@ -138,13 +139,13 @@ nonisolated enum KindFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// The model's subsets of what is on disk: what the user asked for, everything, the
-/// orphan report — dependencies nothing installed still needs — and the attention
-/// report — packages Homebrew has deprecated or disabled. UI-wise this is no longer
-/// one picker: Installed reaches onRequest/all through the Filter menu's Show Dependencies
-/// toggle, and the reports are sidebar destinations.
+/// The model's subsets of what is on disk: what the user asked for, everything, and the
+/// packages Homebrew has deprecated or disabled. UI-wise this is no longer one picker:
+/// Installed reaches onRequest/all through the Filter menu's Show Dependencies toggle, and
+/// Maintenance is a sidebar destination. (`.orphans` and `.storage` lived here while those
+/// two were listings; they are cards now, and read `orphanIDs` / the disk walk directly.)
 nonisolated enum InstalledScope {
-    case onRequest, all, orphans, attention, storage
+    case onRequest, all, attention
 }
 
 /// Installed's sort orders, Finder's *Sort By* vocabulary. Name is the inventory default;
@@ -584,7 +585,7 @@ struct ContentView: View {
             CheckupView(searchText: model.query)
         } else if section == .maintenance {
             // State rows, not catalog cards (the Services rule generalized) — and one page for
-            // three bands, so the gauge, the sections and the empty claim share one container.
+            // every concern, so the cards, the sections and the empty claim share a container.
             MaintenanceView(hits: displayedHits,
                             isSearching: isSearching,
                             isChecking: model.isChecking,
@@ -938,9 +939,6 @@ struct ContentView: View {
         let servicesCount: Int
         /// The size sweep's publish signal — a finished sweep re-sorts the listing it ordered.
         let sizesGeneration: Int
-        /// Cleanup removes kegs without changing the package count; the Storage listing
-        /// re-lists on this instead.
-        let multiKegCount: Int
     }
 
     private var browseKey: BrowseKey {
@@ -949,8 +947,7 @@ struct ContentView: View {
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
                   servicesCount: model.serviceStatuses.count,
-                  sizesGeneration: model.sizesGeneration,
-                  multiKegCount: model.multiKegCount)
+                  sizesGeneration: model.sizesGeneration)
     }
 
     private var searchKey: SearchKey {
@@ -959,8 +956,7 @@ struct ContentView: View {
                   commandCount: model.commandIndex.count,
                   installedCount: model.installed.count,
                   outdatedCount: model.outdated.count,
-                  servicesCount: model.serviceStatuses.count,
-                  multiKegCount: model.multiKegCount)
+                  servicesCount: model.serviceStatuses.count)
     }
 
     /// Re-ranks on a new query, a section switch, a filter change, or any change to the arrays
@@ -976,7 +972,6 @@ struct ContentView: View {
         let installedCount: Int
         let outdatedCount: Int
         let servicesCount: Int
-        let multiKegCount: Int
     }
 
     /// The part of the key that changes *which* packages are listed — the grid restarts its
@@ -1070,7 +1065,8 @@ struct ContentView: View {
         case .taps:
             // The list is handled above; reaching here means a tap page's grid.
             return count == 1 ? "1 package" : "\(formatted) packages"
-        // One count for three bands: what the page lists, not what any one section holds.
+        // What the page lists as rows — the two card concerns state their own counts, and
+        // counting them here would claim results a search could never land on.
         case .maintenance: return count == 1 ? "1 item" : "\(formatted) items"
         case .checkup: return ""   // handled above; unreachable
         }

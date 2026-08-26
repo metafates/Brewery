@@ -92,12 +92,13 @@ final class HarnessTests: XCTestCase {
                       "Refresh is the re-probe and must stay enabled")
     }
 
-    /// Maintenance's bands render from real probe output. This machine has no orphaned or
-    /// deprecated packages, so the merged page's other bands are only reachable through the
-    /// harness — and the band that *is* reachable there (Old Versions) is the one whose total
-    /// must equal the gauge's "Old versions" segment, since a mismatch between them is what a
-    /// single page makes visible and four separate destinations hid.
-    func testMaintenanceBandsRender() {
+    /// Maintenance renders both of its halves from real probe output: the storage card (the
+    /// multi-keg fixture is what gives it something to reclaim) and the one row section this
+    /// machine can reach through the harness. The old assertion watched the Old Versions band's
+    /// total agree with the gauge's segment; that band is gone precisely because the two were
+    /// the same number printed twice, so what is worth pinning now is that the card states the
+    /// outcome and the retired package still gets a row of its own.
+    func testMaintenancePageRenders() {
         var multiKeg = FixturePackage(name: "wget2", desc: "Successor of the wget download tool",
                                       version: "2.2.0")
         multiKeg.installedVersions = ["2.1.0", "2.2.0"]
@@ -108,16 +109,51 @@ final class HarnessTests: XCTestCase {
 
         app.outlines["Sidebar"].staticTexts["Maintenance"].click()
 
-        // The band headers fuse into their DisclosureGroup's AX element, so match on the
-        // group rather than a staticText — the List-row button lesson, one level up.
-        let oldVersions = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS 'Old Versions'")).firstMatch
-        XCTAssertTrue(oldVersions.waitForExistence(timeout: 60),
-                      "Maintenance never showed its Old Versions band")
-        let attention = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS 'Needs Attention'")).firstMatch
-        XCTAssertTrue(attention.waitForExistence(timeout: 20),
-                      "a deprecated installed package must land in Needs Attention")
+        // Either phrasing of the same claim: the fake Cellar holds no real keg bytes, so the
+        // harness world legitimately measures zero and the headline says so in three words.
+        let headline = app.staticTexts.matching(NSPredicate(
+            format: "value CONTAINS 'can be freed up' OR value CONTAINS 'Nothing to clean up'"))
+            .firstMatch
+        XCTAssertTrue(headline.waitForExistence(timeout: 60),
+                      "the storage card never stated its total")
+        // Section headers fuse their title, count and explainer into one AX element, so match
+        // the heading rather than a bare staticText — the List-row button lesson, one level up.
+        let heading = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'No longer maintained'")).firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 20),
+                      "a deprecated installed package must land under No longer maintained")
+        // `.accessibilityElement(children: .combine)` fuses the row's title and state line into
+        // one element, so the subtitle has no staticText of its own — and the fused *row* carries
+        // it as `value` while the fused *header* above carries its own as `label`. Matching the
+        // wrong one of those two finds nothing and reads exactly like a missing string.
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(
+            format: "value CONTAINS 'Still works, but no longer updated'")).firstMatch.exists,
+                      "the retired row must state the consequence, not brew's word for it")
+    }
+
+    /// The leftovers card is the only surface `brew autoremove` has now — its rows were
+    /// deliberately deleted, since the command is bulk and a row carried no decision — so it
+    /// would otherwise ship with no coverage at all. This machine has no orphans, so the
+    /// fixpoint's own input is seeded: a keg whose receipt says nothing asked for it
+    /// (`installed_on_request`, absent = false per brew's `tab.rb`).
+    func testLeftoversCardCountsOrphans() {
+        var orphan = FixturePackage(name: "little-cms2", desc: "Color management engine",
+                                    version: "2.17")
+        orphan.installedVersions = ["2.17"]
+        var scenario = Scenario(packages: [orphan])
+        scenario.seedFile(
+            "prefix/Cellar/little-cms2/2.17/INSTALL_RECEIPT.json",
+            Data(#"{"installed_on_request": false, "poured_from_bottle": true, "runtime_dependencies": []}"#.utf8))
+        let app = scenario.launch(in: self)
+
+        app.outlines["Sidebar"].staticTexts["Maintenance"].click()
+
+        XCTAssertTrue(app.staticTexts["1 leftover package"].waitForExistence(timeout: 60),
+                      "an unrequested keg nothing depends on must reach the leftovers card")
+        // The count is the card's whole claim, so the page must not also list it as a row —
+        // that desync ("13 items" over twelve rows) is what the narrowed listing prevents.
+        XCTAssertFalse(app.staticTexts["little-cms2"].exists,
+                       "a leftover is stated as a count, not listed as a row")
     }
 
     /// Export runs the real read path: File ▸ Export Brewfile… → `brew bundle dump` → the save

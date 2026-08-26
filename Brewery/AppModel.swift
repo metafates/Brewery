@@ -901,13 +901,6 @@ final class AppModel {
         Receipts.orphans(in: installed, caskDependencies: installedCaskDependencies)
     }
 
-    /// How many formulae carry more than one keg. The Storage listing's invalidation
-    /// signal: cleanup removes kegs without changing the *package* count the browse keys
-    /// otherwise watch, so this is the number that has to sit in the keys.
-    var multiKegCount: Int {
-        installed.count { $0.key.hasPrefix("formula:") && $0.value.versions.count > 1 }
-    }
-
     /// Each installed cask's catalog `depends_on` formulae — cask receipts carry no runtime
     /// deps, so the claim comes from the catalog, which is how brew itself protects them.
     /// Shared by the orphan fixpoint and the uninstall block list.
@@ -921,45 +914,42 @@ final class AppModel {
         return result
     }
 
-    /// The Installed section under the scope picker. `.all` is the full list; `.onRequest` drops the
-    /// kegs that are only on disk because something else needed them; `.orphans` keeps only
-    /// what `brew autoremove` would remove; `.attention` what Homebrew has retired.
+    /// The Installed section's listing. `.all` is the full list; `.onRequest` drops the kegs
+    /// that are only on disk because something else needed them; `.attention` keeps what
+    /// Homebrew has retired.
     func installedPackages(scope: InstalledScope) -> [Package] {
         switch scope {
         case .all:
             return installedPackages
         case .onRequest:
             return installedPackages.filter { installed[$0.id]?.onRequest ?? true }
-        case .orphans:
-            // Resolved once, not per element — the fixpoint is cheap but not free.
-            let orphans = orphanIDs
-            return installedPackages.filter { orphans.contains($0.id) }
         case .attention:
             return installedPackages.filter(\.needsAttention)
-        case .storage:
-            // Formulae carrying more than one keg: the set `brew cleanup` acts on.
-            // Formula-only because no-args cleanup iterates Formula.installed (cleanup.rb:399);
-            // old Caskroom versions are an upgrade artifact, not a cleanup target.
-            return installedPackages.filter {
-                $0.kind == .formula && (installed[$0.id]?.versions.count ?? 0) > 1
-            }
         }
     }
 
-    /// Everything the Maintenance page can list, deduped and in one array — the sections filter
-    /// it rather than each fetching their own, so the page ranks and searches one listing like
-    /// every other section does. Union, not concatenation: a formula can keep old versions
-    /// *and* be an orphan, and it must still be one entry in the listing the ranker sees.
+    /// What the Maintenance page **lists as rows**, deduped and in one array, so the page ranks
+    /// and searches one listing like every other section does.
+    ///
+    /// Only the two concerns where a row carries a per-item decision: adopting an app is a
+    /// claim about which cask owns which bundle, and a retired package's *why* differs per
+    /// package. Old versions and leftovers are stated on cards instead — their action is bulk
+    /// and their rows carried no decision — and they are deliberately **absent** here, because
+    /// a listing that holds packages the page does not render makes the toolbar count and the
+    /// search results disagree with the screen ("1 result" over an empty page).
+    ///
+    /// Union, not concatenation: a retired package can also be an unmanaged app, and it must
+    /// still be one entry in the listing the ranker sees.
     var maintenancePackages: [Package] {
         var seen: Set<Package.ID> = []
         var result: [Package] = []
-        // The three installed subsets plus the one band that is *not* about installed
-        // packages: an unmanaged app is on disk without Homebrew owning it, so it appears in
-        // no `InstalledScope` and has to join the union explicitly.
-        for package in installedPackages(scope: .storage)
-            + installedPackages(scope: .orphans)
-            + installedPackages(scope: .attention)
-            + unmanaged.keys.compactMap(package(for:))
+        // An unmanaged app is on disk without Homebrew owning it, so it appears in no
+        // `InstalledScope` and has to join the union explicitly — one entry per *app*, the
+        // bare token leading its bundle. Every candidate cask would over-count: `charles` and
+        // `charles@4` are one app and get one row, and the extra entry made the toolbar say
+        // "13 items" over twelve rows.
+        for package in installedPackages(scope: .attention)
+            + unmanagedBundles.values.compactMap(\.first).compactMap(package(for:))
         where seen.insert(package.id).inserted {
             result.append(package)
         }
